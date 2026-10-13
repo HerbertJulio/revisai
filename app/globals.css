@@ -1,0 +1,276 @@
+@import 'tailwindcss';
+
+/* Cores: oficina (aço e concreto), etiqueta de troca de óleo (papel branco e faixa âmbar de óleo),
+   luz de alerta do painel (vermelho) e caneta esferográfica (azul, para o que a pessoa faz). */
+:root {
+  --fundo: #e6e9e7;
+  --papel: #ffffff;
+  --papel-2: #f2f4f3;
+  --tinta: #1b1f22;
+  --tinta-2: #4b545a;
+  --tinta-3: #6b747a;
+  --linha: #cbd1ce;
+  --oleo: #f2a900;
+  --oleo-tinta: #6b4600;
+  --oleo-claro: #fff1c7;
+  --atraso: #c7361f;
+  --atraso-claro: #fbe3de;
+  --ok: #1f7a4a;
+  --ok-claro: #ddf1e5;
+  --caneta: #2546c2;
+  --caneta-claro: #e3e9ff;
+  --placa: #1f3f99;
+  --vidro: #cfe0e6;
+  --asfalto: #1b1f22;
+  --sobre-ok: #ffffff;
+  --sombra: 0 1px 0 rgb(27 31 34 / 0.06), 0 10px 24px -14px rgb(27 31 34 / 0.45);
+  color-scheme: light;
+}
+
+:root[data-tema='escuro'] {
+  --fundo: #121517;
+  --papel: #1c2023;
+  --papel-2: #23282c;
+  --tinta: #eceeed;
+  --tinta-2: #b3bcc1;
+  --tinta-3: #8c969c;
+  --linha: #343b40;
+  --oleo: #f5b526;
+  --oleo-tinta: #f5b526;
+  --oleo-claro: #3a2e0e;
+  --atraso: #ff6b55;
+  --atraso-claro: #3d1d18;
+  --ok: #52c485;
+  --ok-claro: #16301f;
+  --caneta: #93a9ff;
+  --caneta-claro: #1d2546;
+  --placa: #2e55c4;
+  --vidro: #1c2a30;
+  --asfalto: #262c30;
+  --sobre-ok: #0d1f14;
+  --sombra: 0 1px 0 rgb(0 0 0 / 0.4), 0 12px 28px -14px rgb(0 0 0 / 0.8);
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-tema='claro']) {
+    --fundo: #121517;
+    --papel: #1c2023;
+    --papel-2: #23282c;
+    --tinta: #eceeed;
+    --tinta-2: #b3bcc1;
+    --tinta-3: #8c969c;
+    --linha: #343b40;
+    --oleo: #f5b526;
+    --oleo-tinta: #f5b526;
+    --oleo-claro: #3a2e0e;
+    --atraso: #ff6b55;
+    --atraso-claro: #3d1d18;
+    --ok: #52c485;
+    --ok-claro: #16301f;
+    --caneta: #93a9ff;
+    --caneta-claro: #1d2546;
+    --placa: #2e55c4;
+    --vidro: #1c2a30;
+    --asfalto: #262c30;
+    --sobre-ok: #0d1f14;
+    --sombra: 0 1px 0 rgb(0 0 0 / 0.4), 0 12px 28px -14px rgb(0 0 0 / 0.8);
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --color-fundo: var(--fundo);
+  --color-papel: var(--papel);
+  --color-papel-2: var(--papel-2);
+  --color-tinta: var(--tinta);
+  --color-tinta-2: var(--tinta-2);
+  --color-tinta-3: var(--tinta-3);
+  --color-linha: var(--linha);
+  --color-oleo: var(--oleo);
+  --color-oleo-tinta: var(--oleo-tinta);
+  --color-oleo-claro: var(--oleo-claro);
+  --color-atraso: var(--atraso);
+  --color-atraso-claro: var(--atraso-claro);
+  --color-ok: var(--ok);
+  --color-ok-claro: var(--ok-claro);
+  --color-caneta: var(--caneta);
+  --color-caneta-claro: var(--caneta-claro);
+  --color-placa: var(--placa);
+  --color-vidro: var(--vidro);
+  --color-asfalto: var(--asfalto);
+  --color-sobre-ok: var(--sobre-ok);
+  --font-sans: var(--fonte-archivo), ui-sans-serif, system-ui, sans-serif;
+  --shadow-etiqueta: var(--sombra);
+}
+
+@custom-variant escuro (&:where([data-tema='escuro'], [data-tema='escuro'] *));
+
+/* Larguras da Archivo: a expandida é a voz da marca (emblema de carro), a normal é para ler. */
+@utility largo {
+  font-stretch: 125%;
+}
+@utility meio-largo {
+  font-stretch: 112%;
+}
+@utility estreito {
+  font-stretch: 82%;
+}
+@utility num {
+  font-variant-numeric: tabular-nums;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    background: var(--fundo);
+    color: var(--tinta);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1,
+  h2,
+  h3 {
+    font-stretch: 118%;
+    font-weight: 800;
+    line-height: 1.08;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+  p {
+    text-wrap: pretty;
+  }
+  :focus-visible {
+    outline: 3px solid var(--caneta);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  ::selection {
+    background: var(--oleo);
+    color: #1b1f22;
+  }
+  button,
+  [role='button'],
+  summary {
+    cursor: pointer;
+  }
+  input,
+  select,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+  dialog {
+    color: inherit;
+  }
+  dialog::backdrop {
+    background: rgb(18 21 23 / 0.55);
+  }
+}
+
+/* Carimbo de borracha: aparece quando a oficina marca o cliente como avisado ou agendado. */
+@keyframes carimbar {
+  0% {
+    opacity: 0;
+    transform: rotate(-9deg) scale(1.9);
+  }
+  60% {
+    opacity: 1;
+    transform: rotate(-9deg) scale(0.94);
+  }
+  100% {
+    opacity: 1;
+    transform: rotate(-9deg) scale(1);
+  }
+}
+
+.carimbo {
+  transform: rotate(-9deg);
+  border: 3px solid currentColor;
+  border-radius: 8px;
+  padding: 2px 10px;
+  font-stretch: 125%;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  line-height: 1.15;
+  text-transform: uppercase;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='60'%3E%3Cfilter id='r'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' seed='7'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -2.2 1.7'/%3E%3C/filter%3E%3Crect width='120' height='60' filter='url(%23r)'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='60'%3E%3Cfilter id='r'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' seed='7'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -2.2 1.7'/%3E%3C/filter%3E%3Crect width='120' height='60' filter='url(%23r)'/%3E%3C/svg%3E");
+}
+
+.carimbo-novo {
+  animation: carimbar 420ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .carimbo-novo {
+    animation: none;
+  }
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+/* Folha (diálogo): sobe do rodapé no celular, centraliza no computador. */
+dialog.folha {
+  margin: auto auto 0;
+  width: 100%;
+  max-width: 100%;
+  max-height: 92dvh;
+  border-radius: 18px 18px 0 0;
+  padding: 0;
+  border: 0;
+  background: var(--papel);
+  overscroll-behavior: contain;
+}
+@media (min-width: 640px) {
+  dialog.folha {
+    margin: auto;
+    max-width: 560px;
+    border-radius: 16px;
+  }
+}
+dialog.folha[open] {
+  animation: subir 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes subir {
+  from {
+    transform: translateY(24px);
+    opacity: 0.4;
+  }
+}
+
+/* Impressão da etiqueta de para-brisa. */
+@media print {
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+  .nao-imprimir {
+    display: none !important;
+  }
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: none !important;
+  }
+  .so-imprimir {
+    display: block !important;
+  }
+}
+.so-imprimir {
+  display: none;
+}
+
+.sem-js {
+  padding: 24px;
+  text-align: center;
+}
