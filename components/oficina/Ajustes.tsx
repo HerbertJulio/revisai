@@ -17,6 +17,7 @@ import { notificar, pedirPermissao } from '@/lib/notificacao';
 import { dadosParaBackup, useOficina, type DadosGuardados } from '@/lib/store';
 import type { Preferencias, ServicoId } from '@/lib/tipos';
 import { MENSAGEM_PADRAO, VARIAVEIS_MENSAGEM, montarMensagem } from '@/lib/whatsapp';
+import { AgenteWhatsApp } from './AgenteWhatsApp';
 import { SeusProdutos } from './SeusProdutos';
 
 export function Ajustes() {
@@ -27,6 +28,7 @@ export function Ajustes() {
         <p className="mt-1 text-tinta-2">As mudanças valem na hora e ficam guardadas neste aparelho.</p>
       </header>
       <DadosOficina />
+      <AgenteWhatsApp />
       <Avisos />
       <Mensagem />
       <Prazos />

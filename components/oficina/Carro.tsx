@@ -1,13 +1,13 @@
 'use client';
 
-import { ArrowLeft, Copy, Gauge, MessageCircle, Pencil, Plus, Printer, Send, Trash2 } from 'lucide-react';
+import { ArrowLeft, Copy, Gauge, MessageCircle, Mic, Pencil, Plus, Printer, Send, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { Folha } from '@/components/Folha';
 import { IconeServico } from '@/components/icones';
 import { Menu } from '@/components/Menu';
-import { EtiquetaTroca, Odometro, Placa } from '@/components/pecas';
+import { Odometro, Placa } from '@/components/pecas';
 import { useToast } from '@/components/Toasts';
 import { Botao, Campo, Secao, Vazio, classeBotao, classeEntrada } from '@/components/ui';
 import { itensDoVeiculo } from '@/lib/avisos';
@@ -16,11 +16,14 @@ import { formatarKm, formatarMoeda, formatarNumero, formatarTelefone, lerNumero 
 import { useDadosAvisos, useHoje } from '@/lib/ganchos';
 import { servico } from '@/lib/manutencao';
 import { nomeBase } from '@/lib/oleos';
-import { rotuloPrazo, rotuloRodagem } from '@/lib/rotulos';
+import { rotuloRodagem } from '@/lib/rotulos';
+import { areaDoTexto } from '@/lib/saude';
 import { useOficina } from '@/lib/store';
 import type { ResultadoContato } from '@/lib/tipos';
 import { linkWhatsApp } from '@/lib/whatsapp';
 import { useCartaoDoCarro } from './acoes';
+import { OrdensDoCarro } from './OrdensDoCarro';
+import { SaudeDoCarro } from './SaudeDoCarro';
 import {
   CamposCliente,
   CamposVeiculo,
@@ -67,6 +70,16 @@ export function Carro() {
         .sort((a, b) => (a.data < b.data ? 1 : -1)),
     [dados.leituras, id]
   );
+  const ordens = useOficina((s) => s.ordens);
+  // recomendações das ordens de serviço dos últimos 120 dias entram no mapa do carro
+  const recomendacoes = useMemo(() => {
+    const desde = new Date(Date.now() - 120 * 86_400_000).toISOString();
+    return Object.values(ordens)
+      .filter((o) => o.veiculoId === id && o.criadoEm >= desde)
+      .sort((a, b) => (a.criadoEm < b.criadoEm ? 1 : -1))
+      .flatMap((o) => o.ia.recomendacoes.map((r) => ({ texto: r.texto, urgencia: r.urgencia, area: areaDoTexto(r.texto) })))
+      .slice(0, 8);
+  }, [ordens, id]);
   const contatos = useMemo(
     () =>
       Object.values(dados.contatos)
@@ -128,6 +141,9 @@ export function Carro() {
               <MessageCircle size={18} /> Conversar
             </a>
           ) : null}
+          <Link href={`/oficina/ordem?carro=${veiculo.id}`} className={classeBotao('secundario')}>
+            <Mic size={18} /> Ordem por voz
+          </Link>
           <Botao onClick={() => setFolha('km')}>
             <Gauge size={18} /> Anotar km
           </Botao>
@@ -157,24 +173,16 @@ export function Carro() {
         </div>
       </header>
 
-      <Secao titulo="Próximos vencimentos" descricao={itens.length ? 'Pela data ou pela quilometragem, o que vier primeiro.' : undefined}>
-        {itens.length === 0 ? (
+      <Secao titulo="Saúde do carro" descricao={itens.length ? 'Quanto resta de cada item até a próxima troca, pela data ou pela quilometragem, o que vier primeiro.' : undefined}>
+        {itens.length === 0 && recomendacoes.length === 0 ? (
           <Vazio titulo="Nenhum serviço registrado neste carro" acao={<Link href={registrar} className={classeBotao('primario')}>Registrar o primeiro</Link>} />
         ) : (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-x-4 gap-y-6">
-            {itens.map((i) => {
-              const p = rotuloPrazo(i.venc, i.situacao);
-              const cor = i.situacao === 'atrasado' ? 'text-atraso' : i.situacao === 'avisar' ? 'text-oleo-tinta' : 'text-tinta-3';
-              return (
-                <div key={i.servico} className="flex flex-col items-start gap-2">
-                  <EtiquetaTroca data={i.venc.dataLimite ?? i.venc.dataPrevista} km={i.venc.kmLimite} situacao={i.situacao} titulo={servico(i.servico).nome} />
-                  <p className={`text-[13.5px] font-bold ${cor}`}>{p.principal}</p>
-                  <p className="-mt-2 text-[12.5px] text-tinta-3">Feito em {formatarData(i.base.data)}</p>
-                </div>
-              );
-            })}
-          </div>
+          <SaudeDoCarro itens={itens} hoje={hoje} recomendacoes={recomendacoes} />
         )}
+      </Secao>
+
+      <Secao titulo="Ordens de serviço" descricao="Montadas pela IA a partir dos áudios e fotos, conferidas por você.">
+        <OrdensDoCarro veiculoId={veiculo.id} telefone={cliente?.telefone ?? null} />
       </Secao>
 
       <Secao

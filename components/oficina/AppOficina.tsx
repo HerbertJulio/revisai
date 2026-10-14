@@ -1,6 +1,6 @@
 'use client';
 
-import { Bell, Plus, Settings, Store, Users } from 'lucide-react';
+import { Bell, Mic, Plus, Settings, Store, Users } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, type ReactNode } from 'react';
@@ -17,6 +17,7 @@ const ITENS = [
   { href: '/oficina', rotulo: 'Avisos', Icone: Bell },
   { href: '/oficina/clientes', rotulo: 'Clientes', Icone: Users },
   { href: '/oficina/registrar', rotulo: 'Registrar', Icone: Plus, destaque: true },
+  { href: '/oficina/ordem', rotulo: 'Ordem por voz', Icone: Mic, soNaLateral: true },
   { href: '/oficina/loja', rotulo: 'Loja', Icone: Store },
   { href: '/oficina/ajustes', rotulo: 'Ajustes', Icone: Settings }
 ] as const;
@@ -114,7 +115,7 @@ function Moldura({ children }: { children: ReactNode }) {
         className="nao-imprimir fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-linha bg-papel pb-[env(safe-area-inset-bottom)] lg:hidden"
         aria-label="Seções"
       >
-        {ITENS.map(({ href, rotulo, Icone, ...resto }) => {
+        {ITENS.filter((i) => !('soNaLateral' in i)).map(({ href, rotulo, Icone, ...resto }) => {
           const sel = ativo(caminho, href);
           const destaque = 'destaque' in resto;
           return (

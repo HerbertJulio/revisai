@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, Check, MessageCircle, Printer, Search, TriangleAlert, UserPlus } from 'lucide-react';
+import { ArrowLeft, Check, MessageCircle, Mic, Printer, Search, TriangleAlert, UserPlus } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMemo, useState } from 'react';
@@ -366,8 +366,15 @@ export function Registrar() {
         <button type="button" onClick={() => router.back()} className="mb-2 inline-flex items-center gap-1 text-[14px] font-semibold text-tinta-3 hover:text-tinta">
           <ArrowLeft size={16} /> Voltar
         </button>
-        <h1 className="largo text-[28px] sm:text-[32px]">Registrar serviço</h1>
-        <p className="mt-1 text-tinta-2">O próximo vencimento de cada item já sai calculado.</p>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h1 className="largo text-[28px] sm:text-[32px]">Registrar serviço</h1>
+            <p className="mt-1 text-tinta-2">O próximo vencimento de cada item já sai calculado.</p>
+          </div>
+          <Link href={veiculoId ? `/oficina/ordem?carro=${veiculoId}` : '/oficina/ordem'} className={classeBotao('secundario')}>
+            <Mic size={17} aria-hidden="true" /> Falar em vez de digitar
+          </Link>
+        </div>
       </header>
 
       {/* 1. carro */}

@@ -16,6 +16,8 @@ const csp = [
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self'",
   "img-src 'self' data: blob:",
+  // áudios gravados na ordem por voz tocam a partir do próprio aparelho
+  "media-src 'self' blob:",
   "connect-src 'self'",
   "manifest-src 'self'",
   "worker-src 'self' blob:",

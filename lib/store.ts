@@ -10,6 +10,7 @@ import { ehExemplo, gerarExemplo } from './exemplo';
 import { hojeISO } from './datas';
 import { normalizarPlaca } from './formatos';
 import { OFICINA_VAZIA, PREFERENCIAS_PADRAO } from './padroes';
+import type { OrdemServico } from './agente/ordem';
 import type { ProdutoProprio } from './referencias';
 import type {
   Atendimento,
@@ -46,6 +47,8 @@ export interface DadosGuardados {
   /** Número aleatório deste aparelho (não identifica a oficina; serve para a demanda e os rascunhos). */
   aparelhoId: string | null;
   demandaEnviadaEm: string | null;
+  /** Ordens de serviço montadas por voz e conferidas pelo mecânico. */
+  ordens: Record<Id, OrdemServico>;
   resumoMostradoEm: string | null;
   ultimoBackup: string | null;
   /** Quando esta cópia foi gravada (a mais nova vence entre IndexedDB e localStorage). */
@@ -79,6 +82,8 @@ interface Acoes {
   salvarProdutoProprio(p: Omit<ProdutoProprio, 'id' | 'criadoEm'> & { id?: Id }): Id;
   removerProdutoProprio(id: Id): void;
   garantirAparelhoId(): string;
+  salvarOrdem(o: Omit<OrdemServico, 'id' | 'criadoEm'> & { id?: Id }): Id;
+  removerOrdem(id: Id): void;
   marcarDemandaEnviada(): void;
   marcarResumo(data: string): void;
   marcarBackup(): void;
@@ -105,6 +110,7 @@ const VAZIO: DadosGuardados = {
   produtosProprios: {},
   aparelhoId: null,
   demandaEnviadaEm: null,
+  ordens: {},
   resumoMostradoEm: null,
   ultimoBackup: null
 };
@@ -233,7 +239,8 @@ export const useOficina = create<EstadoOficina>()(
           veiculos: semChaves(get().veiculos, (v) => carros.has(v.id)),
           atendimentos: semChaves(get().atendimentos, (a) => carros.has(a.veiculoId)),
           leituras: semChaves(get().leituras, (l) => carros.has(l.veiculoId)),
-          contatos: semChaves(get().contatos, (k) => carros.has(k.veiculoId))
+          contatos: semChaves(get().contatos, (k) => carros.has(k.veiculoId)),
+          ordens: semChaves(get().ordens, (o) => o.veiculoId != null && carros.has(o.veiculoId))
         });
       },
 
@@ -254,7 +261,8 @@ export const useOficina = create<EstadoOficina>()(
           veiculos: semChaves(get().veiculos, (_v, vid) => vid === id),
           atendimentos: semChaves(get().atendimentos, (a) => a.veiculoId === id),
           leituras: semChaves(get().leituras, (l) => l.veiculoId === id),
-          contatos: semChaves(get().contatos, (k) => k.veiculoId === id)
+          contatos: semChaves(get().contatos, (k) => k.veiculoId === id),
+          ordens: semChaves(get().ordens, (o) => o.veiculoId === id)
         });
       },
 
@@ -344,6 +352,17 @@ export const useOficina = create<EstadoOficina>()(
         return id;
       },
 
+      salvarOrdem(o) {
+        const id = o.id ?? novoId();
+        const anterior = get().ordens[id];
+        set({ ordens: { ...get().ordens, [id]: { ...o, id, criadoEm: anterior?.criadoEm ?? new Date().toISOString() } } });
+        return id;
+      },
+
+      removerOrdem(id) {
+        set({ ordens: semChaves(get().ordens, (_o, oid) => oid === id) });
+      },
+
       marcarDemandaEnviada() {
         set({ demandaEnviadaEm: new Date().toISOString() });
       },
@@ -407,6 +426,7 @@ export const useOficina = create<EstadoOficina>()(
         produtosProprios: s.produtosProprios,
         aparelhoId: s.aparelhoId,
         demandaEnviadaEm: s.demandaEnviadaEm,
+        ordens: s.ordens,
         resumoMostradoEm: s.resumoMostradoEm,
         ultimoBackup: s.ultimoBackup,
         salvoEm: Date.now()
@@ -459,6 +479,7 @@ export function dadosParaBackup(s: DadosGuardados) {
     contatos: s.contatos,
     pedidos: s.pedidos,
     produtosProprios: s.produtosProprios,
+    ordens: s.ordens,
     exemplo: s.exemplo
   };
 }
