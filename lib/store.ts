@@ -43,6 +43,9 @@ export interface DadosGuardados {
   pedidos: PedidoEnviado[];
   /** Produtos que a oficina cadastrou, com o prazo que ela usa. */
   produtosProprios: Record<Id, ProdutoProprio>;
+  /** Número aleatório deste aparelho (não identifica a oficina; serve para a demanda e os rascunhos). */
+  aparelhoId: string | null;
+  demandaEnviadaEm: string | null;
   resumoMostradoEm: string | null;
   ultimoBackup: string | null;
   /** Quando esta cópia foi gravada (a mais nova vence entre IndexedDB e localStorage). */
@@ -75,6 +78,8 @@ interface Acoes {
   registrarPedido(p: PedidoEnviado): void;
   salvarProdutoProprio(p: Omit<ProdutoProprio, 'id' | 'criadoEm'> & { id?: Id }): Id;
   removerProdutoProprio(id: Id): void;
+  garantirAparelhoId(): string;
+  marcarDemandaEnviada(): void;
   marcarResumo(data: string): void;
   marcarBackup(): void;
   importar(dados: Partial<DadosGuardados>): void;
@@ -98,6 +103,8 @@ const VAZIO: DadosGuardados = {
   carrinho: [],
   pedidos: [],
   produtosProprios: {},
+  aparelhoId: null,
+  demandaEnviadaEm: null,
   resumoMostradoEm: null,
   ultimoBackup: null
 };
@@ -329,6 +336,18 @@ export const useOficina = create<EstadoOficina>()(
         set({ produtosProprios: semChaves(get().produtosProprios, (_p, pid) => pid === id) });
       },
 
+      garantirAparelhoId() {
+        const atual = get().aparelhoId;
+        if (atual) return atual;
+        const id = novoId();
+        set({ aparelhoId: id });
+        return id;
+      },
+
+      marcarDemandaEnviada() {
+        set({ demandaEnviadaEm: new Date().toISOString() });
+      },
+
       marcarResumo(data) {
         set({ resumoMostradoEm: data });
       },
@@ -386,6 +405,8 @@ export const useOficina = create<EstadoOficina>()(
         carrinho: s.carrinho,
         pedidos: s.pedidos,
         produtosProprios: s.produtosProprios,
+        aparelhoId: s.aparelhoId,
+        demandaEnviadaEm: s.demandaEnviadaEm,
         resumoMostradoEm: s.resumoMostradoEm,
         ultimoBackup: s.ultimoBackup,
         salvoEm: Date.now()

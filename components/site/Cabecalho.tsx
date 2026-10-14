@@ -62,6 +62,9 @@ export function Rodape() {
           <Link href="/privacidade" className="text-tinta-2 hover:text-tinta">
             Privacidade
           </Link>
+          <Link href="/creditos" className="text-tinta-2 hover:text-tinta">
+            Créditos das fotos
+          </Link>
         </nav>
       </div>
       <p className="mx-auto max-w-6xl px-4 pb-10 text-[13px] text-tinta-3 sm:px-6">© {new Date().getFullYear()} Revisaí</p>

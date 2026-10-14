@@ -194,3 +194,46 @@ export async function sugerirParaBase(entrada: unknown): Promise<Resposta> {
   }
   return { ok: true };
 }
+
+const esquemaDemanda = z.object({
+  id: z.uuid(),
+  uf: z
+    .string()
+    .trim()
+    .regex(/^([A-Z]{2})?$/)
+    .optional()
+    .default(''),
+  cidade: z.string().trim().max(80).optional().default(''),
+  itens: z
+    .array(
+      z.object({
+        categoria: z.enum(CATEGORIAS.map((c) => c.id) as [Categoria, ...Categoria[]]),
+        titulo: z.string().trim().min(1).max(120),
+        quantidade: z.number().min(0).max(100000),
+        unidade: z.enum(['L', 'un']),
+        carros: z.number().int().min(1).max(10000)
+      })
+    )
+    .max(200)
+});
+
+/**
+ * Previsão de compras dos próximos 30 dias, de uma oficina que aceitou compartilhar.
+ * Vai só o que comprar, a cidade e o estado; o id é um número aleatório do aparelho.
+ */
+export async function enviarDemanda(entrada: unknown): Promise<Resposta> {
+  const r = esquemaDemanda.safeParse(entrada);
+  if (!r.success) return { ok: false, erro: 'Previsão inválida.' };
+  if (!(await permitido('demanda', 6, 60))) return { ok: false, erro: 'Envios demais. Tente mais tarde.' };
+  const sb = clienteEquipe();
+  if (!sb) return { ok: false, erro: 'Ainda não está ligado.' };
+  const d = r.data;
+  const { error } = await sb
+    .from('demandas')
+    .upsert({ id: d.id, uf: d.uf || null, cidade: d.cidade || null, itens: d.itens, atualizado_em: new Date().toISOString() }, { onConflict: 'id' });
+  if (error) {
+    console.error('[demanda]', error);
+    return { ok: false, erro: 'Não deu para enviar agora.' };
+  }
+  return { ok: true };
+}

@@ -98,6 +98,8 @@ export interface Preferencias {
   mensagem: string;
   intervalos: Partial<Record<ServicoId, Intervalo>>;
   tema: 'auto' | 'claro' | 'escuro';
+  /** Mandar a previsão de compras (sem dados dos clientes) para os fornecedores da região. */
+  compartilharDemanda: boolean;
 }
 
 export interface Cliente {

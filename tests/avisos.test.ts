@@ -9,7 +9,8 @@ const prefs: Preferencias = {
   kmMesPadrao: 1000,
   mensagem: '',
   intervalos: {},
-  tema: 'auto'
+  tema: 'auto',
+  compartilharDemanda: false
 };
 
 function dados(atendimentos: Atendimento[], contatos: Contato[] = []): DadosOficina {

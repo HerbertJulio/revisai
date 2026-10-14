@@ -10,6 +10,7 @@ import { useGrupos, useHidratado } from '@/lib/ganchos';
 import { notificar, registrarServiceWorker } from '@/lib/notificacao';
 import { armazenamentoComProblema, pedirArmazenamentoPersistente, useOficina } from '@/lib/store';
 import { ProvedorCatalogo } from './catalogo';
+import { useEnvioDeDemanda } from './demanda';
 import { Inicio } from './Inicio';
 
 const ITENS = [
@@ -51,6 +52,7 @@ function Moldura({ children }: { children: ReactNode }) {
   const paraAvisar = resumo.avisar;
 
   useNotificacaoDoDia(paraAvisar, resumo.atrasados, resumo.agendadosHoje, hoje);
+  useEnvioDeDemanda();
 
   useEffect(() => {
     void pedirArmazenamentoPersistente();
