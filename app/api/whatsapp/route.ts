@@ -91,7 +91,7 @@ async function tratar(c: ConfigWhatsApp, m: MensagemRecebida) {
     if (!r.midias.length && !r.textos.length) return void (await responder(c, m.de, 'Mande primeiro os áudios e as fotos do serviço. Depois escreva fechar.'));
     await responder(c, m.de, 'Montando a ordem de serviço. Leva uns segundos.');
     const res = await processarRascunho(r.id, vinculo.oficina);
-    if (!res.ok) return void (await responder(c, m.de, `${res.erro} O que você mandou ficou guardado no app para registrar à mão.`));
+    if (!res.ok) return void (await responder(c, m.de, `${res.erro} O que você mandou continua guardado. Escreva *fechar* de novo para tentar outra vez.`));
     await responder(c, m.de, `${textoDoResumo(res.ordem)}\n\nConfira e confirme no app: ${SITE}/oficina/ordem`);
     await responder(c, m.de, res.ordem.mensagemCliente);
     return;

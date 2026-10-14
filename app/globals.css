@@ -219,6 +219,27 @@
   }
 }
 
+/* Microfone da ordem por voz: o anel serrilhado lembra a tampa do óleo e gira enquanto grava. */
+.anel-serrilhado {
+  border-radius: 9999px;
+  background: repeating-conic-gradient(from 0deg, currentColor 0deg 3.2deg, transparent 3.2deg 9deg);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 13px), #000 calc(100% - 12px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 13px), #000 calc(100% - 12px));
+}
+.anel-girando {
+  animation: girar 14s linear infinite;
+}
+@keyframes girar {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .anel-girando {
+    animation: none;
+  }
+}
+
 /* Folha (diálogo): sobe do rodapé no celular, centraliza no computador. */
 dialog.folha {
   margin: auto auto 0;

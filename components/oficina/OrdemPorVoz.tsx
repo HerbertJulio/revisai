@@ -1,93 +1,66 @@
 'use client';
 
-import { Camera, Check, ImagePlus, Mic, MessageCircle, Plus, Search, Share2, Sparkles, Square, Trash2, TriangleAlert, X } from 'lucide-react';
+// Ordem por voz: o mecânico toca no microfone e conta o que fez no carro. O áudio fica guardado no
+// aparelho, vira texto e a IA preenche a ordem de serviço com esse texto (e com as fotos, se tiver).
+// Ele confere os campos e confirma. As ordens que chegaram pelo WhatsApp também abrem aqui.
+
+import { Camera, Car, Keyboard, Mic, RotateCcw, Sparkles, Trash2, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
-import { encerrarRascunhoDoWhatsApp, montarOrdemComIA, rascunhosDoWhatsApp } from '@/app/oficina/acoes-agente';
-import type { RascunhoParaApp } from '@/lib/agente/rascunhos';
-import { IconeServico } from '@/components/icones';
+import { useEffect, useRef, useState } from 'react';
+import { encerrarRascunhoDoWhatsApp, montarOrdemComIA, transcreverAudio } from '@/app/oficina/acoes-agente';
+import { Folha } from '@/components/Folha';
 import { Placa } from '@/components/pecas';
 import { useToast } from '@/components/Toasts';
-import { Botao, Campo, classeArea, classeBotao, classeEntrada } from '@/components/ui';
-import { estimarRodagem, pontosDoVeiculo, calcularVencimento } from '@/lib/agenda';
-import { URGENCIAS, type OrdemIA, type Urgencia } from '@/lib/agente/esquema';
+import { Botao, classeArea, classeBotao } from '@/components/ui';
+import { pontosDoVeiculo } from '@/lib/agenda';
+import type { OrdemIA } from '@/lib/agente/esquema';
 import type { MidiaDaOrdem } from '@/lib/agente/ordem';
-import { formatarData, formatarDataCurta } from '@/lib/datas';
-import { formatarKm, formatarPlaca, lerNumero, normalizarPlaca } from '@/lib/formatos';
+import type { RascunhoParaApp } from '@/lib/agente/rascunhos';
+import { juntarRelato, MAX_RELATO, SEM_FALA } from '@/lib/agente/relato';
+import { dataLocal, formatarData } from '@/lib/datas';
+import { formatarPlaca, lerNumero, normalizarPlaca } from '@/lib/formatos';
 import { useHoje } from '@/lib/ganchos';
-import { reduzirFoto } from '@/lib/imagem-cliente';
-import { SERVICOS, intervaloSugerido, servico as infoServico } from '@/lib/manutencao';
-import { guardarMidia } from '@/lib/midia';
-import { useOficina } from '@/lib/store';
-import type { ServicoId, Veiculo } from '@/lib/tipos';
-import { linkWhatsApp } from '@/lib/whatsapp';
+import { apagarMidia, guardarMidia } from '@/lib/midia';
 import { PRO } from '@/lib/plano';
-import { BotaoAvaliacao, useOfertaDoPro, usePlano } from './plano';
-import {
-  CLIENTE_VAZIO,
-  CamposCliente,
-  CamposVeiculo,
-  VEICULO_VAZIO,
-  clienteDoRascunho,
-  errosCliente,
-  errosVeiculo,
-  veiculoDoRascunho,
-  type RascunhoCliente,
-  type RascunhoVeiculo
-} from './formularios';
+import { useOficina } from '@/lib/store';
+import { CLIENTE_VAZIO, VEICULO_VAZIO, clienteDoRascunho, errosCliente, errosVeiculo, veiculoDoRascunho } from './formularios';
+import { Andamento, TrechoDoRelato, type Passo } from './ordem/Andamento';
+import { BuscaCarro } from './ordem/BuscaCarro';
+import { CaixaWhatsApp } from './ordem/CaixaWhatsApp';
+import { BotaoDeFotos, MAX_FOTOS, Miniaturas } from './ordem/fotos';
+import { MicrofoneGrande, arquivoDoClipe, novoId, tempo, type Clipe } from './ordem/gravador';
+import { Pronto } from './ordem/Pronto';
+import { CartaoDoRelato } from './ordem/Relato';
+import { TelaDeRevisao, prazoSugerido, type Revisao } from './ordem/Revisao';
+import { abrirMidias, encerrarSessao, esquecerSessao, lerSessao, salvarSessao, type FotoLocal, type Preenchido, type SessaoSalva } from './ordem/sessao';
+import { useOfertaDoPro, usePlano } from './plano';
 
-const MAX_SEGUNDOS = 120;
-const MAX_AUDIOS = 4;
-const MAX_FOTOS = 6;
+const SEM_INTERNET = 'Não deu para falar com o servidor. Confira a internet e tente de novo.';
+const REFAZER = 'Preencher a ordem de novo? O que você mudou à mão na ficha pode ser trocado.';
 
-interface Clipe {
-  id: string;
-  blob: Blob;
-  url: string;
-  segundos: number;
-}
+type Trabalho =
+  | { tipo: 'ouvindo'; clipe: Clipe }
+  | { tipo: 'preenchendo'; clipe: Clipe | null }
+  | { tipo: 'falhou'; acao: 'ouvir' | 'preencher'; mensagem: string; clipe: Clipe | null };
 
-interface FotoLocal {
-  id: string;
-  arquivo: File;
-  url: string;
-}
-
-interface ItemRevisao {
-  servico: ServicoId;
-  produto: string;
-  observacao: string;
-  km: string;
-  meses: string;
-}
-
-interface Revisao {
-  veiculoId: string | null;
-  novoCliente: RascunhoCliente;
-  novoCarro: RascunhoVeiculo;
-  km: string;
-  itens: ItemRevisao[];
-  diagnostico: string;
-  recomendacoes: { texto: string; urgencia: Urgencia }[];
-  legendas: string[];
+interface Feito {
+  veiculoId: string;
   mensagem: string;
+  atendimentoId: string | null;
 }
 
-function novoId(): string {
-  return typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+function ultimoKm(id: string): number | null {
+  const e = useOficina.getState();
+  const pontos = pontosDoVeiculo(id, Object.values(e.atendimentos), Object.values(e.leituras));
+  return pontos.length ? pontos[pontos.length - 1].km : null;
 }
 
-function mimeDeGravacao(): string | undefined {
-  if (typeof MediaRecorder === 'undefined') return undefined;
-  return ['audio/webm;codecs=opus', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/webm'].find((t) => MediaRecorder.isTypeSupported(t));
-}
+const idsDasFotos = (fotos: FotoLocal[]) => fotos.map((f) => f.id).join(',');
 
-function extensao(mime: string): string {
-  if (mime.includes('mp4')) return 'm4a';
-  if (mime.includes('ogg')) return 'ogg';
-  return 'webm';
-}
+// cada vez que a tela abre. Uma tela que já saiu só termina o que a IA estava fazendo (e guarda)
+// se nenhuma outra abriu depois; senão a nova continua de onde a ordem guardada parou.
+let telasAbertas = 0;
 
 export function OrdemPorVoz() {
   const params = useSearchParams();
@@ -96,10 +69,6 @@ export function OrdemPorVoz() {
   const toast = useToast();
   const veiculos = useOficina((s) => s.veiculos);
   const clientes = useOficina((s) => s.clientes);
-  const atendimentos = useOficina((s) => s.atendimentos);
-  const leituras = useOficina((s) => s.leituras);
-  const oficina = useOficina((s) => s.oficina);
-  const prefs = useOficina((s) => s.preferencias);
   const salvarCliente = useOficina((s) => s.salvarCliente);
   const salvarVeiculo = useOficina((s) => s.salvarVeiculo);
   const registrarAtendimento = useOficina((s) => s.registrarAtendimento);
@@ -109,121 +78,412 @@ export function OrdemPorVoz() {
   const plano = usePlano();
   const abrirPro = useOfertaDoPro();
 
-  const inicial = params.get('carro');
-  const [veiculoId, setVeiculoId] = useState<string | null>(inicial && veiculos[inicial] ? inicial : null);
-  const [busca, setBusca] = useState('');
+  const doLink = params.get('carro');
+  const carroDoLink = doLink && veiculos[doLink] ? doLink : null;
+
+  const [carregado, setCarregado] = useState(false);
+  const [retomada, setRetomada] = useState(false);
+  const [veiculoId, setVeiculoId] = useState<string | null>(carroDoLink);
   const [clipes, setClipes] = useState<Clipe[]>([]);
   const [fotos, setFotos] = useState<FotoLocal[]>([]);
-  const [anotacao, setAnotacao] = useState('');
-  const [erro, setErro] = useState<string | null>(null);
-  const [montando, iniciar] = useTransition();
+  const [relato, setRelato] = useState('');
+  const [preenchido, setPreenchido] = useState<Preenchido | null>(null);
+  const [trabalho, setTrabalho] = useState<Trabalho | null>(null);
+  const [escrevendo, setEscrevendo] = useState(false);
+  const [gravando, setGravando] = useState(false);
+  const [escolhendo, setEscolhendo] = useState(false);
   const [ia, setIa] = useState<{ ordem: OrdemIA; modelo: string } | null>(null);
   const [rev, setRev] = useState<Revisao | null>(null);
+  const [mexeu, setMexeu] = useState(false);
   const [errosRev, setErrosRev] = useState<Record<string, string>>({});
-  const [feito, setFeito] = useState<{ veiculoId: string; mensagem: string; atendimentoId: string | null } | null>(null);
+  const [salvando, setSalvando] = useState(false);
+  const [feito, setFeito] = useState<Feito | null>(null);
   const [doWhatsApp, setDoWhatsApp] = useState<string | null>(null);
 
-  const veiculo: Veiculo | null = veiculoId ? veiculos[veiculoId] ?? null : null;
-  const cliente = veiculo ? clientes[veiculo.clienteId] : undefined;
+  // o que as funções assíncronas leem (o estado da última tela) e o que não vira tela
+  const atual = useRef({ relato, fotos, clipes, veiculoId, rev, mexeu, ia, preenchido, doWhatsApp, feito });
+  atual.current = { relato, fotos, clipes, veiculoId, rev, mexeu, ia, preenchido, doWhatsApp, feito };
+  const pronto = useRef(false);
+  const montado = useRef(false);
+  const minhaTela = useRef(0);
+  const sessaoId = useRef(novoId());
+  const contada = useRef(false);
+  const criadoEm = useRef(new Date().toISOString());
+  const encerrada = useRef(false);
+  const geracao = useRef(0);
 
-  useEffect(
-    () => () => {
-      for (const c of clipes) URL.revokeObjectURL(c.url);
-      for (const f of fotos) URL.revokeObjectURL(f.url);
-    },
-    // só ao sair da tela
-    []
-  );
+  const veiculo = veiculoId ? veiculos[veiculoId] ?? null : null;
+  const dono = veiculo ? clientes[veiculo.clienteId] : undefined;
+  /** Esta tela ainda é a última que abriu (a ordem guardada é dela). */
+  const minha = () => minhaTela.current === telasAbertas;
 
-  const resultados = useMemo(() => {
-    const t = busca.trim().toLowerCase();
-    if (t.length < 2) return [];
-    const placa = normalizarPlaca(t);
-    return Object.values(veiculos)
-      .filter((v) => (placa.length >= 2 && v.placa.includes(placa)) || (clientes[v.clienteId]?.nome.toLowerCase().includes(t) ?? false) || v.modelo.toLowerCase().includes(t))
-      .slice(0, 5);
-  }, [busca, veiculos, clientes]);
+  // ------------------------------------------------------------ a ordem guardada no aparelho
 
-  function ultimoKm(id: string): number | null {
-    const pontos = pontosDoVeiculo(id, Object.values(atendimentos), Object.values(leituras));
-    return pontos.length ? pontos[pontos.length - 1].km : null;
+  function sessaoAtual(): SessaoSalva<Revisao> | null {
+    const a = atual.current;
+    if (!a.clipes.length && !a.fotos.length && !a.relato.trim() && !a.ia) return null;
+    return {
+      versao: 1,
+      id: sessaoId.current,
+      criadoEm: criadoEm.current,
+      veiculoId: a.veiculoId,
+      clipes: a.clipes.map((c) => ({ id: c.id, mime: c.blob.type, segundos: c.segundos, ouvido: c.ouvido })),
+      fotos: a.fotos.map((f) => ({ id: f.id, mime: f.arquivo.type, nome: f.arquivo.name })),
+      relato: a.relato,
+      preenchido: a.preenchido,
+      contada: contada.current,
+      ia: a.ia,
+      rev: a.ia ? a.rev : null,
+      mexeu: a.mexeu
+    };
   }
 
-  function prazo(s: ServicoId, carro: Pick<Veiculo, 'usoSevero' | 'intervaloOleo'> | null) {
-    const sug = intervaloSugerido(s, { veiculo: carro ?? undefined, prefs, produto: null });
-    return { km: sug.km != null ? String(sug.km) : '', meses: sug.meses != null ? String(sug.meses) : '' };
+  function salvarAgora() {
+    const a = atual.current;
+    if (!pronto.current || encerrada.current || a.doWhatsApp || a.feito || !minha()) return;
+    const s = sessaoAtual();
+    void (s ? salvarSessao(s) : esquecerSessao(sessaoId.current));
   }
 
-  function montar() {
-    setErro(null);
-    if (!clipes.length && !fotos.length && !anotacao.trim()) return setErro('Grave um áudio, tire uma foto ou escreva o que foi feito.');
-    if (!plano.podeDitar) {
-      if (plano.liberado) return setErro(`Este aparelho chegou a ${PRO.ordensPro} ordens por voz neste mês. Fale com a equipe do Revisaí para liberar mais.`);
-      return abrirPro('ordens');
+  async function carregar() {
+    const vez = ++geracao.current;
+    const s = await lerSessao<Revisao>();
+    if (vez !== geracao.current) return;
+    if (s && (s.clipes.length || s.fotos.length || s.relato.trim() || s.ia)) {
+      const m = await abrirMidias(s);
+      if (vez !== geracao.current) {
+        for (const c of m.clipes) URL.revokeObjectURL(c.url);
+        for (const f of m.fotos) URL.revokeObjectURL(f.url);
+        return;
+      }
+      const carros = useOficina.getState().veiculos;
+      setClipes(m.clipes);
+      setFotos(m.fotos);
+      setRelato(s.relato);
+      setPreenchido(s.preenchido ?? null);
+      setVeiculoId(s.veiculoId && carros[s.veiculoId] ? s.veiculoId : null);
+      setIa(s.ia);
+      setRev(s.ia && s.rev ? { ...s.rev, veiculoId: s.rev.veiculoId && carros[s.rev.veiculoId] ? s.rev.veiculoId : null } : null);
+      setMexeu(!!s.mexeu);
+      sessaoId.current = s.id;
+      contada.current = s.contada;
+      criadoEm.current = s.criadoEm;
+      setRetomada(true);
     }
+    pronto.current = true;
+    setCarregado(true);
+  }
+
+  useEffect(() => {
+    minhaTela.current = ++telasAbertas;
+    montado.current = true;
+    void carregar();
+    return () => {
+      // saindo da tela: guarda o que falta e solta os arquivos da memória. Se a IA ainda estiver
+      // trabalhando, o resultado é guardado quando chegar e a ordem fica pronta para conferir.
+      montado.current = false;
+      salvarAgora();
+      geracao.current++;
+      for (const c of atual.current.clipes) URL.revokeObjectURL(c.url);
+      for (const f of atual.current.fotos) URL.revokeObjectURL(f.url);
+    };
+    // só ao abrir e ao sair da tela
+  }, []);
+
+  useEffect(() => {
+    if (!carregado) return;
+    const t = setTimeout(salvarAgora, 500);
+    return () => clearTimeout(t);
+    // guarda meio segundo depois da última mudança
+  }, [carregado, clipes, fotos, relato, preenchido, veiculoId, ia, rev, mexeu]);
+
+  function limparEstado() {
+    geracao.current++;
+    for (const c of atual.current.clipes) URL.revokeObjectURL(c.url);
+    for (const f of atual.current.fotos) URL.revokeObjectURL(f.url);
+    atual.current = { ...atual.current, clipes: [], fotos: [], relato: '', rev: null, ia: null, preenchido: null, doWhatsApp: null, feito: null, mexeu: false };
+    setClipes([]);
+    setFotos([]);
+    setRelato('');
+    setPreenchido(null);
+    setTrabalho(null);
+    setEscrevendo(false);
+    setIa(null);
+    setRev(null);
+    setMexeu(false);
+    setErrosRev({});
+    setSalvando(false);
+    setFeito(null);
+    setDoWhatsApp(null);
+    setRetomada(false);
+    setVeiculoId(null);
+    sessaoId.current = novoId();
+    contada.current = false;
+    criadoEm.current = new Date().toISOString();
+    encerrada.current = false;
+  }
+
+  /** Volta para o microfone e confere se ficou alguma ordem guardada no aparelho. */
+  function recomecar() {
+    limparEstado();
+    pronto.current = false;
+    setCarregado(false);
+    void carregar();
+    window.scrollTo({ top: 0 });
+  }
+
+  async function descartar() {
+    if (encerrada.current) return;
+    if (!window.confirm('Descartar esta ordem? O áudio, o texto e as fotos dela são apagados.')) return;
+    const ids = [...atual.current.clipes.map((c) => c.id), ...atual.current.fotos.map((f) => f.id)];
+    encerrada.current = true;
+    await encerrarSessao(sessaoId.current, ids);
+    limparEstado();
+    setVeiculoId(carroDoLink);
+    window.scrollTo({ top: 0 });
+  }
+
+  // ------------------------------------------------------------ o plano
+
+  function podeComecar(): boolean {
+    if (contada.current || plano.podeDitar) return true;
+    if (plano.liberado) toast({ texto: `Este aparelho chegou a ${PRO.ordensPro} ordens por voz neste mês. Fale com a equipe do Revisaí para liberar mais.`, tom: 'erro' });
+    else abrirPro('ordens');
+    return false;
+  }
+
+  // ------------------------------------------------------------ áudio → texto → ordem
+
+  function tirarClipe(c: Clipe) {
+    URL.revokeObjectURL(c.url);
+    void apagarMidia(c.id);
+    atual.current.clipes = atual.current.clipes.filter((x) => x.id !== c.id);
+    setClipes((l) => l.filter((x) => x.id !== c.id));
+  }
+
+  /** Passa um áudio para texto e junta ao que já foi falado. Volta null se não deu. */
+  async function ouvir(clipe: Clipe): Promise<string | null> {
+    setTrabalho({ tipo: 'ouvindo', clipe });
+    const dados = new FormData();
+    dados.append('audio', arquivoDoClipe(clipe, atual.current.clipes.findIndex((c) => c.id === clipe.id) + 1));
+    let r: Awaited<ReturnType<typeof transcreverAudio>>;
+    try {
+      r = await transcreverAudio(dados);
+    } catch {
+      r = { ok: false, erro: SEM_INTERNET };
+    }
+    // outra tela da ordem abriu enquanto isso: ela continua de onde a ordem guardada parou
+    if (!minha()) return null;
+    if (!r.ok) {
+      // o áudio fica guardado (sem fala ou não, quem decide jogar fora é o mecânico)
+      setTrabalho({ tipo: 'falhou', acao: 'ouvir', mensagem: r.erro, clipe });
+      return null;
+    }
+    const texto = juntarRelato(atual.current.relato, r.texto);
+    atual.current.relato = texto;
+    atual.current.clipes = atual.current.clipes.map((c) => (c.id === clipe.id ? { ...c, ouvido: true } : c));
+    setRelato(texto);
+    setClipes((l) => l.map((c) => (c.id === clipe.id ? { ...c, ouvido: true } : c)));
+    salvarAgora();
+    return texto;
+  }
+
+  async function preencher(texto: string, clipe: Clipe | null): Promise<void> {
+    setTrabalho({ tipo: 'preenchendo', clipe });
+    const e = useOficina.getState();
+    const { rev: antes, veiculoId: escolhido, fotos: todas } = atual.current;
+    // a IA olha até 6 fotos (as do WhatsApp podem ser mais; todas ficam na ordem)
+    const fotosDaIA = todas.slice(0, MAX_FOTOS);
+    const id = antes?.veiculoId ?? escolhido;
+    const carro = id ? e.veiculos[id] ?? null : null;
     const dados = new FormData();
     dados.set(
       'contexto',
       JSON.stringify({
-        oficina: oficina.nome,
+        oficina: e.oficina.nome,
         hoje,
-        carro: veiculo ? `${formatarPlaca(veiculo.placa)}, ${[veiculo.marca, veiculo.modelo, veiculo.motor, veiculo.ano].filter(Boolean).join(' ')}` : null,
-        cliente: cliente?.nome ?? null,
-        kmAnterior: veiculo ? ultimoKm(veiculo.id) : null,
-        anotacao: anotacao.trim() || null
+        carro: carro ? `${formatarPlaca(carro.placa)}, ${[carro.marca, carro.modelo, carro.motor, carro.ano].filter(Boolean).join(' ')}` : null,
+        cliente: carro ? e.clientes[carro.clienteId]?.nome ?? null : null,
+        kmAnterior: carro ? ultimoKm(carro.id) : null,
+        transcricao: texto.trim().slice(0, MAX_RELATO) || null
       })
     );
-    clipes.forEach((c, i) => dados.append('audio', new File([c.blob], `audio-${i + 1}.${extensao(c.blob.type)}`, { type: c.blob.type || 'audio/webm' })));
-    fotos.forEach((f) => dados.append('foto', f.arquivo));
-    iniciar(async () => {
-      let r: Awaited<ReturnType<typeof montarOrdemComIA>>;
-      try {
-        r = await montarOrdemComIA(dados);
-      } catch {
-        setErro('Não deu para falar com o servidor. Confira a internet e tente de novo.');
-        return;
-      }
-      if (!r.ok) return setErro(r.erro);
+    fotosDaIA.forEach((f) => dados.append('foto', f.arquivo));
+    let r: Awaited<ReturnType<typeof montarOrdemComIA>>;
+    try {
+      r = await montarOrdemComIA(dados);
+    } catch {
+      r = { ok: false, erro: SEM_INTERNET };
+    }
+    if (!minha()) return;
+    if (!r.ok) {
+      setTrabalho({ tipo: 'falhou', acao: 'preencher', mensagem: r.erro, clipe });
+      return;
+    }
+    if (!contada.current) {
+      contada.current = true;
       contarMontagem(hoje);
-      abrirRevisao(r.ordem, r.modelo);
-    });
+    }
+    const feitoCom = { relato: texto, fotos: idsDasFotos(todas) };
+    atual.current.preenchido = feitoCom;
+    setPreenchido(feitoCom);
+    abrirRevisao(r.ordem, r.modelo, id, todas, antes);
+    setTrabalho(null);
+    setRetomada(false);
+    salvarAgora();
   }
 
-  function abrirDoWhatsApp(r: RascunhoParaApp, fotosDele: FotoLocal[], clipesDele: Clipe[]) {
-    setFotos(fotosDele);
-    setClipes(clipesDele);
-    setDoWhatsApp(r.id);
-    abrirRevisao(r.ordem, r.modelo ?? 'IA', fotosDele);
-  }
-
-  function abrirRevisao(o: OrdemIA, modelo: string, fotosDaOrdem: FotoLocal[] = fotos) {
-    // o carro: o escolhido, ou o da placa que a IA ouviu
-    const daPlaca = !veiculo && o.placa ? Object.values(veiculos).find((v) => v.placa === o.placa) : undefined;
-    const alvo = veiculo ?? daPlaca ?? null;
-    setIa({ ordem: o, modelo });
-    setRev({
+  /** A ficha com o que a IA preencheu. Num novo preenchimento, o que a IA não trouxe fica como estava. */
+  function abrirRevisao(o: OrdemIA, modelo: string, alvoId: string | null, fotosDaOrdem: FotoLocal[], antes: Revisao | null) {
+    const e = useOficina.getState();
+    const preferido = alvoId ? e.veiculos[alvoId] ?? null : null;
+    const daPlaca = !preferido && o.placa ? Object.values(e.veiculos).find((v) => v.placa === o.placa) ?? null : null;
+    const alvo = preferido ?? daPlaca;
+    const cli = antes?.novoCliente ?? CLIENTE_VAZIO;
+    const car = antes?.novoCarro ?? VEICULO_VAZIO;
+    const nova: Revisao = {
       veiculoId: alvo?.id ?? null,
-      novoCliente: { ...CLIENTE_VAZIO, nome: o.cliente ?? '' },
+      novoCliente: { ...cli, nome: o.cliente ?? cli.nome },
       novoCarro: {
-        ...VEICULO_VAZIO,
-        placa: o.placa ?? '',
-        marca: o.veiculo?.marca ?? '',
-        modelo: o.veiculo?.modelo ?? '',
-        motor: o.veiculo?.motor ?? '',
-        ano: o.veiculo?.ano ? String(o.veiculo.ano) : ''
+        ...car,
+        placa: o.placa ?? car.placa,
+        marca: o.veiculo?.marca ?? car.marca,
+        modelo: o.veiculo?.modelo ?? car.modelo,
+        motor: o.veiculo?.motor ?? car.motor,
+        ano: o.veiculo?.ano ? String(o.veiculo.ano) : car.ano
       },
-      km: o.km ? String(o.km) : '',
-      itens: o.servicos.map((s) => ({ servico: s.servico, produto: s.produto ?? '', observacao: s.observacao ?? '', ...prazo(s.servico, alvo) })),
+      km: o.km ? String(o.km) : antes?.km ?? '',
+      itens: o.servicos.map((s) => ({ servico: s.servico, produto: s.produto ?? '', observacao: s.observacao ?? '', ...prazoSugerido(s.servico, alvo, e.preferencias) })),
       diagnostico: o.diagnostico,
       recomendacoes: o.recomendacoes,
-      legendas: fotosDaOrdem.map((_, i) => o.fotos.find((f) => f.indice === i + 1)?.legenda ?? ''),
+      legendas: Object.fromEntries(
+        fotosDaOrdem.map((f, i) => [f.id, (i < MAX_FOTOS ? o.fotos.find((x) => x.indice === i + 1)?.legenda : undefined) || antes?.legendas[f.id] || ''])
+      ),
       mensagem: o.mensagemCliente
-    });
-    window.scrollTo({ top: 0 });
+    };
+    atual.current.ia = { ordem: o, modelo };
+    atual.current.rev = nova;
+    atual.current.mexeu = false;
+    setIa({ ordem: o, modelo });
+    setRev(nova);
+    setMexeu(false);
+    setErrosRev({});
+    if (montado.current) window.scrollTo({ top: 0 });
   }
 
+  /** Preencher de novo troca o que foi mexido à mão: pergunta antes (e só com a tela aberta). */
+  function podeRefazer(pergunta = REFAZER): boolean {
+    if (!atual.current.rev || !atual.current.mexeu) return true;
+    return montado.current && window.confirm(pergunta);
+  }
+
+  /**
+   * O caminho inteiro: os áudios que ainda não viraram texto viram (na ordem) e o texto todo, com
+   * as fotos, preenche a ordem. Para no primeiro erro, que aparece com o que dá para fazer.
+   */
+  async function processar(clipeDaVez: Clipe | null, pergunta = REFAZER) {
+    for (const c of atual.current.clipes.filter((x) => !x.ouvido)) {
+      if ((await ouvir(c)) == null) return;
+    }
+    if (!minha()) return;
+    if (!atual.current.relato.trim() && !atual.current.fotos.length) {
+      setTrabalho(null);
+      return;
+    }
+    if (!podeRefazer(pergunta)) {
+      setTrabalho(null);
+      if (montado.current) toast({ texto: 'O que você falou entrou no texto. Toque em Preencher de novo quando quiser.' });
+      return;
+    }
+    await preencher(atual.current.relato, clipeDaVez);
+  }
+
+  async function aoGravar(c: Clipe) {
+    setGravando(false);
+    setEscrevendo(false);
+    setRetomada(false);
+    atual.current.clipes = [...atual.current.clipes, c];
+    setClipes((l) => [...l, c]);
+    // o áudio fica guardado antes de qualquer coisa
+    await guardarMidia(c.id, c.blob);
+    salvarAgora();
+    await processar(c, 'Preencher a ordem de novo com o que você falou? O que você mudou à mão na ficha pode ser trocado.');
+  }
+
+  function tentarDeNovo() {
+    const t = trabalho;
+    if (t?.tipo !== 'falhou') return;
+    void processar(t.clipe);
+  }
+
+  /** Continua a ordem guardada de onde parou. */
+  function continuar() {
+    setRetomada(false);
+    const pendentes = atual.current.clipes.some((c) => !c.ouvido);
+    if (!pendentes && atual.current.ia && atual.current.rev) return;
+    // só com fotos: as fotos ficam e falta falar o que foi feito
+    if (!pendentes && !atual.current.relato.trim()) return;
+    if (!podeComecar()) return;
+    void processar(null);
+  }
+
+  function preencherDoTexto() {
+    if (!atual.current.relato.trim()) {
+      toast({ texto: 'Escreva o que foi feito no carro.', tom: 'erro' });
+      return;
+    }
+    if (!podeComecar()) return;
+    setEscrevendo(false);
+    void processar(null);
+  }
+
+  // ------------------------------------------------------------ fotos
+
+  function incluirFotos(novas: FotoLocal[]) {
+    atual.current.fotos = [...atual.current.fotos, ...novas];
+    setFotos((l) => [...l, ...novas]);
+    if (atual.current.rev) {
+      const r = atual.current.rev;
+      setRev({ ...r, legendas: { ...r.legendas, ...Object.fromEntries(novas.map((f) => [f.id, ''])) } });
+    }
+  }
+
+  function tirarFoto(f: FotoLocal) {
+    URL.revokeObjectURL(f.url);
+    if (!atual.current.doWhatsApp) void apagarMidia(f.id);
+    atual.current.fotos = atual.current.fotos.filter((x) => x.id !== f.id);
+    setFotos((l) => l.filter((x) => x.id !== f.id));
+    if (atual.current.rev) {
+      const { [f.id]: _fora, ...legendas } = atual.current.rev.legendas;
+      setRev({ ...atual.current.rev, legendas });
+    }
+  }
+
+  // ------------------------------------------------------------ WhatsApp
+
+  function abrirDoWhatsApp(r: RascunhoParaApp, fotosDele: FotoLocal[], clipesDele: Clipe[]) {
+    // a ordem por voz em andamento deste aparelho continua guardada e volta depois
+    geracao.current++;
+    for (const c of atual.current.clipes) URL.revokeObjectURL(c.url);
+    for (const f of atual.current.fotos) URL.revokeObjectURL(f.url);
+    const texto = r.ordem.transcricao ?? '';
+    atual.current = { ...atual.current, clipes: clipesDele, fotos: fotosDele, relato: texto, doWhatsApp: r.id, rev: null, ia: null };
+    setDoWhatsApp(r.id);
+    setRetomada(false);
+    setTrabalho(null);
+    setClipes(clipesDele);
+    setFotos(fotosDele);
+    setRelato(texto);
+    setPreenchido({ relato: texto, fotos: idsDasFotos(fotosDele) });
+    setVeiculoId(null);
+    contada.current = true;
+    abrirRevisao(r.ordem, r.modelo ?? 'IA', null, fotosDele, null);
+  }
+
+  // ------------------------------------------------------------ confirmar
+
   async function confirmar() {
-    if (!rev || !ia) return;
+    if (!rev || !ia || encerrada.current) return;
     const e: Record<string, string> = {};
     const km = lerNumero(rev.km);
     if (!rev.veiculoId) {
@@ -240,6 +500,9 @@ export function OrdemPorVoz() {
       return;
     }
 
+    // daqui em diante a ordem não volta mais como em andamento, nem com dois toques
+    encerrada.current = true;
+    setSalvando(true);
     let alvo = rev.veiculoId;
     if (!alvo) {
       const clienteId = salvarCliente(clienteDoRascunho(rev.novoCliente));
@@ -263,7 +526,7 @@ export function OrdemPorVoz() {
     }
     const midias: MidiaDaOrdem[] = [];
     for (const c of clipes) if (await guardarMidia(c.id, c.blob)) midias.push({ id: c.id, tipo: 'audio', mime: c.blob.type });
-    for (const [i, f] of fotos.entries()) if (await guardarMidia(f.id, f.arquivo)) midias.push({ id: f.id, tipo: 'foto', mime: f.arquivo.type, legenda: rev.legendas[i] || undefined });
+    for (const f of fotos) if (await guardarMidia(f.id, f.arquivo)) midias.push({ id: f.id, tipo: 'foto', mime: f.arquivo.type, legenda: rev.legendas[f.id] || undefined });
     salvarOrdem({
       origem: doWhatsApp ? 'whatsapp' : 'app',
       veiculoId: alvo,
@@ -274,662 +537,368 @@ export function OrdemPorVoz() {
         servicos: rev.itens.map((i) => ({ servico: i.servico, produto: i.produto || null, observacao: i.observacao || null })),
         diagnostico: rev.diagnostico,
         recomendacoes: rev.recomendacoes.filter((r) => r.texto.trim()),
-        fotos: rev.legendas.map((legenda, i) => ({ indice: i + 1, legenda })),
-        mensagemCliente: rev.mensagem
+        fotos: fotos.map((f, i) => ({ indice: i + 1, legenda: rev.legendas[f.id] ?? '' })),
+        mensagemCliente: rev.mensagem,
+        transcricao: relato.trim()
       },
       midias,
       modelo: ia.modelo
     });
-    if (doWhatsApp && aparelhoId) void encerrarRascunhoDoWhatsApp(aparelhoId, doWhatsApp, 'confirmada').catch(() => {});
+    if (doWhatsApp) {
+      if (aparelhoId) void encerrarRascunhoDoWhatsApp(aparelhoId, doWhatsApp, 'confirmada').catch(() => {});
+    } else await encerrarSessao(sessaoId.current);
+    setSalvando(false);
     setFeito({ veiculoId: alvo, mensagem: rev.mensagem, atendimentoId });
     window.scrollTo({ top: 0 });
   }
 
-  if (feito) return <Pronto {...feito} fotos={fotos} aoNova={() => router.replace('/oficina/ordem')} />;
+  // ------------------------------------------------------------ telas
 
-  if (rev && ia) {
-    const carroRev = rev.veiculoId ? veiculos[rev.veiculoId] : null;
-    const kmNum = lerNumero(rev.km);
-    const rodagem = carroRev ? estimarRodagem([...pontosDoVeiculo(carroRev.id, Object.values(atendimentos), Object.values(leituras)), ...(kmNum ? [{ data: hoje, km: kmNum }] : [])], carroRev, prefs.kmMesPadrao, hoje) : { kmDia: prefs.kmMesPadrao / 30 };
+  if (feito)
     return (
-      <div className="flex flex-col gap-8">
-        <header>
-          <p className="flex items-center gap-2 text-[14px] font-semibold text-caneta">
-            <Sparkles size={16} aria-hidden="true" /> Rascunho montado pela IA
-          </p>
-          <h1 className="largo mt-1 text-[28px] sm:text-[32px]">Confira a ordem de serviço</h1>
-          <p className="mt-1 text-tinta-2">Corrija o que precisar. Nada é registrado antes de você confirmar.</p>
-        </header>
+      <Pronto
+        {...feito}
+        fotos={fotos}
+        audios={clipes.length}
+        aoNova={() => {
+          router.replace('/oficina/ordem');
+          recomecar();
+        }}
+      />
+    );
 
-        {ia.ordem.duvidas.length ? (
-          <div className="rounded-xl bg-oleo-claro px-4 py-3 text-[14.5px] text-oleo-tinta">
-            <p className="flex items-center gap-2 font-semibold">
-              <TriangleAlert size={16} aria-hidden="true" /> Confira
-            </p>
-            <ul className="mt-1 list-disc pl-5">
-              {ia.ordem.duvidas.map((d) => (
-                <li key={d}>{d}</li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
+  const ocupado = trabalho != null && trabalho.tipo !== 'falhou';
+  const pendentes = clipes.filter((c) => !c.ouvido).length;
+  const mudou = pendentes > 0 || !preenchido || relato.trim() !== preenchido.relato.trim() || idsDasFotos(fotos) !== preenchido.fotos;
 
-        <section className="flex flex-col gap-3">
-          <h2 className="text-[19px]">Carro</h2>
-          {carroRev ? (
-            <div className="flex flex-wrap items-center gap-3 rounded-xl bg-papel-2 px-4 py-3">
-              <Placa placa={carroRev.placa} />
-              <div className="min-w-0 flex-1">
-                <p className="font-bold">{clientes[carroRev.clienteId]?.nome}</p>
-                <p className="truncate text-[14px] text-tinta-2">{[carroRev.marca, carroRev.modelo, carroRev.motor, carroRev.ano].filter(Boolean).join(' ')}</p>
+  if (rev && ia && !retomada && !ocupado) {
+    const falhou = trabalho?.tipo === 'falhou' ? trabalho : null;
+    return (
+      <TelaDeRevisao
+        ordem={ia.ordem}
+        rev={rev}
+        aoEditar={(r) => {
+          setRev(r);
+          setMexeu(true);
+        }}
+        erros={errosRev}
+        fotos={fotos}
+        aoIncluirFotos={incluirFotos}
+        aoTirarFoto={tirarFoto}
+        relato={
+          <CartaoDoRelato
+            clipes={clipes}
+            pendentes={pendentes}
+            relato={relato}
+            aoMudar={setRelato}
+            mudou={mudou}
+            aoPreencher={() => void processar(null)}
+            aoFalarMais={(c) => void aoGravar(c)}
+          />
+        }
+        aviso={
+          falhou ? (
+            <div className="rounded-xl bg-atraso-claro px-4 py-3 text-[14.5px] text-atraso" role="alert">
+              <p className="font-semibold">{falhou.mensagem}</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Botao tamanho="pequeno" variante="primario" onClick={tentarDeNovo}>
+                  <RotateCcw size={15} /> Tentar de novo
+                </Botao>
+                {falhou.acao === 'ouvir' && falhou.clipe ? (
+                  <Botao
+                    tamanho="pequeno"
+                    onClick={() => {
+                      if (falhou.clipe) tirarClipe(falhou.clipe);
+                      setTrabalho(null);
+                    }}
+                  >
+                    <Trash2 size={15} /> Jogar fora este áudio
+                  </Botao>
+                ) : null}
+                <Botao tamanho="pequeno" variante="fantasma" onClick={() => setTrabalho(null)}>
+                  Fechar
+                </Botao>
               </div>
-              <Botao tamanho="pequeno" onClick={() => setRev({ ...rev, veiculoId: null })}>
-                Trocar
-              </Botao>
             </div>
-          ) : (
-            <div className="flex flex-col gap-4">
-              <BuscaCarro aoEscolher={(id) => setRev({ ...rev, veiculoId: id })} />
-              <p className="text-[14px] text-tinta-3">Ou cadastre o carro {ia.ordem.placa ? `da placa ${formatarPlaca(ia.ordem.placa)}` : 'novo'}:</p>
-              <CamposCliente valor={rev.novoCliente} aoMudar={(c) => setRev({ ...rev, novoCliente: c })} erros={prefixo(errosRev, 'cliente.')} />
-              <CamposVeiculo valor={rev.novoCarro} aoMudar={(c) => setRev({ ...rev, novoCarro: c })} erros={prefixo(errosRev, 'carro.')} />
-            </div>
-          )}
-          <Campo rotulo="Quilometragem do painel" htmlFor="o-km" erro={errosRev.km} className="sm:max-w-xs">
-            <input id="o-km" className={`${classeEntrada} largo num font-bold`} value={rev.km} onChange={(e) => setRev({ ...rev, km: e.target.value })} inputMode="numeric" placeholder="45.000" />
-          </Campo>
-        </section>
-
-        <section className="flex flex-col gap-3">
-          <h2 className="text-[19px]">Serviços feitos</h2>
-          {rev.itens.length ? (
-            <ul className="flex flex-col gap-3">
-              {rev.itens.map((it, i) => {
-                const k = lerNumero(it.km);
-                const m = lerNumero(it.meses);
-                const venc = kmNum && (k || m) ? calcularVencimento({ data: hoje, km: kmNum }, { km: k || null, meses: m || null }, [], rodagem.kmDia, hoje) : null;
-                const mudar = (mud: Partial<ItemRevisao>) => setRev({ ...rev, itens: rev.itens.map((x, j) => (j === i ? { ...x, ...mud } : x)) });
-                return (
-                  <li key={it.servico} className="rounded-xl border border-linha bg-papel">
-                    <div className="flex items-center gap-3 border-b border-linha px-4 py-3">
-                      <IconeServico servico={it.servico} className="text-tinta-2" />
-                      <p className="flex-1 font-bold">{infoServico(it.servico).nome}</p>
-                      {venc?.dataPrevista ? (
-                        <p className="num text-right text-[13px] text-tinta-2">
-                          Próxima <strong className="text-tinta">{formatarDataCurta(venc.dataPrevista)}</strong>
-                          {venc.kmLimite ? <> ou <strong className="text-tinta">{formatarKm(venc.kmLimite)}</strong></> : null}
-                        </p>
-                      ) : null}
-                      <button type="button" className="grid h-9 w-9 place-items-center rounded-full text-tinta-3 hover:bg-papel-2 hover:text-atraso" onClick={() => setRev({ ...rev, itens: rev.itens.filter((_, j) => j !== i) })} aria-label={`Tirar ${infoServico(it.servico).nome}`}>
-                        <X size={18} />
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3 px-4 py-3 sm:grid-cols-4">
-                      <Campo rotulo="Produto" htmlFor={`o-p-${i}`} className="col-span-2">
-                        <input id={`o-p-${i}`} className={classeEntrada} value={it.produto} onChange={(e) => mudar({ produto: e.target.value })} placeholder="Marca e especificação" />
-                      </Campo>
-                      <Campo rotulo="Próxima em (km)" htmlFor={`o-k-${i}`}>
-                        <input id={`o-k-${i}`} className={classeEntrada} value={it.km} onChange={(e) => mudar({ km: e.target.value })} inputMode="numeric" placeholder="sem km" />
-                      </Campo>
-                      <Campo rotulo="ou (meses)" htmlFor={`o-m-${i}`}>
-                        <input id={`o-m-${i}`} className={classeEntrada} value={it.meses} onChange={(e) => mudar({ meses: e.target.value })} inputMode="numeric" placeholder="sem prazo" />
-                      </Campo>
-                      {it.observacao ? <p className="col-span-2 text-[13.5px] text-tinta-2 sm:col-span-4">{it.observacao}</p> : null}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : (
-            <p className="text-[14.5px] text-tinta-2">A IA não ouviu nenhum serviço feito. Se foi só uma avaliação, a ordem fica guardada no carro com o diagnóstico.</p>
-          )}
-          <label className="flex items-center gap-2 self-start text-[14.5px] font-semibold text-caneta">
-            <Plus size={16} aria-hidden="true" />
-            <select
-              className="bg-transparent outline-none"
-              value=""
-              onChange={(e) => {
-                const s = e.target.value as ServicoId;
-                if (s && !rev.itens.some((x) => x.servico === s)) setRev({ ...rev, itens: [...rev.itens, { servico: s, produto: '', observacao: '', ...prazo(s, carroRev) }] });
-              }}
-              aria-label="Incluir serviço"
-            >
-              <option value="">Incluir serviço</option>
-              {SERVICOS.filter((s) => !rev.itens.some((x) => x.servico === s.id)).map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.nome}
-                </option>
-              ))}
-            </select>
-          </label>
-        </section>
-
-        <section className="flex flex-col gap-3">
-          <h2 className="text-[19px]">Diagnóstico e recomendações</h2>
-          <Campo rotulo="Diagnóstico" htmlFor="o-diag">
-            <textarea id="o-diag" rows={4} className={classeArea} value={rev.diagnostico} onChange={(e) => setRev({ ...rev, diagnostico: e.target.value })} />
-          </Campo>
-          {rev.recomendacoes.map((r, i) => (
-            <div key={i} className="flex flex-col gap-2 rounded-xl border border-linha bg-papel p-3 sm:flex-row sm:items-start">
-              <textarea
-                rows={2}
-                className={`${classeArea} flex-1`}
-                value={r.texto}
-                onChange={(e) => setRev({ ...rev, recomendacoes: rev.recomendacoes.map((x, j) => (j === i ? { ...x, texto: e.target.value } : x)) })}
-                aria-label={`Recomendação ${i + 1}`}
-              />
-              <select
-                className={`${classeEntrada} sm:w-48`}
-                value={r.urgencia}
-                onChange={(e) => setRev({ ...rev, recomendacoes: rev.recomendacoes.map((x, j) => (j === i ? { ...x, urgencia: e.target.value as Urgencia } : x)) })}
-                aria-label={`Urgência da recomendação ${i + 1}`}
-              >
-                {URGENCIAS.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.nome}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ))}
-          <button type="button" className="self-start text-[14.5px] font-semibold text-caneta hover:underline" onClick={() => setRev({ ...rev, recomendacoes: [...rev.recomendacoes, { texto: '', urgencia: 'proxima_revisao' }] })}>
-            Incluir recomendação
-          </button>
-        </section>
-
-        {fotos.length ? (
-          <section className="flex flex-col gap-3">
-            <h2 className="text-[19px]">Fotos</h2>
-            <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {fotos.map((f, i) => (
-                <li key={f.id} className="flex flex-col gap-2">
-                  <img src={f.url} alt={rev.legendas[i] || `Foto ${i + 1}`} className="aspect-[4/3] w-full rounded-xl object-cover ring-1 ring-linha" />
-                  <input
-                    className={`${classeEntrada} h-10 text-[14px]`}
-                    value={rev.legendas[i] ?? ''}
-                    onChange={(e) => setRev({ ...rev, legendas: rev.legendas.map((x, j) => (j === i ? e.target.value : x)) })}
-                    aria-label={`Legenda da foto ${i + 1}`}
-                  />
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
-
-        <section className="flex flex-col gap-3">
-          <h2 className="text-[19px]">Mensagem para o cliente</h2>
-          <textarea rows={8} className={classeArea} value={rev.mensagem} onChange={(e) => setRev({ ...rev, mensagem: e.target.value })} aria-label="Mensagem para o cliente" />
-          <p className="text-[13px] text-tinta-3">Escrita pela IA a partir do que você falou. Depois de confirmar, é só mandar.</p>
-        </section>
-
-        {ia.ordem.transcricao ? (
-          <details className="rounded-xl bg-papel-2 px-4 py-3 text-[14px] text-tinta-2">
-            <summary className="cursor-pointer font-semibold text-tinta">O que a IA entendeu dos áudios</summary>
-            <p className="mt-2 whitespace-pre-line">{ia.ordem.transcricao}</p>
-          </details>
-        ) : null}
-
-        <div className="sticky bottom-[calc(72px+env(safe-area-inset-bottom))] z-20 -mx-4 border-t border-linha bg-fundo/95 px-4 py-3 backdrop-blur sm:mx-0 sm:rounded-xl sm:border sm:px-4 lg:bottom-4">
-          <div className="flex items-center justify-between gap-3">
-            <Botao variante="fantasma" onClick={() => setRev(null)}>
-              Voltar
-            </Botao>
-            <Botao variante="primario" tamanho="grande" onClick={() => void confirmar()}>
-              <Check size={18} /> Confirmar ordem
-            </Botao>
-          </div>
-        </div>
-      </div>
+          ) : null
+        }
+        saida={doWhatsApp ? { rotulo: 'Voltar', acao: recomecar } : { rotulo: 'Descartar', acao: () => void descartar() }}
+        salvando={salvando}
+        aoConfirmar={() => void confirmar()}
+      />
     );
   }
 
+  const temConteudo = clipes.length > 0 || relato.trim().length > 0 || ia != null;
+
   return (
-    <div className="flex flex-col gap-8">
-      <header>
-        <h1 className="largo text-[28px] sm:text-[32px]">Ordem por voz</h1>
-        <p className="mt-1 max-w-[62ch] text-tinta-2">
-          Fale o que fez no carro, tire fotos do que encontrou e a IA monta a ordem de serviço e a mensagem para o cliente. Você confere antes de registrar.
-        </p>
+    <div className="mx-auto flex min-h-[calc(100dvh-172px-env(safe-area-inset-bottom))] w-full max-w-xl flex-col items-center gap-6 lg:min-h-[calc(100dvh-104px)]">
+      <header className="text-center">
+        <h1 className="largo text-[26px] sm:text-[30px]">Ordem por voz</h1>
+        <p className="mx-auto mt-1 max-w-[46ch] text-tinta-2">Fale o que fez no carro. O áudio fica guardado, vira texto e a IA preenche a ordem de serviço para você conferir.</p>
       </header>
 
-      {aparelhoId ? <CaixaWhatsApp aparelhoId={aparelhoId} aoAbrir={abrirDoWhatsApp} /> : null}
+      {trabalho ? null : !escrevendo && !gravando && carregado && (retomada || temConteudo) ? (
+        <EmAndamento
+          criadoEm={criadoEm.current}
+          hoje={hoje}
+          clipes={clipes}
+          fotos={fotos.length}
+          relato={relato}
+          preenchida={ia != null}
+          aoContinuar={continuar}
+          aoDescartar={() => void descartar()}
+        />
+      ) : null}
 
-      <section className="flex flex-col gap-3">
-        <h2 className="text-[19px]">Carro</h2>
-        {veiculo ? (
-          <div className="flex flex-wrap items-center gap-3 rounded-xl bg-papel-2 px-4 py-3">
-            <Placa placa={veiculo.placa} />
-            <div className="min-w-0 flex-1">
-              <p className="font-bold">{cliente?.nome}</p>
-              <p className="truncate text-[14px] text-tinta-2">{[veiculo.marca, veiculo.modelo, veiculo.motor, veiculo.ano].filter(Boolean).join(' ')}</p>
+      <div className="flex w-full flex-1 flex-col items-center justify-center gap-5">
+        {trabalho ? (
+          <TelaDoTrabalho
+            trabalho={trabalho}
+            relato={relato}
+            aoTentar={tentarDeNovo}
+            aoGravarDeNovo={() => {
+              if (trabalho.tipo === 'falhou' && trabalho.clipe) tirarClipe(trabalho.clipe);
+              setTrabalho(null);
+            }}
+            aoEscrever={() => {
+              setTrabalho(null);
+              setEscrevendo(true);
+            }}
+            linkManual={veiculoId ? `/oficina/registrar?carro=${veiculoId}` : '/oficina/registrar'}
+          />
+        ) : escrevendo ? (
+          <div className="flex w-full flex-col gap-3">
+            <label htmlFor="o-texto" className="text-[16px] font-bold">
+              Escreva o que foi feito no carro
+            </label>
+            <textarea
+              id="o-texto"
+              rows={8}
+              className={classeArea}
+              value={relato}
+              onChange={(e) => setRelato(e.target.value)}
+              placeholder="Ex.: Onix ABC1D23, 45.210 km. Troquei o óleo Lubrax 5W-30 e o filtro. Pastilha da frente com 2 mm, trocar já."
+              maxLength={MAX_RELATO}
+              autoFocus
+            />
+            <div className="flex flex-wrap-reverse items-center justify-between gap-2">
+              <Botao variante="fantasma" onClick={() => setEscrevendo(false)}>
+                <Mic size={17} /> Voltar ao microfone
+              </Botao>
+              <Botao variante="primario" tamanho="grande" onClick={preencherDoTexto} disabled={!relato.trim()}>
+                <Sparkles size={18} /> Preencher a ordem
+              </Botao>
             </div>
-            <Botao tamanho="pequeno" onClick={() => setVeiculoId(null)}>
-              Trocar
-            </Botao>
           </div>
         ) : (
           <>
-            <div className="relative">
-              <Search size={18} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-tinta-3" aria-hidden="true" />
-              <input className={`${classeEntrada} pl-10`} value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Placa, nome ou modelo" aria-label="Buscar carro" autoComplete="off" />
-            </div>
-            {resultados.length ? (
-              <ul className="divide-y divide-linha overflow-hidden rounded-xl border border-linha bg-papel">
-                {resultados.map((v) => (
-                  <li key={v.id}>
-                    <button type="button" onClick={() => setVeiculoId(v.id)} className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-papel-2">
-                      <Placa placa={v.placa} />
-                      <span className="min-w-0 flex-1">
-                        <span className="block font-semibold">{clientes[v.clienteId]?.nome}</span>
-                        <span className="block truncate text-[14px] text-tinta-2">{[v.marca, v.modelo, v.ano].filter(Boolean).join(' ')}</span>
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+            {veiculo ? (
+              <div className="flex max-w-full items-center gap-2.5 rounded-full bg-papel py-1.5 pr-1.5 pl-2.5 ring-1 ring-linha">
+                <Placa placa={veiculo.placa} />
+                <span className="min-w-0 truncate text-[14.5px] font-semibold">{[dono?.nome, veiculo.modelo].filter(Boolean).join(', ')}</span>
+                {gravando ? null : (
+                  <button type="button" onClick={() => setVeiculoId(null)} className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-tinta-3 hover:bg-papel-2 hover:text-tinta" aria-label="Tirar o carro escolhido">
+                    <X size={16} />
+                  </button>
+                )}
+              </div>
             ) : null}
-            <p className="text-[13.5px] text-tinta-3">Se não escolher, fale a placa no áudio que a IA procura.</p>
+            <MicrofoneGrande aoGravar={(c) => void aoGravar(c)} podeComecar={podeComecar} aoMudar={setGravando} desabilitado={!carregado} />
           </>
         )}
-      </section>
+      </div>
 
-      <section className="flex flex-col gap-3">
-        <h2 className="text-[19px]">Áudios</h2>
-        <Gravador clipes={clipes} aoMudar={setClipes} desabilitado={montando} />
-      </section>
-
-      <section className="flex flex-col gap-3">
-        <h2 className="text-[19px]">Fotos</h2>
-        <Fotos fotos={fotos} aoMudar={setFotos} desabilitado={montando} />
-      </section>
-
-      <Campo rotulo="Anotação" htmlFor="o-anot" dica="Opcional. Ex.: placa, quilometragem ou o que não deu para falar.">
-        <textarea id="o-anot" rows={2} className={classeArea} value={anotacao} onChange={(e) => setAnotacao(e.target.value)} maxLength={1500} />
-      </Campo>
-
-      {erro ? (
-        <p className="rounded-xl bg-atraso-claro px-4 py-3 text-[14px] text-atraso" role="alert">
-          {erro}
-        </p>
+      {!trabalho && !escrevendo && !gravando ? (
+        <div className="flex w-full flex-col items-center gap-3">
+          <Miniaturas fotos={fotos} aoTirar={tirarFoto} />
+          <div className="flex flex-wrap justify-center gap-1.5">
+            {veiculo ? null : (
+              <button type="button" onClick={() => setEscolhendo(true)} className={classeBotao('secundario', 'pequeno')}>
+                <Car size={16} aria-hidden="true" /> Escolher carro
+              </button>
+            )}
+            <BotaoDeFotos quantas={fotos.length} aoIncluir={incluirFotos} className={classeBotao('secundario', 'pequeno')}>
+              <Camera size={16} aria-hidden="true" /> {fotos.length ? 'Mais fotos' : 'Fotos'}
+            </BotaoDeFotos>
+            <button type="button" onClick={() => setEscrevendo(true)} className={classeBotao('secundario', 'pequeno')}>
+              <Keyboard size={16} aria-hidden="true" /> Escrever
+            </button>
+          </div>
+          {!plano.liberado ? (
+            <p className="num text-[13px] text-tinta-3">
+              {Math.min(plano.montagens, PRO.ordensGratis)} de {PRO.ordensGratis} ordens grátis usadas neste mês
+            </p>
+          ) : null}
+        </div>
       ) : null}
 
-      <div className="sticky bottom-[calc(72px+env(safe-area-inset-bottom))] z-20 -mx-4 border-t border-linha bg-fundo/95 px-4 py-3 backdrop-blur sm:mx-0 sm:rounded-xl sm:border sm:px-4 lg:bottom-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[14px] text-tinta-2">{montando ? 'A IA está ouvindo e olhando as fotos…' : `${clipes.length} ${clipes.length === 1 ? 'áudio' : 'áudios'}, ${fotos.length} ${fotos.length === 1 ? 'foto' : 'fotos'}`}</p>
-            {!plano.liberado && !montando ? (
-              <p className="num text-[12.5px] text-tinta-3">
-                {Math.min(plano.montagens, PRO.ordensGratis)} de {PRO.ordensGratis} ordens grátis usadas neste mês
-              </p>
-            ) : null}
-          </div>
-          <Botao variante="primario" tamanho="grande" onClick={montar} disabled={montando}>
-            <Sparkles size={18} /> {montando ? 'Montando…' : 'Montar a ordem'}
-          </Botao>
-        </div>
-      </div>
+      {aparelhoId && !trabalho && !escrevendo && !gravando ? <CaixaWhatsApp aparelhoId={aparelhoId} aoAbrir={abrirDoWhatsApp} /> : null}
+
+      <Folha aberta={escolhendo} aoFechar={() => setEscolhendo(false)} titulo="Escolher o carro" descricao="Se não escolher, é só falar a placa: a IA procura o carro no cadastro.">
+        <BuscaCarro
+          focar
+          aoEscolher={(id) => {
+            setVeiculoId(id);
+            setEscolhendo(false);
+          }}
+        />
+      </Folha>
     </div>
   );
 }
 
-/** Ordens que o mecânico mandou pelo WhatsApp e a IA já montou, esperando conferência. */
-function CaixaWhatsApp({ aparelhoId, aoAbrir }: { aparelhoId: string; aoAbrir: (r: RascunhoParaApp, fotos: FotoLocal[], clipes: Clipe[]) => void }) {
-  const toast = useToast();
-  const [lista, setLista] = useState<RascunhoParaApp[]>([]);
-  const [abrindo, setAbrindo] = useState<string | null>(null);
-
-  useEffect(() => {
-    let vivo = true;
-    rascunhosDoWhatsApp(aparelhoId)
-      .then((l) => vivo && setLista(l))
-      .catch(() => {});
-    return () => {
-      vivo = false;
-    };
-  }, [aparelhoId]);
-
-  async function abrir(r: RascunhoParaApp) {
-    setAbrindo(r.id);
-    const fotos: FotoLocal[] = [];
-    const clipes: Clipe[] = [];
-    try {
-      for (const [indice, m] of r.midias.entries()) {
-        const resp = await fetch('/api/agente/midia', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ aparelhoId, rascunhoId: r.id, indice }) });
-        if (!resp.ok) continue;
-        const blob = await resp.blob();
-        const id = novoId();
-        if (m.tipo === 'foto') {
-          const arquivo = new File([blob], `foto-${indice + 1}`, { type: m.mime });
-          fotos.push({ id, arquivo, url: URL.createObjectURL(arquivo) });
-        } else clipes.push({ id, blob, url: URL.createObjectURL(blob), segundos: 0 });
-      }
-      aoAbrir(r, fotos, clipes);
-    } catch {
-      toast({ texto: 'Não deu para baixar os áudios e fotos. Confira a internet.', tom: 'erro' });
-    } finally {
-      setAbrindo(null);
-    }
-  }
-
-  async function descartar(r: RascunhoParaApp) {
-    if (!window.confirm('Jogar fora esta ordem do WhatsApp?')) return;
-    const ok = await encerrarRascunhoDoWhatsApp(aparelhoId, r.id, 'descartada').catch(() => false);
-    if (ok) setLista((l) => l.filter((x) => x.id !== r.id));
-    else toast({ texto: 'Não deu para descartar agora.', tom: 'erro' });
-  }
-
-  if (!lista.length) return null;
+/** A ordem começada e ainda não confirmada (guardada no aparelho). */
+function EmAndamento({
+  criadoEm,
+  hoje,
+  clipes,
+  fotos,
+  relato,
+  preenchida,
+  aoContinuar,
+  aoDescartar
+}: {
+  criadoEm: string;
+  hoje: string;
+  clipes: Clipe[];
+  fotos: number;
+  relato: string;
+  preenchida: boolean;
+  aoContinuar: () => void;
+  aoDescartar: () => void;
+}) {
+  const dia = dataLocal(criadoEm);
+  const hora = new Date(criadoEm).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const quando = dia === hoje ? `hoje às ${hora}` : `em ${formatarData(dia)}`;
+  const partes: string[] = [];
+  if (clipes.length) partes.push(clipes.length === 1 ? `1 áudio de ${tempo(clipes[0].segundos)}` : `${clipes.length} áudios`);
+  if (fotos) partes.push(fotos === 1 ? '1 foto' : `${fotos} fotos`);
+  const pendentes = clipes.filter((c) => !c.ouvido).length;
+  const falta = pendentes
+    ? pendentes === 1
+      ? 'Um áudio ainda não virou texto.'
+      : `${pendentes} áudios ainda não viraram texto.`
+    : preenchida
+      ? 'A ordem já está preenchida, falta conferir.'
+      : relato.trim()
+        ? 'Falta a IA preencher a ordem.'
+        : 'Falta contar o que foi feito.';
   return (
-    <section className="flex flex-col gap-3">
-      <h2 className="text-[19px]">Chegaram pelo WhatsApp</h2>
-      <ul className="flex flex-col gap-2">
-        {lista.map((r) => {
-          const fotos = r.midias.filter((m) => m.tipo === 'foto').length;
-          const audios = r.midias.length - fotos;
-          return (
-            <li key={r.id} className="flex flex-wrap items-center gap-3 rounded-2xl bg-papel px-4 py-3 ring-1 ring-linha">
-              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-ok-claro text-ok">
-                <MessageCircle size={19} aria-hidden="true" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="font-semibold">
-                  {r.ordem.placa ? formatarPlaca(r.ordem.placa) : 'Carro a escolher'}
-                  {r.ordem.servicos.length ? `, ${r.ordem.servicos.map((s) => infoServico(s.servico).nome.toLowerCase()).join(', ')}` : ''}
-                </p>
-                <p className="text-[13.5px] text-tinta-3">
-                  {formatarData(r.criadoEm.slice(0, 10))}, {audios} {audios === 1 ? 'áudio' : 'áudios'} e {fotos} {fotos === 1 ? 'foto' : 'fotos'}
-                </p>
-              </div>
-              <Botao tamanho="pequeno" variante="escuro" onClick={() => void abrir(r)} disabled={abrindo != null}>
-                {abrindo === r.id ? 'Abrindo…' : 'Conferir'}
-              </Botao>
-              <Botao tamanho="pequeno" variante="fantasma" onClick={() => void descartar(r)} aria-label="Descartar">
-                <Trash2 size={16} />
-              </Botao>
-            </li>
-          );
-        })}
-      </ul>
+    <section className="w-full rounded-2xl bg-papel p-4 ring-1 ring-linha sm:p-5" aria-labelledby="em-andamento">
+      <h2 id="em-andamento" className="text-[17px]">
+        Ordem começada {quando}
+      </h2>
+      <p className="mt-0.5 text-[14px] text-tinta-2">
+        {partes.length ? `${partes.join(' e ')}. ` : ''}
+        {falta}
+      </p>
+      {relato.trim() ? (
+        <div className="mt-3">
+          <TrechoDoRelato texto={relato.length > 220 ? relato.slice(0, 220).replace(/\s\S*$/, '') + '…' : relato} />
+        </div>
+      ) : null}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Botao variante="escuro" onClick={aoContinuar}>
+          Continuar
+        </Botao>
+        <Botao variante="fantasma" onClick={aoDescartar}>
+          Descartar
+        </Botao>
+      </div>
+      {preenchida ? null : <p className="mt-2 text-[13px] text-tinta-3">Se tocar no microfone, o que você falar entra junto nesta ordem.</p>}
     </section>
   );
 }
 
-function prefixo(erros: Record<string, string>, p: string) {
-  const r: Record<string, string> = {};
-  for (const [k, v] of Object.entries(erros)) if (k.startsWith(p)) r[k.slice(p.length)] = v;
-  return r;
-}
+/** O áudio virando texto e o texto virando ordem, com o que fazer se algo falhar. */
+function TelaDoTrabalho({
+  trabalho,
+  relato,
+  aoTentar,
+  aoGravarDeNovo,
+  aoEscrever,
+  linkManual
+}: {
+  trabalho: Trabalho;
+  relato: string;
+  aoTentar: () => void;
+  aoGravarDeNovo: () => void;
+  aoEscrever: () => void;
+  linkManual: string;
+}) {
+  const falhou = trabalho.tipo === 'falhou' ? trabalho : null;
 
-function BuscaCarro({ aoEscolher }: { aoEscolher: (id: string) => void }) {
-  const veiculos = useOficina((s) => s.veiculos);
-  const clientes = useOficina((s) => s.clientes);
-  const [busca, setBusca] = useState('');
-  const t = busca.trim().toLowerCase();
-  const placa = normalizarPlaca(t);
-  const lista =
-    t.length < 2
-      ? []
-      : Object.values(veiculos)
-          .filter((v) => (placa.length >= 2 && v.placa.includes(placa)) || (clientes[v.clienteId]?.nome.toLowerCase().includes(t) ?? false))
-          .slice(0, 5);
-  return (
-    <div className="flex flex-col gap-2">
-      <input className={classeEntrada} value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar um carro cadastrado" aria-label="Buscar carro cadastrado" autoComplete="off" />
-      {lista.length ? (
-        <ul className="divide-y divide-linha overflow-hidden rounded-xl border border-linha bg-papel">
-          {lista.map((v) => (
-            <li key={v.id}>
-              <button type="button" onClick={() => aoEscolher(v.id)} className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-papel-2">
-                <Placa placa={v.placa} />
-                <span className="truncate font-semibold">{clientes[v.clienteId]?.nome}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </div>
-  );
-}
-
-function Gravador({ clipes, aoMudar, desabilitado }: { clipes: Clipe[]; aoMudar: (c: Clipe[]) => void; desabilitado: boolean }) {
-  const [gravando, setGravando] = useState(false);
-  const [segundos, setSegundos] = useState(0);
-  const [erro, setErro] = useState<string | null>(null);
-  const gravador = useRef<MediaRecorder | null>(null);
-  const relogio = useRef<ReturnType<typeof setInterval> | null>(null);
-  const atuais = useRef(clipes);
-  atuais.current = clipes;
-
-  async function comecar() {
-    setErro(null);
-    if (clipes.length >= MAX_AUDIOS) return setErro(`No máximo ${MAX_AUDIOS} áudios por ordem.`);
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') return setErro('Este navegador não grava áudio. Escreva a anotação ou use outro navegador.');
-    let stream: MediaStream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
-    } catch {
-      return setErro('Libere o microfone para o Revisaí nas permissões do navegador.');
-    }
-    const mime = mimeDeGravacao();
-    const rec = new MediaRecorder(stream, { ...(mime ? { mimeType: mime } : {}), audioBitsPerSecond: 32_000 });
-    const partes: Blob[] = [];
-    const inicio = Date.now();
-    rec.ondataavailable = (e) => e.data.size && partes.push(e.data);
-    rec.onstop = () => {
-      stream.getTracks().forEach((t) => t.stop());
-      if (relogio.current) clearInterval(relogio.current);
-      setGravando(false);
-      const blob = new Blob(partes, { type: rec.mimeType || mime || 'audio/webm' });
-      if (blob.size < 1500) return setErro('O áudio ficou vazio. Segure perto da boca e tente de novo.');
-      aoMudar([...atuais.current, { id: novoId(), blob, url: URL.createObjectURL(blob), segundos: Math.round((Date.now() - inicio) / 1000) }]);
-    };
-    rec.start(1000);
-    gravador.current = rec;
-    setSegundos(0);
-    setGravando(true);
-    relogio.current = setInterval(() => {
-      const s = Math.round((Date.now() - inicio) / 1000);
-      setSegundos(s);
-      if (s >= MAX_SEGUNDOS) rec.state === 'recording' && rec.stop();
-    }, 250);
-  }
-
-  function parar() {
-    if (gravador.current?.state === 'recording') gravador.current.stop();
-  }
-
-  function tirar(c: Clipe) {
-    URL.revokeObjectURL(c.url);
-    aoMudar(clipes.filter((x) => x.id !== c.id));
-  }
-
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-4 rounded-2xl bg-papel px-4 py-4 ring-1 ring-linha">
-        {gravando ? (
-          <button type="button" onClick={parar} className="grid h-16 w-16 place-items-center rounded-full bg-atraso text-white shadow-etiqueta" aria-label="Parar a gravação">
-            <Square size={24} fill="currentColor" />
-          </button>
-        ) : (
-          <button type="button" onClick={() => void comecar()} disabled={desabilitado} className="grid h-16 w-16 place-items-center rounded-full bg-oleo text-[#1b1f22] shadow-etiqueta disabled:opacity-50" aria-label="Gravar áudio">
-            <Mic size={26} />
-          </button>
-        )}
-        <div className="min-w-0 flex-1">
-          {gravando ? (
-            <p className="flex items-center gap-2 font-semibold text-atraso" aria-live="polite">
-              <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-atraso" aria-hidden="true" /> Gravando{' '}
-              <span className="num">
-                {Math.floor(segundos / 60)}:{String(segundos % 60).padStart(2, '0')}
-              </span>
-            </p>
-          ) : (
-            <p className="font-semibold">Toque para gravar</p>
-          )}
-          <p className="text-[13.5px] text-tinta-3">Fale a placa, a quilometragem, o que trocou (com a marca) e o que encontrou. Até 2 minutos por áudio.</p>
+  if (falhou?.mensagem === SEM_FALA) {
+    return (
+      <div className="flex w-full flex-col items-center gap-4 text-center" role="alert">
+        <span className="grid h-20 w-20 place-items-center rounded-full bg-atraso-claro text-atraso">
+          <Mic size={34} aria-hidden="true" />
+        </span>
+        <div>
+          <p className="text-[18px] font-bold">Não deu para entender o áudio</p>
+          <p className="mx-auto mt-1 max-w-[36ch] text-tinta-2">Grave de novo com o celular mais perto da boca, ou escreva o que foi feito.</p>
         </div>
-      </div>
-      {erro ? (
-        <p className="text-[14px] text-atraso" role="alert">
-          {erro}
-        </p>
-      ) : null}
-      {clipes.length ? (
-        <ul className="flex flex-col gap-2">
-          {clipes.map((c, i) => (
-            <li key={c.id} className="flex items-center gap-3 rounded-xl bg-papel-2 px-3 py-2">
-              <span className="num w-6 text-[14px] font-bold text-tinta-3">{i + 1}</span>
-              <audio src={c.url} controls preload="metadata" className="h-10 min-w-0 flex-1" />
-              <button type="button" onClick={() => tirar(c)} className="grid h-9 w-9 place-items-center rounded-full text-tinta-3 hover:text-atraso" aria-label={`Apagar áudio ${i + 1}`}>
-                <Trash2 size={17} />
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </div>
-  );
-}
-
-function Fotos({ fotos, aoMudar, desabilitado }: { fotos: FotoLocal[]; aoMudar: (f: FotoLocal[]) => void; desabilitado: boolean }) {
-  const [erro, setErro] = useState<string | null>(null);
-  const [preparando, setPreparando] = useState(false);
-
-  async function incluir(lista: FileList | null) {
-    if (!lista?.length) return;
-    setErro(null);
-    const espaco = MAX_FOTOS - fotos.length;
-    if (espaco <= 0) return setErro(`No máximo ${MAX_FOTOS} fotos por ordem.`);
-    setPreparando(true);
-    const novas: FotoLocal[] = [];
-    for (const f of Array.from(lista).slice(0, espaco)) {
-      try {
-        const reduzida = await reduzirFoto(f, 1280, 0.8);
-        novas.push({ id: novoId(), arquivo: reduzida, url: URL.createObjectURL(reduzida) });
-      } catch (e) {
-        setErro(e instanceof Error ? e.message : 'Não deu para abrir uma das fotos.');
-      }
-    }
-    setPreparando(false);
-    aoMudar([...fotos, ...novas]);
-  }
-
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap gap-2">
-        <label className={`${classeBotao('secundario')} cursor-pointer ${desabilitado ? 'pointer-events-none opacity-50' : ''}`}>
-          <Camera size={18} aria-hidden="true" /> Tirar foto
-          <input type="file" accept="image/*" capture="environment" className="sr-only" onChange={(e) => void incluir(e.target.files).then(() => (e.target.value = ''))} />
-        </label>
-        <label className={`${classeBotao('secundario')} cursor-pointer ${desabilitado ? 'pointer-events-none opacity-50' : ''}`}>
-          <ImagePlus size={18} aria-hidden="true" /> Da galeria
-          <input type="file" accept="image/*" multiple className="sr-only" onChange={(e) => void incluir(e.target.files).then(() => (e.target.value = ''))} />
-        </label>
-        {preparando ? <span className="self-center text-[14px] text-tinta-3">Preparando…</span> : null}
-      </div>
-      {erro ? (
-        <p className="text-[14px] text-atraso" role="alert">
-          {erro}
-        </p>
-      ) : null}
-      {fotos.length ? (
-        <ul className="grid grid-cols-3 gap-2 sm:grid-cols-6">
-          {fotos.map((f, i) => (
-            <li key={f.id} className="relative">
-              <img src={f.url} alt={`Foto ${i + 1}`} className="aspect-square w-full rounded-xl object-cover ring-1 ring-linha" />
-              <button
-                type="button"
-                onClick={() => {
-                  URL.revokeObjectURL(f.url);
-                  aoMudar(fotos.filter((x) => x.id !== f.id));
-                }}
-                className="absolute top-1 right-1 grid h-7 w-7 place-items-center rounded-full bg-tinta/80 text-papel"
-                aria-label={`Apagar foto ${i + 1}`}
-              >
-                <X size={15} />
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </div>
-  );
-}
-
-function Pronto({ veiculoId, mensagem, atendimentoId, fotos, aoNova }: { veiculoId: string; mensagem: string; atendimentoId: string | null; fotos: FotoLocal[]; aoNova: () => void }) {
-  const veiculo = useOficina((s) => s.veiculos[veiculoId]);
-  const cliente = useOficina((s) => (veiculo ? s.clientes[veiculo.clienteId] : undefined));
-  const toast = useToast();
-  const whatsapp = cliente ? linkWhatsApp(cliente.telefone, mensagem) : null;
-  const [podeCompartilhar, setPodeCompartilhar] = useState(false);
-  useEffect(() => {
-    try {
-      setPodeCompartilhar(!!fotos.length && !!navigator.canShare?.({ files: fotos.map((f) => f.arquivo) }));
-    } catch {
-      setPodeCompartilhar(false);
-    }
-  }, [fotos]);
-
-  async function compartilhar() {
-    try {
-      await navigator.share({ text: mensagem, files: fotos.map((f, i) => new File([f.arquivo], `foto-${i + 1}.${f.arquivo.type.includes('webp') ? 'webp' : 'jpg'}`, { type: f.arquivo.type })) });
-    } catch (e) {
-      if ((e as Error)?.name !== 'AbortError') toast({ texto: 'Não deu para compartilhar. Use o botão do WhatsApp.', tom: 'erro' });
-    }
-  }
-
-  async function copiar() {
-    try {
-      await navigator.clipboard.writeText(mensagem);
-      toast({ texto: 'Mensagem copiada.' });
-    } catch {
-      toast({ texto: 'Não deu para copiar.', tom: 'erro' });
-    }
-  }
-
-  return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <p className="flex items-center gap-2 font-semibold text-ok">
-          <Check size={18} aria-hidden="true" /> Ordem registrada
-        </p>
-        <h1 className="largo mt-1 text-[28px] sm:text-[32px]">
-          {cliente?.nome ?? 'Cliente'}, {veiculo?.modelo}
-        </h1>
-        <p className="mt-1 text-tinta-2">{atendimentoId ? 'Os serviços entraram no histórico e os próximos avisos já estão calculados.' : 'A ordem ficou guardada no carro.'} Fotos e áudios ficam neste aparelho.</p>
-      </div>
-      <div className="rounded-2xl bg-papel px-5 py-4 ring-1 ring-linha">
-        <p className="mb-2 text-[13px] font-semibold text-tinta-3">Mensagem para o cliente</p>
-        <p className="text-[15px] whitespace-pre-line">{mensagem}</p>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        {podeCompartilhar ? (
-          <Botao variante="whatsapp" tamanho="grande" onClick={() => void compartilhar()}>
-            <Share2 size={18} /> Mandar com as fotos
+        <div className="flex flex-wrap justify-center gap-2">
+          <Botao variante="primario" tamanho="grande" onClick={aoGravarDeNovo}>
+            <Mic size={18} /> Gravar de novo
           </Botao>
-        ) : null}
-        {whatsapp ? (
-          <a href={whatsapp} target="_blank" rel="noopener noreferrer" className={classeBotao(podeCompartilhar ? 'secundario' : 'whatsapp', 'grande')}>
-            <MessageCircle size={18} aria-hidden="true" /> Mandar no WhatsApp
-          </a>
-        ) : null}
-        <Botao tamanho="grande" onClick={() => void copiar()}>
-          Copiar mensagem
-        </Botao>
-        <BotaoAvaliacao telefone={cliente?.telefone} nomeCliente={cliente?.nome ?? ''} carro={veiculo?.modelo ?? 'carro'} />
-        {atendimentoId ? (
-          <Link href={`/oficina/etiqueta?atendimento=${atendimentoId}`} className={classeBotao('secundario', 'grande')}>
-            Etiqueta do para-brisa
-          </Link>
-        ) : null}
-        <Link href={`/oficina/carro?id=${veiculoId}`} className={classeBotao('fantasma', 'grande')}>
-          Ver o carro
-        </Link>
-        <Botao variante="fantasma" tamanho="grande" onClick={aoNova}>
-          Nova ordem
-        </Botao>
+          <Botao tamanho="grande" onClick={aoEscrever}>
+            <Keyboard size={18} /> Escrever
+          </Botao>
+        </div>
+        <button type="button" onClick={aoTentar} className="text-[14px] font-semibold text-caneta hover:underline">
+          Tentar passar o mesmo áudio para texto
+        </button>
       </div>
-      <p className="text-[13px] text-tinta-3">Registrada em {formatarData(new Date().toISOString().slice(0, 10))}. Para a foto ir junto no WhatsApp, use Mandar com as fotos no celular.</p>
-    </div>
+    );
+  }
+
+  const clipe = trabalho.clipe;
+  const ouvindo = trabalho.tipo === 'ouvindo';
+  const errouOuvir = falhou?.acao === 'ouvir';
+  const preenchendo = trabalho.tipo === 'preenchendo';
+  const errouPreencher = falhou?.acao === 'preencher';
+  const passos: Passo[] = [];
+  if (clipe) {
+    passos.push({ id: 'audio', titulo: 'Áudio guardado', detalhe: `${tempo(clipe.segundos)} de gravação, guardado neste aparelho.`, estado: 'feito' });
+    passos.push({
+      id: 'texto',
+      titulo: ouvindo ? 'Passando o áudio para texto' : errouOuvir ? 'O áudio não virou texto' : 'Áudio em texto',
+      estado: ouvindo ? 'agora' : errouOuvir ? 'erro' : 'feito',
+      detalhe: !ouvindo && !errouOuvir && relato.trim() ? <TrechoDoRelato texto={relato} /> : undefined
+    });
+  }
+  passos.push({
+    id: 'ordem',
+    titulo: preenchendo ? 'Preenchendo a ordem de serviço' : errouPreencher ? 'A ordem não foi preenchida' : 'Preencher a ordem de serviço',
+    estado: preenchendo ? 'agora' : errouPreencher ? 'erro' : 'depois',
+    detalhe: !clipe && relato.trim() ? <TrechoDoRelato texto={relato} /> : undefined
+  });
+
+  return (
+    <Andamento passos={passos}>
+      {falhou ? (
+        <div className="flex flex-col gap-3 rounded-2xl bg-atraso-claro p-4" role="alert">
+          <p className="text-[15px] font-semibold text-atraso">{falhou.mensagem}</p>
+          <div className="flex flex-wrap gap-2">
+            <Botao variante="primario" onClick={aoTentar}>
+              <RotateCcw size={16} /> Tentar de novo
+            </Botao>
+            {errouOuvir ? (
+              <Botao onClick={aoGravarDeNovo}>
+                <Mic size={16} /> Gravar de novo
+              </Botao>
+            ) : null}
+            <Botao onClick={aoEscrever}>
+              <Keyboard size={16} /> Escrever
+            </Botao>
+            <Link href={linkManual} className={classeBotao('fantasma')}>
+              Registrar à mão
+            </Link>
+          </div>
+        </div>
+      ) : null}
+    </Andamento>
   );
 }

@@ -13,7 +13,7 @@ O Revisaí é um app web para oficinas mecânicas. Cada serviço registrado (tro
 - **Avisos pela data ou pela quilometragem.** A rodagem de cada carro sai do histórico do odômetro (ou do que o cliente informou), para prever quando ele chega ao km da troca.
 - **Resumo do dia ao abrir o app**: quantos clientes avisar, quem está atrasado, quem está agendado para hoje. Notificação do navegador e número no ícone, se a oficina quiser.
 - **WhatsApp com um toque**, com a mensagem editável, e as etapas *avisado → agendado → serviço feito*. Quem não respondeu volta para a lista depois de uma semana.
-- **Ordem de serviço por voz.** O mecânico grava áudios e tira fotos; a IA monta a ordem (placa, km, serviços, diagnóstico, recomendações) e um texto caprichado para o cliente. O mecânico confere e confirma. Fotos e áudios ficam no aparelho.
+- **Ordem de serviço por voz.** O mecânico toca no microfone e conta o serviço. O áudio fica guardado no aparelho e vira texto, e a IA preenche a ordem com esse texto (placa, km, serviços, diagnóstico, recomendações) e um texto caprichado para o cliente. O mecânico confere os campos, pode falar mais ou corrigir o texto, e confirma. Áudio, texto e fotos ficam no aparelho.
 - **Agente no WhatsApp.** O mecânico manda áudios e fotos para o número do Revisaí, escreve *fechar* e a ordem chega pronta no app para conferir.
 - **Saúde do carro**: o carro visto de cima, com a vida restante de cada item e as recomendações das ordens.
 - **Prazos sugeridos** por uma base de manutenção (uso normal e severo), pelo manual do carro, pela base de prazos por produto (o que o fabricante indica) e pelos produtos da própria oficina. Tudo pode ser editado.
@@ -51,7 +51,7 @@ Tudo com camada grátis:
 - Tailwind CSS 4, fonte variável Archivo (SIL OFL)
 - Zustand com IndexedDB para os dados da oficina (sem login nesta versão)
 - [Supabase](https://supabase.com) (Postgres com RLS e Storage) para a loja, os pedidos, os painéis e os rascunhos do agente
-- [AI SDK](https://ai-sdk.dev) com o Vercel AI Gateway (crédito grátis todo mês) ou uma chave grátis do Google AI Studio (Gemini), para as ordens por voz
+- [AI SDK](https://ai-sdk.dev) com o Vercel AI Gateway (crédito grátis todo mês) ou uma chave grátis do Google AI Studio (Gemini), para as ordens por voz, em dois passos: o áudio vira texto e o texto preenche a ordem
 - WhatsApp Cloud API da Meta para o agente (as conversas que o mecânico começa são grátis)
 - Vitest para as regras de negócio
 - Vercel para hospedar, com uma rotina diária que mantém o projeto grátis do Supabase acordado
@@ -140,7 +140,7 @@ lib/                 regras sem interface
   recomendacao.ts    recomendação de produtos e demanda dos 30 dias
   catalogo.ts        vitrine, promoções, destaque e patrocínio
   plano.ts           plano grátis, teste e Pro da oficina
-  agente/            ordem por voz: esquema, instruções, IA, WhatsApp e rascunhos
+  agente/            ordem por voz: transcrição, esquema, instruções, IA, WhatsApp e rascunhos
   marketplace.ts     painel do fornecedor e do admin (servidor)
   store.ts           dados da oficina no aparelho (Zustand + IndexedDB)
 supabase/            migrações e seed
@@ -149,7 +149,7 @@ tests/               Vitest
 
 ## Privacidade
 
-Não tem conta nesta versão. Os clientes e serviços da oficina ficam no navegador do aparelho que usa o app (com backup e restauração em Ajustes). O servidor recebe os pedidos da loja, os formulários de interesse (com consentimento), os áudios e fotos das ordens por voz só para a IA montar a ordem (nada fica guardado) e, se a oficina ligar, a previsão de compras sem dados dos clientes. Os áudios, fotos e textos mandados ao agente no WhatsApp ficam num rascunho até a oficina conferir; quando ela confirma ou descarta, ou depois de 30 dias parado, o servidor apaga.
+Não tem conta nesta versão. Os clientes e serviços da oficina ficam no navegador do aparelho que usa o app (com backup e restauração em Ajustes). O servidor recebe os pedidos da loja, os formulários de interesse (com consentimento), os áudios das ordens por voz só para a IA passar para texto e o texto e as fotos só para ela preencher a ordem (nada fica guardado) e, se a oficina ligar, a previsão de compras sem dados dos clientes. Os áudios, fotos e textos mandados ao agente no WhatsApp ficam num rascunho até a oficina conferir; quando ela confirma ou descarta, ou depois de 30 dias parado, o servidor apaga.
 
 ## Próximos passos
 

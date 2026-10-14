@@ -41,10 +41,19 @@ describe('ordem montada pela IA', () => {
   });
 
   it('o pedido para a IA leva o contexto e o resumo volta legível', () => {
-    const t = textoDoPedido({ oficina: 'Auto Center Serra', hoje: '2026-10-14', carro: 'ABC1D23, Onix', quantidadeAudios: 2, quantidadeFotos: 1, kmAnterior: 40000 });
+    const t = textoDoPedido({
+      oficina: 'Auto Center Serra',
+      hoje: '2026-10-14',
+      carro: 'ABC1D23, Onix',
+      transcricao: 'Troquei o óleo e o filtrinho do Onix.',
+      quantidadeFotos: 1,
+      kmAnterior: 40000
+    });
     expect(t).toContain('Auto Center Serra');
-    expect(t).toContain('Vieram 2 áudios e 1 foto');
+    expect(t).toContain('Relato do mecânico:\n"""\nTroquei o óleo e o filtrinho do Onix.\n"""');
+    expect(t).toContain('Vieram 1 foto');
     expect(t).toContain('40000 km');
+    expect(textoDoPedido({ oficina: '', hoje: '2026-10-14', quantidadeFotos: 0 })).toContain('Não vieram fotos.');
     expect(INSTRUCOES_AGENTE).toContain('troca_oleo');
     const r = textoDoResumo(limparOrdem(ordem));
     expect(r).toContain('ABC1D23');

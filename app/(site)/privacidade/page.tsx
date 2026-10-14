@@ -20,7 +20,7 @@ const SECOES = [
   {
     titulo: 'Ordem de serviço por voz',
     texto:
-      'Os áudios, as fotos e a anotação da ordem vão para o servidor só para a inteligência artificial (o Gemini, do Google) montar a ordem e a mensagem para o cliente. O Revisaí não guarda esse material: a ordem conferida, as fotos e os áudios ficam no aparelho da oficina.'
+      'O áudio da ordem por voz vai para o servidor só para a inteligência artificial (o Gemini, do Google) passar a fala para texto. Depois, o texto e as fotos vão só para ela preencher a ordem e a mensagem para o cliente. O Revisaí não guarda esse material: o áudio, o texto, as fotos e a ordem conferida ficam no aparelho da oficina.'
   },
   {
     titulo: 'Agente no WhatsApp',

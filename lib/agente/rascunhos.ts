@@ -117,6 +117,13 @@ export async function rascunhoAberto(telefone: string, aparelhoId: string): Prom
   const sb = clienteEquipe();
   if (!sb) return null;
   const desde = new Date(Date.now() - JANELA_RASCUNHO_MS).toISOString();
+  // uma montagem que caiu no meio volta a ficar aberta, com tudo que o mecânico mandou
+  await sb
+    .from('ordens_rascunho')
+    .update({ status: 'aberta', atualizado_em: new Date().toISOString() })
+    .eq('telefone', telefone)
+    .eq('status', 'processando')
+    .lt('atualizado_em', new Date(Date.now() - MONTAGEM_PARADA_MS).toISOString());
   const { data } = await sb
     .from('ordens_rascunho')
     .select(COLUNAS)
@@ -185,25 +192,48 @@ async function mudar(id: string, mudanca: Record<string, unknown>, deStatus?: st
   return !error && (data?.length ?? 0) > 0;
 }
 
-/** A IA monta a ordem a partir de tudo que chegou. Só um processamento por rascunho. */
+// a IA olha até 6 fotos e até 12 MB de foto por ordem (o Gemini aceita até 20 MB por pedido)
+const FOTOS_DA_IA = 6;
+const BYTES_DE_FOTO_DA_IA = 12_000_000;
+// uma montagem parada há mais tempo que isso caiu no meio (a função tem 2 minutos)
+const MONTAGEM_PARADA_MS = 3 * 60_000;
+
+/**
+ * A IA monta a ordem a partir de tudo que chegou. Só um processamento por rascunho. Se der errado,
+ * o rascunho volta a ficar aberto e o mecânico pode escrever fechar de novo.
+ */
 export async function processarRascunho(id: string, oficina: string | null): Promise<{ ok: true; ordem: OrdemIA } | { ok: false; erro: string }> {
   if (!(await mudar(id, { status: 'processando' }, 'aberta'))) return { ok: false, erro: 'Esta ordem já está sendo montada.' };
   const r = await recarregar(id);
   const sb = clienteEquipe();
-  if (!r || !sb) return { ok: false, erro: 'Rascunho não encontrado.' };
+  if (!r || !sb) {
+    await mudar(id, { status: 'aberta' }, 'processando');
+    return { ok: false, erro: 'Não consegui abrir o que você mandou agora.' };
+  }
   const audios: Midia[] = [];
   const imagens: Midia[] = [];
+  let bytesDeFoto = 0;
+  // as fotos da IA são sempre as primeiras, na ordem (o app casa as legendas pela posição)
+  let fotosCheias = false;
   for (const m of r.midias) {
+    if (m.tipo === 'foto' && (fotosCheias || imagens.length >= FOTOS_DA_IA || bytesDeFoto + m.tamanho > BYTES_DE_FOTO_DA_IA)) {
+      fotosCheias = true;
+      continue;
+    }
     const { data, error } = await sb.storage.from(BUCKET).download(m.caminho);
-    if (error || !data) continue;
+    if (error || !data) {
+      if (m.tipo === 'foto') fotosCheias = true;
+      continue;
+    }
     const bytes = new Uint8Array(await data.arrayBuffer());
+    if (m.tipo === 'foto') bytesDeFoto += bytes.length;
     (m.tipo === 'audio' ? audios : imagens).push({ bytes, mime: m.mime });
   }
   const legendas = r.midias.filter((m) => m.tipo === 'foto' && m.legenda).map((m) => m.legenda);
   const anotacao = [...r.textos.map((t) => t.texto), ...legendas].join('\n').slice(0, 1500) || null;
-  const res = await interpretarComIA({ oficina: oficina ?? '', hoje: hoje(), anotacao, quantidadeAudios: audios.length, quantidadeFotos: imagens.length }, audios, imagens);
+  const res = await interpretarComIA({ oficina: oficina ?? '', hoje: hoje(), anotacao, quantidadeFotos: imagens.length }, audios, imagens);
   if (!res.ok) {
-    await mudar(id, { status: 'erro', erro: res.erro.slice(0, 300) });
+    await mudar(id, { status: 'aberta', erro: res.erro.slice(0, 300) }, 'processando');
     return res;
   }
   await mudar(id, { status: 'pronta', resultado: res.ordem, modelo: res.modelo.slice(0, 80), erro: null });

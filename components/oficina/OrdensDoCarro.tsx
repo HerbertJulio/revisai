@@ -24,7 +24,7 @@ export function OrdensDoCarro({ veiculoId, telefone }: { veiculoId: string; tele
   if (!lista.length) {
     return (
       <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-dashed border-linha px-5 py-4">
-        <p className="min-w-0 flex-1 text-[14.5px] text-tinta-2">Fale o que fez e tire fotos do que encontrou. A IA monta a ordem e a mensagem para o cliente.</p>
+        <p className="min-w-0 flex-1 text-[14.5px] text-tinta-2">Fale o que fez no carro. O áudio vira texto e a IA preenche a ordem e a mensagem para o cliente.</p>
         <Link href={`/oficina/ordem?carro=${veiculoId}`} className={classeBotao('secundario', 'pequeno')}>
           <Mic size={16} aria-hidden="true" /> Ordem por voz
         </Link>
@@ -87,6 +87,12 @@ export function OrdensDoCarro({ veiculoId, telefone }: { veiculoId: string; tele
                   <Audio key={m.id} midia={m} />
                 ))}
               </div>
+            ) : null}
+            {o.ia.transcricao ? (
+              <details className="rounded-xl bg-papel-2 px-3 py-2 text-[14px]">
+                <summary className="cursor-pointer font-semibold">{audios.length ? 'O que foi falado' : 'O que foi escrito'}</summary>
+                <p className="mt-2 whitespace-pre-line text-tinta-2">{o.ia.transcricao}</p>
+              </details>
             ) : null}
             <details className="rounded-xl bg-papel-2 px-3 py-2 text-[14px]">
               <summary className="cursor-pointer font-semibold">Mensagem para o cliente</summary>

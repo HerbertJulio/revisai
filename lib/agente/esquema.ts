@@ -1,5 +1,5 @@
-// Ordem de serviço montada pela IA a partir dos áudios, fotos e anotações do mecânico.
-// O mecânico sempre confere antes de virar registro: a IA só monta o rascunho.
+// Ordem de serviço preenchida pela IA a partir do relato do mecânico (o áudio já em texto) e das
+// fotos. O mecânico sempre confere antes de virar registro: a IA só monta o rascunho.
 
 import { z } from 'zod';
 import { SERVICOS } from '../manutencao';
@@ -15,8 +15,8 @@ export const URGENCIAS = [
 export type Urgencia = (typeof URGENCIAS)[number]['id'];
 
 export const esquemaOrdem = z.object({
-  placa: z.string().nullable().describe('Placa do carro (padrão brasileiro, só letras e números) se foi dita ou aparece numa foto; senão null.'),
-  km: z.number().int().nullable().describe('Quilometragem do painel se foi dita ou aparece numa foto do painel; senão null.'),
+  placa: z.string().nullable().describe('Placa do carro (padrão brasileiro, só letras e números) se está no relato ou aparece numa foto; senão null.'),
+  km: z.number().int().nullable().describe('Quilometragem do painel se está no relato ou aparece numa foto do painel; senão null.'),
   veiculo: z
     .object({
       marca: z.string().nullable(),
@@ -25,13 +25,13 @@ export const esquemaOrdem = z.object({
       ano: z.number().int().nullable()
     })
     .nullable()
-    .describe('O carro, se foi dito. Não adivinhe pelo modelo de peça.'),
-  cliente: z.string().nullable().describe('Nome do dono do carro, se foi dito.'),
+    .describe('O carro, se está no relato. Não adivinhe pelo modelo de peça.'),
+  cliente: z.string().nullable().describe('Nome do dono do carro, se está no relato.'),
   servicos: z
     .array(
       z.object({
         servico: z.enum(IDS).describe('O serviço feito, sempre um id da lista.'),
-        produto: z.string().nullable().describe('Marca e especificação do produto usado, se foram ditas. Ex.: "Mobil Super 5W-30 sintético".'),
+        produto: z.string().nullable().describe('Marca e especificação do produto usado, se estão no relato. Ex.: "Mobil Super 5W-30 sintético".'),
         observacao: z.string().nullable()
       })
     )
@@ -49,11 +49,14 @@ export const esquemaOrdem = z.object({
     .array(z.object({ indice: z.number().int(), legenda: z.string() }))
     .describe('Uma legenda curta para cada foto recebida, pelo índice (a primeira é 1).'),
   mensagemCliente: z.string().describe('Mensagem de WhatsApp para o dono do carro, pronta para enviar.'),
-  transcricao: z.string().describe('O que foi dito nos áudios, limpo e em ordem.'),
+  transcricao: z.string().describe('O relato do mecânico: o que ele falou (o áudio em texto) ou escreveu.'),
   duvidas: z.array(z.string()).describe('O que não ficou claro e o mecânico precisa conferir.')
 });
 
 export type OrdemIA = z.infer<typeof esquemaOrdem>;
+
+/** O que a IA devolve ao preencher: a ordem sem o relato, que já é nosso (o texto do áudio). */
+export const esquemaPreenchimento = esquemaOrdem.omit({ transcricao: true });
 
 /** Remove serviços repetidos e arruma a placa (a IA às vezes devolve com hífen ou espaço). */
 export function limparOrdem(o: OrdemIA): OrdemIA {

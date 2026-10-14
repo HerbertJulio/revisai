@@ -13,7 +13,7 @@ Revisaí is a web app for auto repair shops in Brazil. Every service the shop re
 - **Reminders by date or mileage.** Each car's monthly mileage is estimated from its odometer history (or the customer's estimate), so the app predicts when it will hit the km limit.
 - **Daily summary when the app opens**: how many customers to contact, who is overdue, who is booked for today. Optional browser notification and app badge.
 - **One-tap WhatsApp** with an editable message template, then *contacted → booked → service done*. Customers who did not answer come back to the list after a week.
-- **Service orders by voice.** The mechanic records audio and takes photos; the AI builds the order (plate, mileage, services, findings, recommendations) and a polished message for the customer. The mechanic reviews and confirms. Photos and audio stay on the device.
+- **Service orders by voice.** The mechanic taps the microphone and talks through the job. The audio is saved on the device and turned into text, and the AI fills in the order from that text (plate, mileage, services, findings, recommendations) along with a polished message for the customer. The mechanic checks the fields, can add more by voice or fix the text, and confirms. Audio, text and photos stay on the device.
 - **WhatsApp agent.** The mechanic sends audio and photos to the Revisaí number, types *fechar* and the order shows up in the app, ready to review.
 - **Car health**: a top view of the car with the remaining life of each item and the recommendations from past orders.
 - **Interval suggestions** from a maintenance knowledge base (normal and severe use), the car's manual, a per-product interval base (what the manufacturer recommends) and the shop's own products. Everything is editable.
@@ -51,7 +51,7 @@ Everything has a free tier:
 - Tailwind CSS 4, Archivo variable font (SIL OFL)
 - Zustand with IndexedDB for the shop's data (no login in this version)
 - [Supabase](https://supabase.com) (Postgres with row level security, and Storage) for the store, orders, the panels and the agent's drafts
-- [AI SDK](https://ai-sdk.dev) with the Vercel AI Gateway (free monthly credits) or a free Google AI Studio key (Gemini) for voice orders
+- [AI SDK](https://ai-sdk.dev) with the Vercel AI Gateway (free monthly credits) or a free Google AI Studio key (Gemini) for voice orders, in two steps: the audio becomes text, then the text fills in the order
 - Meta's WhatsApp Cloud API for the agent (conversations the mechanic starts are free)
 - Vitest for the business rules
 - Vercel for hosting, with a daily cron that keeps the free Supabase project awake
@@ -140,7 +140,7 @@ lib/                 rules without UI
   recomendacao.ts    product recommendations and 30-day demand
   catalogo.ts        storefront, promotions, featured stores and sponsorships
   plano.ts           the shop's free, trial and Pro plans
-  agente/            voice orders: schema, instructions, AI, WhatsApp and drafts
+  agente/            voice orders: transcription, schema, instructions, AI, WhatsApp and drafts
   marketplace.ts     supplier and admin panels (server)
   store.ts           the shop's data on the device (Zustand + IndexedDB)
 supabase/            migrations and seed
@@ -149,7 +149,7 @@ tests/               Vitest
 
 ## Privacy
 
-There are no accounts in this version. The shop's customers and services live in the browser of the device that uses the app (with backup and restore in Settings). The server receives store orders, signup forms (with consent), voice order audio and photos only so the AI can build the order (nothing is kept) and, if the shop turns it on, its purchase forecast without customer data. Audio, photos and text sent to the WhatsApp agent stay in a draft until the shop reviews it; once the shop confirms or discards it, or after 30 days without activity, the server deletes them.
+There are no accounts in this version. The shop's customers and services live in the browser of the device that uses the app (with backup and restore in Settings). The server receives store orders, signup forms (with consent), voice order audio only so the AI can turn it into text and the text and photos only so it can fill in the order (nothing is kept) and, if the shop turns it on, its purchase forecast without customer data. Audio, photos and text sent to the WhatsApp agent stay in a draft until the shop reviews it; once the shop confirms or discards it, or after 30 days without activity, the server deletes them.
 
 ## Next steps
 
