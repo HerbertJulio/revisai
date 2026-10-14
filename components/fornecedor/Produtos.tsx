@@ -1,9 +1,10 @@
 'use client';
 
-import { Camera, Pencil, Plus, Rocket } from 'lucide-react';
+import { Camera, Pencil, Plus, Rocket, Search } from 'lucide-react';
 import { useRef, useState, useTransition } from 'react';
 import { enviarFoto, impulsionar, salvarProduto } from '@/app/fornecedor/acoes';
-import { AvisoErro } from '@/components/equipe/comum';
+import { AvisoErro, combina, paraBusca } from '@/components/equipe/comum';
+import { TrocaExibicao, useExibicao } from '@/components/exibicao';
 import { Folha } from '@/components/Folha';
 import { FotoProduto } from '@/components/oficina/FotoProduto';
 import { useReferencias } from '@/components/oficina/referencias';
@@ -88,6 +89,53 @@ function lista(t: string): string[] | undefined {
   return l.length ? l : undefined;
 }
 
+type FiltroProduto = 'todos' | 'na_loja' | 'fora' | 'sem_foto' | 'promocao' | 'impulso';
+
+interface ContextoFiltro {
+  promoDe: (p: LinhaProduto) => LinhaPromocao | undefined;
+  impulsoDe: (p: LinhaProduto) => LinhaImpulso | undefined;
+}
+
+const FILTROS: { id: FiltroProduto; nome: string; passa: (p: LinhaProduto, c: ContextoFiltro) => boolean }[] = [
+  { id: 'todos', nome: 'Todos', passa: () => true },
+  { id: 'na_loja', nome: 'Na loja', passa: (p) => p.ativo },
+  { id: 'fora', nome: 'Fora da loja', passa: (p) => !p.ativo },
+  { id: 'sem_foto', nome: 'Sem foto', passa: (p) => !p.imagem_url },
+  { id: 'promocao', nome: 'Em promoção', passa: (p, c) => !!c.promoDe(p) },
+  { id: 'impulso', nome: 'Impulsionados', passa: (p, c) => !!c.impulsoDe(p) }
+];
+
+/** Como o produto está: fora da loja, promoção em vigor, impulso no ar ou pedido. */
+function SelosDoProduto({ produto: p, promo, impulso }: { produto: LinhaProduto; promo?: LinhaPromocao; impulso?: LinhaImpulso }) {
+  if (p.ativo && !promo && !impulso) return null;
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {!p.ativo ? <Chip tom="atraso">Fora da loja</Chip> : null}
+      {promo ? <Chip tom="oleo">{promo.titulo}</Chip> : null}
+      {impulso ? (
+        <Chip tom={impulso.status === 'ativo' ? 'ok' : 'caneta'}>
+          {impulso.status === 'ativo' ? `Patrocinado até ${impulso.fim?.split('-').reverse().slice(0, 2).join('/')}` : 'Impulso pedido'}
+        </Chip>
+      ) : null}
+    </div>
+  );
+}
+
+function AcoesDoProduto({ produto: p, impulso, aoEditar, aoImpulsionar }: { produto: LinhaProduto; impulso?: LinhaImpulso; aoEditar: () => void; aoImpulsionar: () => void }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      <Botao tamanho="pequeno" onClick={aoEditar}>
+        <Pencil size={15} /> Editar
+      </Botao>
+      {p.ativo && !impulso ? (
+        <Botao tamanho="pequeno" onClick={aoImpulsionar}>
+          <Rocket size={15} /> Impulsionar
+        </Botao>
+      ) : null}
+    </div>
+  );
+}
+
 export function ProdutosFornecedor({
   produtos,
   promocoes,
@@ -111,6 +159,9 @@ export function ProdutosFornecedor({
   const [ocupado, iniciar] = useTransition();
   const [enviandoFoto, setEnviandoFoto] = useState(false);
   const arquivo = useRef<HTMLInputElement>(null);
+  const [busca, setBusca] = useState('');
+  const [filtro, setFiltro] = useState<FiltroProduto>('todos');
+  const [exibicao, setExibicao] = useExibicao('revisai:fornecedor:exibicao');
 
   const editando = rascunho?.id != null ? produtos.find((p) => p.id === rascunho.id) : undefined;
   const refs = rascunho ? referenciasDaCategoria(referencias, rascunho.categoria) : [];
@@ -211,6 +262,12 @@ export function ProdutosFornecedor({
     });
   }
 
+  const promoDe = (p: LinhaProduto) => promocoes.find((x) => x.produto_id === p.id && x.ativo && x.inicio <= hoje && x.fim >= hoje);
+  const impulsoDe = (p: LinhaProduto) => impulsos.find((x) => x.produto_id === p.id && (x.status === 'pedido' || (x.status === 'ativo' && (x.fim ?? '') >= hoje)));
+  const contexto = { promoDe, impulsoDe };
+  const regra = FILTROS.find((f) => f.id === filtro) ?? FILTROS[0];
+  const visiveis = produtos.filter((p) => regra.passa(p, contexto) && (!busca.trim() || combina(paraBusca(p.nome, p.marca, nomeCategoria(p.categoria)), busca)));
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -223,38 +280,96 @@ export function ProdutosFornecedor({
       </div>
 
       {produtos.length ? (
-        <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {produtos.map((p) => {
-            const promo = promocoes.find((x) => x.produto_id === p.id && x.ativo && x.inicio <= hoje && x.fim >= hoje);
-            const imp = impulsos.find((x) => x.produto_id === p.id && (x.status === 'pedido' || (x.status === 'ativo' && (x.fim ?? '') >= hoje)));
-            return (
-              <li key={p.id} className="flex flex-col overflow-hidden rounded-2xl bg-papel ring-1 ring-linha">
-                <FotoProduto produto={{ imagemUrl: p.imagem_url, categoria: p.categoria, nome: p.nome }} tamanhos="(min-width: 1280px) 300px, (min-width: 640px) 45vw, 100vw" className="aspect-[16/10] w-full" />
-                <div className="flex flex-1 flex-col gap-2 p-4">
-                  <p className="text-[12.5px] font-semibold text-tinta-3">{nomeCategoria(p.categoria)}</p>
-                  <p className="font-bold leading-snug">{[p.marca, p.nome].filter(Boolean).join(' ')}</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {!p.ativo ? <Chip tom="atraso">Fora da loja</Chip> : null}
-                    {!p.imagem_url ? <Chip>Sem foto</Chip> : null}
-                    {promo ? <Chip tom="oleo">{promo.titulo}</Chip> : null}
-                    {imp ? <Chip tom={imp.status === 'ativo' ? 'ok' : 'caneta'}>{imp.status === 'ativo' ? `Patrocinado até ${imp.fim?.split('-').reverse().slice(0, 2).join('/')}` : 'Impulso pedido'}</Chip> : null}
-                  </div>
-                  <p className="largo num mt-auto pt-1 text-[19px] font-extrabold">{formatarMoeda(p.preco)}</p>
-                  <div className="flex flex-wrap gap-2">
-                    <Botao tamanho="pequeno" onClick={() => abrir(p)}>
-                      <Pencil size={15} /> Editar
-                    </Botao>
-                    {p.ativo && !imp ? (
-                      <Botao tamanho="pequeno" onClick={() => setImpulso({ produto: p, dias: 7, regiao: uf ? 'uf' : 'brasil' })}>
-                        <Rocket size={15} /> Impulsionar
-                      </Botao>
-                    ) : null}
-                  </div>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="relative min-w-[200px] flex-1">
+              <span className="sr-only">Buscar nos seus produtos</span>
+              <Search size={18} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-tinta-3" aria-hidden="true" />
+              <input
+                type="search"
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+                placeholder="Nome, marca ou categoria"
+                className="h-11 w-full min-w-0 rounded-[10px] border border-linha bg-papel pr-3 pl-10 text-[16px] outline-none placeholder:text-tinta-3 focus:border-caneta focus:ring-3 focus:ring-caneta/20 sm:text-[15px]"
+              />
+            </label>
+            <TrocaExibicao exibicao={exibicao} aoExibir={setExibicao} />
+          </div>
+          <div className="-mx-4 flex gap-2 overflow-x-auto px-4 sm:mx-0 sm:flex-wrap sm:px-0" role="group" aria-label="Filtrar produtos">
+            {FILTROS.map((f) => {
+              const n = produtos.filter((p) => f.passa(p, contexto)).length;
+              if (f.id !== 'todos' && n === 0) return null;
+              const sel = filtro === f.id;
+              return (
+                <button
+                  key={f.id}
+                  type="button"
+                  aria-pressed={sel}
+                  onClick={() => setFiltro(f.id)}
+                  className={`inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-[14px] font-semibold ${sel ? 'border-tinta bg-tinta text-papel' : 'border-linha bg-papel text-tinta-2 hover:border-tinta-3'}`}
+                >
+                  {f.nome}
+                  <span className={`num text-[13px] ${sel ? 'text-papel/75' : 'text-tinta-3'}`}>{n}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {visiveis.length === 0 ? (
+            <Vazio titulo="Nenhum produto com esse filtro">Tente outra palavra ou escolha Todos.</Vazio>
+          ) : exibicao === 'grade' ? (
+            <ul className="grid grid-cols-2 gap-3 md:grid-cols-3 2xl:grid-cols-4">
+              {visiveis.map((p) => {
+                const promo = promoDe(p);
+                const imp = impulsoDe(p);
+                return (
+                  <li key={p.id} className="flex flex-col overflow-hidden rounded-2xl bg-papel ring-1 ring-linha">
+                    <button type="button" onClick={() => abrir(p)} className="relative block" aria-label={`Foto de ${p.nome}`} tabIndex={-1}>
+                      <FotoProduto produto={{ imagemUrl: p.imagem_url, categoria: p.categoria, nome: p.nome }} tamanhos="(min-width: 1280px) 280px, (min-width: 768px) 30vw, 50vw" className="aspect-square w-full sm:aspect-[4/3]" />
+                      {!p.imagem_url ? (
+                        <span className="absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-md bg-papel/95 px-1.5 py-0.5 text-[11.5px] font-bold text-tinta-2 ring-1 ring-linha">
+                          <Camera size={12} aria-hidden="true" /> Foto da categoria
+                        </span>
+                      ) : null}
+                    </button>
+                    <div className="flex flex-1 flex-col gap-2 p-3 sm:p-4">
+                      <p className="text-[12px] font-semibold text-tinta-3 sm:text-[12.5px]">{nomeCategoria(p.categoria)}</p>
+                      <p className="line-clamp-2 text-[14.5px] leading-snug font-bold sm:text-[15.5px]">{[p.marca, p.nome].filter(Boolean).join(' ')}</p>
+                      <SelosDoProduto produto={p} promo={promo} impulso={imp} />
+                      <p className="largo num mt-auto pt-1 text-[18px] font-extrabold sm:text-[19px]">{formatarMoeda(p.preco)}</p>
+                      <AcoesDoProduto produto={p} impulso={imp} aoEditar={() => abrir(p)} aoImpulsionar={() => setImpulso({ produto: p, dias: 7, regiao: uf ? 'uf' : 'brasil' })} />
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <ul className="divide-y divide-linha overflow-hidden rounded-2xl bg-papel ring-1 ring-linha">
+              {visiveis.map((p) => {
+                const promo = promoDe(p);
+                const imp = impulsoDe(p);
+                return (
+                  <li key={p.id} className="flex flex-wrap items-center gap-3 px-3 py-3 sm:flex-nowrap sm:gap-4 sm:px-4">
+                    <button type="button" onClick={() => abrir(p)} className="shrink-0 overflow-hidden rounded-xl ring-1 ring-linha" aria-label={`Foto de ${p.nome}`} tabIndex={-1}>
+                      <FotoProduto produto={{ imagemUrl: p.imagem_url, categoria: p.categoria, nome: p.nome }} tamanhos="72px" className="h-16 w-16 sm:h-[72px] sm:w-[72px]" />
+                    </button>
+                    <div className="min-w-0 flex-1">
+                      <p className="line-clamp-2 leading-snug font-bold">{[p.marca, p.nome].filter(Boolean).join(' ')}</p>
+                      <p className="text-[13px] text-tinta-3">{nomeCategoria(p.categoria)}</p>
+                      <div className="mt-1">
+                        <SelosDoProduto produto={p} promo={promo} impulso={imp} />
+                      </div>
+                    </div>
+                    <p className="largo num shrink-0 text-[17px] font-extrabold sm:w-28 sm:text-right sm:text-[18px]">{formatarMoeda(p.preco)}</p>
+                    <div className="w-full sm:flex sm:w-[232px] sm:justify-end">
+                      <AcoesDoProduto produto={p} impulso={imp} aoEditar={() => abrir(p)} aoImpulsionar={() => setImpulso({ produto: p, dias: 7, regiao: uf ? 'uf' : 'brasil' })} />
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
       ) : (
         <Vazio titulo="Nenhum produto ainda" acao={<Botao onClick={() => abrir()}>Cadastrar o primeiro</Botao>}>
           Cadastre o que você vende para as oficinas: óleo, filtros, velas, pastilhas, baterias, pneus.

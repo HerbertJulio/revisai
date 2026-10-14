@@ -115,7 +115,9 @@ function Moldura({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-5xl px-4 pt-5 pb-[calc(96px+env(safe-area-inset-bottom))] sm:px-6 lg:px-10 lg:pt-10 lg:pb-16">
+      <main
+        className={`mx-auto w-full px-4 pt-5 pb-[calc(96px+env(safe-area-inset-bottom))] sm:px-6 lg:px-10 lg:pt-10 lg:pb-16 ${caminho.startsWith('/oficina/loja') ? 'max-w-7xl' : 'max-w-5xl'}`}
+      >
         {armazenamentoComProblema() ? (
           <p className="mb-5 rounded-xl bg-atraso-claro px-4 py-3 text-[14px] text-atraso" role="alert">
             O navegador não deixou abrir os dados salvos neste aparelho. Feche o Revisaí e abra de novo antes de cadastrar algo. Se continuar, restaure um backup em Ajustes.
