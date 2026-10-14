@@ -13,6 +13,7 @@ import { UFS } from '@/lib/padroes';
 import { PLANOS_FORNECEDOR, type PlanoFornecedor } from '@/lib/planos-fornecedor';
 import { linkWhatsApp } from '@/lib/whatsapp';
 import { AvisoErro } from './comum';
+import { Numero } from '@/components/painel/Numero';
 
 interface Rascunho {
   id?: number;
@@ -355,11 +356,3 @@ export function FornecedoresAdmin({ fornecedores, leads, hoje }: { fornecedores:
   );
 }
 
-function Numero({ rotulo, valor }: { rotulo: string; valor: string }) {
-  return (
-    <div className="rounded-2xl bg-papel px-4 py-3 ring-1 ring-linha">
-      <p className="text-[13px] font-semibold text-tinta-3">{rotulo}</p>
-      <p className="largo num mt-0.5 text-[22px] font-extrabold">{valor}</p>
-    </div>
-  );
-}

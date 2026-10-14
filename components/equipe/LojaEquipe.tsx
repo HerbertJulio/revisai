@@ -12,8 +12,9 @@ import {
   type LojaEquipe as Loja,
   type SituacaoPromocao
 } from '@/lib/equipe-dados';
-import { formatarMoeda, plural } from '@/lib/formatos';
-import { Filtro, LinhaDeFiltros } from './comum';
+import { Numero } from '@/components/painel/Numero';
+import { formatarMoeda } from '@/lib/formatos';
+import { CampoBusca, combina, Filtro, LinhaDeFiltros, paraBusca } from './comum';
 
 export function LojaEquipe({ loja, hoje }: { loja: Loja; hoje: string }) {
   const produtos = useMemo(() => new Map(loja.produtos.map((p) => [p.id, p])), [loja.produtos]);
@@ -26,23 +27,31 @@ export function LojaEquipe({ loja, hoje }: { loja: Loja; hoje: string }) {
     [loja.promocoes, hoje]
   );
   const contagem = useMemo(() => contarPor(promocoes, (p) => p.situacao), [promocoes]);
-  const [filtro, setFiltro] = useState<SituacaoPromocao>('em_vigor');
-  const visiveis = promocoes.filter((p) => p.situacao === filtro);
+  // abre na primeira situação que tem promoção, começando pelas em vigor
+  const [filtro, setFiltro] = useState<SituacaoPromocao>(() => SITUACOES_PROMOCAO.find((s) => (contagem[s.id] ?? 0) > 0)?.id ?? 'em_vigor');
+  const [busca, setBusca] = useState('');
+  const visiveis = promocoes
+    .filter((p) => p.situacao === filtro)
+    .filter((p) => {
+      if (!busca.trim()) return true;
+      const produto = produtos.get(p.produto_id);
+      return combina(paraBusca(p.titulo, produto?.marca, produto?.nome, produto ? fornecedores.get(produto.fornecedor_id)?.nome : ''), busca);
+    });
 
   const ativos = loja.fornecedores.filter((f) => f.ativo).length;
   const aVenda = loja.produtos.filter((p) => p.ativo && fornecedores.get(p.fornecedor_id)?.ativo).length;
 
   return (
-    <div className="flex flex-col gap-10">
-      <p className="text-[15px] text-tinta-2">
-        {plural(ativos, 'fornecedor ativo', 'fornecedores ativos')}, {plural(aVenda, 'produto à venda', 'produtos à venda')} e{' '}
-        {plural(contagem.em_vigor ?? 0, 'promoção em vigor', 'promoções em vigor')}.
-      </p>
+    <div className="flex flex-col gap-8">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Numero rotulo="Promoções em vigor" valor={String(contagem.em_vigor ?? 0)} />
+        <Numero rotulo="Programadas" valor={String(contagem.programada ?? 0)} />
+        <Numero rotulo="Fornecedores ativos" valor={String(ativos)} />
+        <Numero rotulo="Produtos à venda" valor={String(aVenda)} />
+      </div>
 
-      <section className="flex flex-col gap-3" aria-labelledby="titulo-promocoes">
-        <h2 id="titulo-promocoes" className="text-[21px]">
-          Promoções
-        </h2>
+      <section className="flex flex-col gap-3" aria-label="Lista de promoções">
+        {promocoes.length > 5 ? <CampoBusca valor={busca} aoMudar={setBusca} rotulo="Buscar promoções" dica="Buscar por produto, marca ou fornecedor" /> : null}
         <LinhaDeFiltros rotulo="Filtrar promoções">
           {SITUACOES_PROMOCAO.map((s) => (
             <Filtro key={s.id} ativo={filtro === s.id} aoClicar={() => setFiltro(s.id)} n={contagem[s.id] ?? 0}>
@@ -83,7 +92,9 @@ export function LojaEquipe({ loja, hoje }: { loja: Loja; hoje: string }) {
             })}
           </ul>
         ) : (
-          <Vazio titulo="Nenhuma promoção aqui">Escolha outra situação acima.</Vazio>
+          <Vazio titulo={busca.trim() ? 'Nenhuma promoção encontrada' : 'Nenhuma promoção aqui'}>
+            {promocoes.length ? 'Escolha outra situação acima.' : 'Os fornecedores criam as promoções no painel deles. Quando criarem, elas aparecem aqui.'}
+          </Vazio>
         )}
       </section>
 

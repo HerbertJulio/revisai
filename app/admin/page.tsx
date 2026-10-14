@@ -5,6 +5,7 @@ import { ListaCadastros } from '@/components/equipe/ListaCadastros';
 import { ListaPedidos } from '@/components/equipe/ListaPedidos';
 import { Moldura } from '@/components/equipe/Moldura';
 import { portaoDaEquipe } from '@/components/equipe/Portao';
+import { Numero } from '@/components/painel/Numero';
 import { Secao, Vazio } from '@/components/ui';
 import { buscarCadastros, buscarLoja, buscarPedidos, contarNovos } from '@/lib/equipe';
 import { dataCurta, diaEmBrasilia, diasParaAcabar, situacaoPromocao, somaDosPedidos } from '@/lib/equipe-dados';
@@ -139,12 +140,3 @@ export default async function PaginaResumo() {
   );
 }
 
-function Numero({ rotulo, valor, detalhe }: { rotulo: string; valor: string; detalhe?: string }) {
-  return (
-    <div className="rounded-2xl bg-papel px-4 py-3 ring-1 ring-linha">
-      <p className="text-[13px] font-semibold text-tinta-3">{rotulo}</p>
-      <p className="largo num mt-0.5 text-[22px] font-extrabold">{valor}</p>
-      {detalhe ? <p className="text-[12.5px] text-tinta-3">{detalhe}</p> : null}
-    </div>
-  );
-}

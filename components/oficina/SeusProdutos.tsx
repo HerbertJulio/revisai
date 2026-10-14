@@ -101,6 +101,7 @@ export function SeusProdutos() {
 
   return (
     <Secao
+      id="produtos"
       titulo="Seus produtos"
       descricao="Produtos que você usa e que não estão na loja, com o prazo de troca que você confia. Eles aparecem primeiro na lista ao registrar o serviço."
       acao={

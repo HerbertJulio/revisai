@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { AvisoErro } from '@/components/equipe/comum';
 import { MolduraFornecedor, SemAcesso } from '@/components/fornecedor/Moldura';
+import { Numero } from '@/components/painel/Numero';
 import { Chip, Secao, Vazio, classeBotao } from '@/components/ui';
 import { nomeCategoria } from '@/lib/catalogo';
 import { MINIMO_OFICINAS, quantidadeDaLinha } from '@/lib/demanda';
@@ -129,19 +130,3 @@ export default async function InicioFornecedor({ searchParams }: { searchParams:
   );
 }
 
-function Numero({ rotulo, valor, detalhe, href }: { rotulo: string; valor: string; detalhe?: string; href?: string }) {
-  const corpo = (
-    <>
-      <p className="text-[13px] font-semibold text-tinta-3">{rotulo}</p>
-      <p className="largo num mt-0.5 text-[22px] font-extrabold">{valor}</p>
-      {detalhe ? <p className="text-[12.5px] text-tinta-3">{detalhe}</p> : null}
-    </>
-  );
-  return href ? (
-    <Link href={href} className="rounded-2xl bg-papel px-4 py-3 ring-1 ring-linha hover:ring-tinta-3">
-      {corpo}
-    </Link>
-  ) : (
-    <div className="rounded-2xl bg-papel px-4 py-3 ring-1 ring-linha">{corpo}</div>
-  );
-}

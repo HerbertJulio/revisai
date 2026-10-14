@@ -21,7 +21,7 @@ import {
 } from '@/lib/equipe-dados';
 import { formatarTelefone } from '@/lib/formatos';
 import { linkWhatsApp } from '@/lib/whatsapp';
-import { ChipSituacao, Filtro, LinhaDeFiltros, SeletorSituacao } from './comum';
+import { CampoBusca, ChipSituacao, combina, Filtro, LinhaDeFiltros, MostrarMais, paraBusca, POR_PAGINA, SeletorSituacao } from './comum';
 
 const situacao = (id: SituacaoCadastro) => SITUACOES_CADASTRO.find((s) => s.id === id) ?? SITUACOES_CADASTRO[0];
 
@@ -48,7 +48,13 @@ export function ListaCadastros({
   const doTipo = useMemo(() => (tipo === 'todos' ? lista : lista.filter((c) => c.tipo === tipo)), [lista, tipo]);
   const porTipo = useMemo(() => contarPor(lista, (c) => c.tipo), [lista]);
   const porEstado = useMemo(() => contarPor(doTipo, (c) => c.situacao), [doTipo]);
-  const visiveis = !comFiltros ? lista : estado === 'todos' ? doTipo : doTipo.filter((c) => c.situacao === estado);
+  const [busca, setBusca] = useState('');
+  const [limite, setLimite] = useState(POR_PAGINA);
+  const textos = useMemo(() => new Map(lista.map((c) => [c.id, paraBusca(c.nome, c.empresa, c.cidade, c.uf, c.whatsapp, c.email, c.mensagem)])), [lista]);
+  const filtrados = !comFiltros
+    ? lista
+    : (estado === 'todos' ? doTipo : doTipo.filter((c) => c.situacao === estado)).filter((c) => !busca.trim() || combina(textos.get(c.id) ?? '', busca));
+  const visiveis = comFiltros ? filtrados.slice(0, limite) : filtrados;
 
   function mudar(c: Cadastro, nova: SituacaoCadastro, comDesfazer = false) {
     const anterior = c.situacao;
@@ -73,23 +79,36 @@ export function ListaCadastros({
     <div className="flex flex-col gap-4">
       {comFiltros ? (
         <div className="flex flex-col gap-2">
+          {lista.length > 5 ? (
+            <div className="mb-1">
+              <CampoBusca
+                valor={busca}
+                aoMudar={(v) => {
+                  setBusca(v);
+                  setLimite(POR_PAGINA);
+                }}
+                rotulo="Buscar cadastros"
+                dica="Buscar por nome, empresa, cidade ou contato"
+              />
+            </div>
+          ) : null}
           <LinhaDeFiltros rotulo="Filtrar por tipo de cadastro">
-            <Filtro ativo={tipo === 'todos'} aoClicar={() => setTipo('todos')} n={lista.length}>
+            <Filtro ativo={tipo === 'todos'} aoClicar={() => { setTipo('todos'); setLimite(POR_PAGINA); }} n={lista.length}>
               Todos
             </Filtro>
             {TIPOS_CADASTRO.map((t) => (
-              <Filtro key={t.id} ativo={tipo === t.id} aoClicar={() => setTipo(t.id)} n={porTipo[t.id] ?? 0}>
+              <Filtro key={t.id} ativo={tipo === t.id} aoClicar={() => { setTipo(t.id); setLimite(POR_PAGINA); }} n={porTipo[t.id] ?? 0}>
                 {t.plural}
               </Filtro>
             ))}
           </LinhaDeFiltros>
           <LinhaDeFiltros rotulo="Filtrar por situação">
             {SITUACOES_CADASTRO.map((s) => (
-              <Filtro key={s.id} ativo={estado === s.id} aoClicar={() => setEstado(s.id)} n={porEstado[s.id] ?? 0}>
+              <Filtro key={s.id} ativo={estado === s.id} aoClicar={() => { setEstado(s.id); setLimite(POR_PAGINA); }} n={porEstado[s.id] ?? 0}>
                 {s.plural}
               </Filtro>
             ))}
-            <Filtro ativo={estado === 'todos'} aoClicar={() => setEstado('todos')} n={doTipo.length}>
+            <Filtro ativo={estado === 'todos'} aoClicar={() => { setEstado('todos'); setLimite(POR_PAGINA); }} n={doTipo.length}>
               Todas as situações
             </Filtro>
           </LinhaDeFiltros>
@@ -101,9 +120,10 @@ export function ListaCadastros({
           {visiveis.map((c) => (
             <CartaoCadastro key={c.id} cadastro={c} agora={agora} aoMudar={mudar} />
           ))}
+          <MostrarMais total={filtrados.length} mostrando={visiveis.length} aoMostrar={() => setLimite((l) => l + POR_PAGINA)} />
         </div>
       ) : lista.length ? (
-        <Vazio titulo="Nada por aqui">Nenhum cadastro com esses filtros.</Vazio>
+        <Vazio titulo="Nada por aqui">{busca.trim() ? 'Nenhum cadastro com essa busca e esses filtros.' : 'Nenhum cadastro com esses filtros.'}</Vazio>
       ) : vazio ? (
         vazio
       ) : (

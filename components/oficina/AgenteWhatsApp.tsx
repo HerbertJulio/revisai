@@ -59,6 +59,7 @@ export function AgenteWhatsApp() {
   const numeroLimpo = codigo?.numero?.replace(/\D/g, '') ?? '';
   return (
     <Secao
+      id="agente"
       titulo="Agente no WhatsApp"
       descricao="O mecânico manda áudios e fotos do serviço para o número do Revisaí e a IA monta a ordem de serviço e a mensagem para o cliente. Você confere aqui no app antes de registrar."
     >

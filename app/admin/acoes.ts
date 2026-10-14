@@ -7,7 +7,7 @@ import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { acessoDaEquipe, configEquipe, salvarSituacaoCadastro, salvarSituacaoPedido, type Gravacao } from '@/lib/equipe';
 import { situacaoCadastroValida, situacaoPedidoValida } from '@/lib/equipe-dados';
-import { permitido } from '@/lib/limite';
+import { contarErro, esgotado } from '@/lib/limite';
 import {
   decidirImpulso,
   decidirReferencia,
@@ -31,8 +31,10 @@ function destinoSeguro(valor: FormDataEntryValue | null): string {
 export async function entrar(_anterior: EstadoEntrada, dados: FormData): Promise<EstadoEntrada> {
   const c = configEquipe();
   if (!c) return { erro: 'O painel administrativo ainda não foi configurado.' };
-  if (!(await permitido('equipe-entrar', 8, 15))) return { erro: 'Muitas tentativas seguidas. Espere alguns minutos e tente de novo.' };
+  // só as senhas erradas contam para o limite
+  if (await esgotado('equipe-entrar', 8, 15)) return { erro: 'Muitas tentativas erradas seguidas. Espere alguns minutos e tente de novo.' };
   if (!senhaConfere(String(dados.get('senha') ?? ''), c.senha)) {
+    await contarErro('equipe-entrar', 15);
     await new Promise((r) => setTimeout(r, 400));
     return { erro: 'Senha errada. Confira e tente de novo.' };
   }

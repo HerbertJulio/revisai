@@ -16,7 +16,7 @@ import {
 } from '@/lib/equipe-dados';
 import { formatarMoeda, formatarTelefone } from '@/lib/formatos';
 import { linkWhatsApp } from '@/lib/whatsapp';
-import { ChipSituacao, Filtro, LinhaDeFiltros, SeletorSituacao } from './comum';
+import { CampoBusca, ChipSituacao, combina, Filtro, LinhaDeFiltros, MostrarMais, paraBusca, POR_PAGINA, SeletorSituacao } from './comum';
 
 type FiltroPedido = SituacaoPedido | 'todos';
 
@@ -41,7 +41,21 @@ export function ListaPedidos({
   );
   const contagem = useMemo(() => contarPor(lista, (p) => p.status), [lista]);
   const [filtro, setFiltro] = useState<FiltroPedido>(() => ((contarPor(pedidos, (p) => p.status).novo ?? 0) > 0 ? 'novo' : 'todos'));
-  const visiveis = !comFiltros || filtro === 'todos' ? lista : lista.filter((p) => p.status === filtro);
+  const [busca, setBusca] = useState('');
+  const [limite, setLimite] = useState(POR_PAGINA);
+  const textos = useMemo(
+    () => new Map(lista.map((p) => [p.id, paraBusca(p.codigo, p.oficina_nome, p.oficina_cidade, p.oficina_whatsapp, ...p.itens.map((i) => `${i.nome} ${i.fornecedor}`))])),
+    [lista]
+  );
+  const filtrados = !comFiltros
+    ? lista
+    : (filtro === 'todos' ? lista : lista.filter((p) => p.status === filtro)).filter((p) => !busca.trim() || combina(textos.get(p.id) ?? '', busca));
+  const visiveis = comFiltros ? filtrados.slice(0, limite) : filtrados;
+
+  function filtrar(f: FiltroPedido) {
+    setFiltro(f);
+    setLimite(POR_PAGINA);
+  }
 
   function mudar(p: Pedido, status: SituacaoPedido, comDesfazer = false) {
     const anterior = p.status;
@@ -65,16 +79,29 @@ export function ListaPedidos({
   return (
     <div className="flex flex-col gap-4">
       {comFiltros ? (
-        <LinhaDeFiltros rotulo="Filtrar pedidos por situação">
-          {SITUACOES_PEDIDO.map((s) => (
-            <Filtro key={s.id} ativo={filtro === s.id} aoClicar={() => setFiltro(s.id)} n={contagem[s.id] ?? 0}>
-              {s.plural}
+        <div className="flex flex-col gap-3">
+          {lista.length > 5 ? (
+            <CampoBusca
+              valor={busca}
+              aoMudar={(v) => {
+                setBusca(v);
+                setLimite(POR_PAGINA);
+              }}
+              rotulo="Buscar pedidos"
+              dica="Buscar por código, oficina, cidade ou produto"
+            />
+          ) : null}
+          <LinhaDeFiltros rotulo="Filtrar pedidos por situação">
+            {SITUACOES_PEDIDO.map((s) => (
+              <Filtro key={s.id} ativo={filtro === s.id} aoClicar={() => filtrar(s.id)} n={contagem[s.id] ?? 0}>
+                {s.plural}
+              </Filtro>
+            ))}
+            <Filtro ativo={filtro === 'todos'} aoClicar={() => filtrar('todos')} n={lista.length}>
+              Todos
             </Filtro>
-          ))}
-          <Filtro ativo={filtro === 'todos'} aoClicar={() => setFiltro('todos')} n={lista.length}>
-            Todos
-          </Filtro>
-        </LinhaDeFiltros>
+          </LinhaDeFiltros>
+        </div>
       ) : null}
 
       {visiveis.length ? (
@@ -82,9 +109,14 @@ export function ListaPedidos({
           {visiveis.map((p) => (
             <CartaoPedido key={p.id} pedido={p} agora={agora} aoMudar={mudar} />
           ))}
+          <MostrarMais total={filtrados.length} mostrando={visiveis.length} aoMostrar={() => setLimite((l) => l + POR_PAGINA)} />
         </div>
       ) : lista.length ? (
-        <Vazio titulo="Nenhum pedido nesta situação">Escolha outra situação acima para ver os demais.</Vazio>
+        busca.trim() ? (
+          <Vazio titulo="Nenhum pedido encontrado">Confira o que foi digitado ou procure em todas as situações.</Vazio>
+        ) : (
+          <Vazio titulo="Nenhum pedido nesta situação">Escolha outra situação acima para ver os demais.</Vazio>
+        )
       ) : vazio ? (
         vazio
       ) : (

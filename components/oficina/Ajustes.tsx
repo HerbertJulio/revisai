@@ -20,12 +20,43 @@ import { AgenteWhatsApp } from './AgenteWhatsApp';
 import { PlanoDaOficina } from './plano';
 import { SeusProdutos } from './SeusProdutos';
 
+const PARTES = [
+  { id: 'oficina', nome: 'Oficina' },
+  { id: 'plano', nome: 'Plano' },
+  { id: 'agente', nome: 'Agente no WhatsApp' },
+  { id: 'avisos', nome: 'Avisos' },
+  { id: 'mensagem', nome: 'Mensagem' },
+  { id: 'prazos', nome: 'Prazos' },
+  { id: 'produtos', nome: 'Seus produtos' },
+  { id: 'aparencia', nome: 'Aparência' },
+  { id: 'dados', nome: 'Seus dados' }
+];
+
 export function Ajustes() {
+  // ao chegar por um link como /oficina/ajustes#plano, a parte só existe depois de carregar os dados
+  useEffect(() => {
+    const id = decodeURIComponent(window.location.hash.slice(1));
+    if (id) document.getElementById(id)?.scrollIntoView({ block: 'start' });
+  }, []);
+
   return (
     <div className="flex flex-col gap-10">
-      <header>
-        <h1 className="largo text-[30px] sm:text-[34px]">Ajustes</h1>
-        <p className="mt-1 text-tinta-2">As mudanças valem na hora e ficam guardadas neste aparelho.</p>
+      <header className="flex flex-col gap-4">
+        <div>
+          <h1 className="largo text-[30px] sm:text-[34px]">Ajustes</h1>
+          <p className="mt-1 text-tinta-2">As mudanças valem na hora e ficam guardadas neste aparelho.</p>
+        </div>
+        <nav aria-label="Partes dos ajustes" className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+          <ul className="flex w-max gap-2 sm:w-auto sm:flex-wrap">
+            {PARTES.map((p) => (
+              <li key={p.id}>
+                <a href={`#${p.id}`} className="inline-flex h-9 items-center rounded-full border border-linha bg-papel px-3.5 text-[14px] font-semibold text-tinta-2 hover:border-tinta-3 hover:text-tinta">
+                  {p.nome}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </nav>
       </header>
       <DadosOficina />
       <PlanoDaOficina />
@@ -150,7 +181,7 @@ function Avisos() {
   const diasOpcoes = [7, 10, 15, 20, 30];
   const kmOpcoes = [300, 500, 1000, 1500];
   return (
-    <Secao titulo="Avisos" descricao="Com quanta antecedência o cliente entra na lista de quem avisar.">
+    <Secao id="avisos" titulo="Avisos" descricao="Com quanta antecedência o cliente entra na lista de quem avisar.">
       <Cartao>
         <div className="flex flex-col gap-6">
           <div className="flex flex-col gap-2">
@@ -249,7 +280,7 @@ function Mensagem() {
   }
 
   return (
-    <Secao titulo="Mensagem do WhatsApp" descricao="O texto que abre pronto quando você toca em WhatsApp num aviso.">
+    <Secao id="mensagem" titulo="Mensagem do WhatsApp" descricao="O texto que abre pronto quando você toca em WhatsApp num aviso.">
       <Cartao>
         <div className="flex flex-col gap-4">
           <textarea ref={area} rows={4} className={classeArea} value={prefs.mensagem} onChange={(e) => salvar({ mensagem: e.target.value })} aria-label="Modelo da mensagem" />
@@ -293,6 +324,7 @@ function Prazos() {
 
   return (
     <Secao
+      id="prazos"
       titulo="Prazos padrão"
       descricao="O prazo que já vem preenchido ao registrar cada serviço (uso normal; no uso severo, o app usa a metade quando a regra pede). O manual do carro e o produto usado podem mudar o prazo de cada registro."
     >
@@ -367,7 +399,7 @@ function Aparencia() {
     { id: 'escuro', nome: 'Escuro' }
   ];
   return (
-    <Secao titulo="Aparência">
+    <Secao id="aparencia" titulo="Aparência">
       <div className="flex flex-wrap gap-2">
         {opcoes.map((o) => (
           <button
@@ -419,7 +451,7 @@ function SeusDados() {
 
   const total = Object.keys(estado.veiculos).length;
   return (
-    <Secao titulo="Seus dados" descricao="Sem login, os dados ficam só neste aparelho. Faça backup de vez em quando.">
+    <Secao id="dados" titulo="Seus dados" descricao="Sem login, os dados ficam só neste aparelho. Faça backup de vez em quando.">
       <Cartao>
         <div className="flex flex-col gap-5">
           <p className="text-[14px] text-tinta-2">

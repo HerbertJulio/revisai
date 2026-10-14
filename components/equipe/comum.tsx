@@ -2,9 +2,57 @@
 
 // Peças pequenas do painel da equipe.
 
+import { Search } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { Chip } from '@/components/ui';
+import { Chip, classeBotao } from '@/components/ui';
 import type { Tom } from '@/lib/equipe-dados';
+
+/** Quantos itens as listas longas mostram de cada vez. */
+export const POR_PAGINA = 20;
+
+/** Texto para busca sem acento e sem maiúscula. */
+export function paraBusca(...partes: (string | null | undefined)[]): string {
+  return partes
+    .filter(Boolean)
+    .join(' ')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+/** Todas as palavras digitadas aparecem no texto do item. */
+export function combina(texto: string, busca: string): boolean {
+  const termos = paraBusca(busca).split(/\s+/).filter(Boolean);
+  return termos.every((t) => texto.includes(t));
+}
+
+export function CampoBusca({ valor, aoMudar, rotulo, dica }: { valor: string; aoMudar: (v: string) => void; rotulo: string; dica: string }) {
+  return (
+    <label className="relative block w-full sm:max-w-sm">
+      <span className="sr-only">{rotulo}</span>
+      <Search size={17} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-tinta-3" aria-hidden="true" />
+      <input
+        type="search"
+        value={valor}
+        onChange={(e) => aoMudar(e.target.value)}
+        placeholder={dica}
+        className="h-10 w-full min-w-0 rounded-[10px] border border-linha bg-papel pr-3 pl-9 text-[16px] outline-none placeholder:text-tinta-3 focus:border-caneta focus:ring-3 focus:ring-caneta/20 sm:text-[14.5px]"
+      />
+    </label>
+  );
+}
+
+/** Botão no fim da lista para mostrar os próximos itens. */
+export function MostrarMais({ total, mostrando, aoMostrar }: { total: number; mostrando: number; aoMostrar: () => void }) {
+  if (mostrando >= total) return null;
+  const restam = total - mostrando;
+  return (
+    <button type="button" onClick={aoMostrar} className={classeBotao('secundario', 'normal', 'self-center')}>
+      Mostrar mais {Math.min(POR_PAGINA, restam)}
+      <span className="num text-tinta-3">de {restam}</span>
+    </button>
+  );
+}
 
 export function Filtro({ ativo, aoClicar, children, n }: { ativo: boolean; aoClicar: () => void; children: ReactNode; n?: number }) {
   return (

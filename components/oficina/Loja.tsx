@@ -1,6 +1,6 @@
 'use client';
 
-import { BadgeCheck, BadgePercent, Check, Minus, Plus, Search, ShoppingCart, Truck } from 'lucide-react';
+import { BadgeCheck, BadgePercent, Check, Minus, PackageSearch, Plus, Search, ShoppingCart, Truck } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useMemo, useState, useTransition, type ReactNode } from 'react';
 import { enviarPedido } from '@/app/acoes';
@@ -122,7 +122,7 @@ export function Loja() {
           <Vazio titulo="Nenhuma troca prevista para os próximos 30 dias">Quando os avisos chegarem perto, a soma do que comprar aparece aqui.</Vazio>
         ) : (
           <ul className="divide-y divide-linha overflow-hidden rounded-2xl bg-papel ring-1 ring-linha">
-            {demanda.map((l) => {
+            {demanda.filter((l) => l.recomendacao || l.semEspecificacao).map((l) => {
               const r = l.recomendacao;
               const alternativa = r ? patrocinadoParecido(r) : undefined;
               return (
@@ -185,6 +185,7 @@ export function Loja() {
                 </li>
               );
             })}
+            <SemProdutoNaLoja linhas={demanda.filter((l) => !l.recomendacao && !l.semEspecificacao)} />
           </ul>
         )}
         <CartaoDemanda />
@@ -674,5 +675,30 @@ function Carrinho({ aberto, aoFechar }: { aberto: boolean; aoFechar: () => void 
         </div>
       )}
     </Folha>
+  );
+}
+
+/** As compras previstas que ainda não têm produto na loja, numa linha só para não encher a lista. */
+function SemProdutoNaLoja({ linhas }: { linhas: LinhaDemanda[] }) {
+  const compartilha = useOficina((s) => s.preferencias.compartilharDemanda);
+  if (!linhas.length) return null;
+  return (
+    <li className="flex items-start gap-4 bg-papel-2/50 px-4 py-3.5 sm:px-5">
+      <span className="grid h-10 w-14 shrink-0 place-items-center text-tinta-3">
+        <PackageSearch size={20} aria-hidden="true" />
+      </span>
+      <div className="min-w-0 flex-1 text-[14px]">
+        <p className="font-semibold text-tinta-2">Ainda sem produto na loja</p>
+        <p className="text-tinta-3">
+          {linhas.map((l, i) => (
+            <span key={l.chave}>
+              {i ? ', ' : ''}
+              {l.titulo} <span className="num">({l.carros === 1 ? '1 carro' : `${l.carros} carros`})</span>
+            </span>
+          ))}
+          .{compartilha ? ' Os fornecedores da região veem essa procura e podem cadastrar.' : ''}
+        </p>
+      </div>
+    </li>
   );
 }

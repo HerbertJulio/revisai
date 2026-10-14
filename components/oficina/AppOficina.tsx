@@ -105,7 +105,14 @@ function Moldura({ children }: { children: ReactNode }) {
         <Link href="/oficina" aria-label="Revisaí, avisos">
           <Logo tamanho={26} />
         </Link>
-        <span className="truncate text-[14px] font-semibold text-tinta-2">{nomeOficina}</span>
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-[14px] font-semibold text-tinta-2">{nomeOficina}</span>
+          {caminho.startsWith('/oficina/ordem') ? null : (
+            <Link href="/oficina/ordem" aria-label="Ordem por voz" className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-papel-2 text-tinta hover:bg-linha">
+              <Mic size={19} aria-hidden="true" />
+            </Link>
+          )}
+        </div>
       </header>
 
       <main className="mx-auto w-full max-w-5xl px-4 pt-5 pb-[calc(96px+env(safe-area-inset-bottom))] sm:px-6 lg:px-10 lg:pt-10 lg:pb-16">
