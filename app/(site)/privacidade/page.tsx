@@ -18,6 +18,21 @@ const SECOES = [
       'Os pedidos da loja (nome, WhatsApp e cidade da oficina, produtos e quantidades) e os cadastros de interesse (nome, WhatsApp ou e-mail, cidade e mensagem), sempre com o seu consentimento. Usamos esses dados para responder, para passar o pedido ao fornecedor dos produtos e para avisar sobre o que você pediu.'
   },
   {
+    titulo: 'Ordem de serviço por voz',
+    texto:
+      'Os áudios, as fotos e a anotação da ordem vão para o servidor só para a inteligência artificial (o Gemini, do Google) montar a ordem e a mensagem para o cliente. O Revisaí não guarda esse material: a ordem conferida, as fotos e os áudios ficam no aparelho da oficina.'
+  },
+  {
+    titulo: 'Agente no WhatsApp',
+    texto:
+      'O que o mecânico manda ao número do Revisaí passa pelo WhatsApp (Meta) e fica num rascunho até a oficina conferir no app. Quando a oficina confirma ou descarta, ou depois de 30 dias parado, os áudios, fotos e textos são apagados do servidor.'
+  },
+  {
+    titulo: 'Previsão de compras para os fornecedores',
+    texto:
+      'Só se a oficina ligar essa opção: o app manda a soma do que os carros vão precisar nos próximos 30 dias (tipo de produto e quantidade), sem nome de cliente, placa ou nome da oficina. Os fornecedores veem apenas o total da região, e só quando pelo menos três oficinas compartilham.'
+  },
+  {
     titulo: 'Cartão de manutenção',
     texto:
       'Os dados do cartão que a oficina manda para o cliente ficam dentro do próprio link, depois do sinal #. Essa parte do endereço não é enviada ao servidor quando a página abre.'
@@ -25,7 +40,7 @@ const SECOES = [
   {
     titulo: 'Quem cuida da estrutura',
     texto:
-      'O site é hospedado na Vercel. Pedidos e cadastros ficam num banco de dados do Supabase, na região de São Paulo. Não usamos cookies de rastreamento nem anúncios.'
+      'O site é hospedado na Vercel. Pedidos, cadastros, a loja e os rascunhos do agente ficam num banco de dados do Supabase, na região de São Paulo. Os únicos cookies são os de entrada dos painéis do fornecedor e da equipe. Não usamos cookies de rastreamento nem anúncios.'
   },
   {
     titulo: 'Seus direitos',

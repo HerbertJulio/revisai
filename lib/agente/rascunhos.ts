@@ -278,7 +278,56 @@ export async function encerrarRascunho(aparelhoId: string, id: string, status: '
     .eq('id', id)
     .eq('aparelho_id', aparelhoId)
     .eq('status', 'pronta')
-    .select('id');
+    .select('id, midias');
   if (error) console.error('[agente] encerrar rascunho', error);
-  return !error && (data?.length ?? 0) > 0;
+  const linha = data?.[0] as { id: string; midias: MidiaGuardada[] } | undefined;
+  if (error || !linha) return false;
+  // o app já baixou o que precisava: áudios, fotos e textos saem do servidor
+  await apagarConteudo(linha.id, linha.midias);
+  return true;
+}
+
+/** Apaga os áudios e fotos do Storage e esvazia o rascunho (fica só a linha, sem conteúdo). */
+async function apagarConteudo(id: string, midias: MidiaGuardada[]): Promise<void> {
+  const sb = clienteEquipe();
+  if (!sb) return;
+  const caminhos = (Array.isArray(midias) ? midias : []).map((m) => m.caminho).filter(Boolean);
+  if (caminhos.length) {
+    const { error } = await sb.storage.from(BUCKET).remove(caminhos);
+    if (error) console.error('[agente] apagar mídia', error);
+  }
+  const { error } = await sb.from('ordens_rascunho').update({ midias: [], textos: [], resultado: null }).eq('id', id);
+  if (error) console.error('[agente] esvaziar rascunho', error);
+}
+
+/**
+ * Rotina diária: rascunhos parados há mais de `dias` dias (que a oficina nunca abriu ou esqueceu)
+ * perdem os áudios, fotos e textos, e os códigos de vínculo vencidos somem.
+ */
+export async function limparRascunhosVelhos(dias = 30): Promise<{ rascunhos: number }> {
+  const sb = clienteEquipe();
+  if (!sb) return { rascunhos: 0 };
+  const limite = new Date(Date.now() - dias * 86_400_000).toISOString();
+  await sb.from('whatsapp_codigos').delete().lt('expira_em', new Date().toISOString());
+  const { data, error } = await sb
+    .from('ordens_rascunho')
+    .select('id, status, midias, textos')
+    .lt('atualizado_em', limite)
+    .order('atualizado_em', { ascending: true })
+    .limit(200);
+  if (error) {
+    console.error('[agente] rascunhos velhos', error);
+    return { rascunhos: 0 };
+  }
+  let n = 0;
+  for (const r of (data ?? []) as { id: string; status: string; midias: MidiaGuardada[]; textos: unknown[] }[]) {
+    const vazio = !r.midias?.length && !r.textos?.length;
+    if (vazio && (r.status === 'confirmada' || r.status === 'descartada')) continue;
+    if (r.status !== 'confirmada' && r.status !== 'descartada') {
+      await sb.from('ordens_rascunho').update({ status: 'descartada', atualizado_em: new Date().toISOString() }).eq('id', r.id);
+    }
+    await apagarConteudo(r.id, r.midias);
+    n++;
+  }
+  return { rascunhos: n };
 }
