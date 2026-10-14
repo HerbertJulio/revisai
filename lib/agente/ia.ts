@@ -4,11 +4,12 @@ import 'server-only';
 // 1. o áudio do mecânico vira texto (transcreverComIA);
 // 2. o texto, com as fotos, vira a ordem preenchida (preencherComIA).
 // Dois caminhos, os dois com camada grátis:
-// - chave grátis do Google AI Studio em GOOGLE_GENERATIVE_AI_API_KEY (modelo em
-//   AGENTE_MODELO_GOOGLE, padrão gemini-2.5-flash);
-// - Vercel AI Gateway, quando roda na Vercel (autentica sozinho por OIDC). Modelo em AGENTE_MODELO,
+// - chave grátis do Google AI Studio em GOOGLE_GENERATIVE_AI_API_KEY. Os modelos ficam em
+//   AGENTE_MODELO_GOOGLE (um ou vários, separados por vírgula, tentados em ordem);
+// - Vercel AI Gateway, quando roda na Vercel (autentica sozinho por OIDC). Modelos em AGENTE_MODELO,
 //   padrão google/gemini-3.6-flash. Se o modelo recusar o formato do áudio, o texto sai pelo Whisper.
-// Os prazos de cada passo somados cabem nos 120 segundos da função do WhatsApp, que faz os dois.
+// Quando um modelo está cheio ou sem cota, o próximo da lista tenta. Os prazos dos dois passos somados
+// cabem nos 120 segundos da função do WhatsApp, que faz os dois.
 
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { gateway, generateText, Output, transcribe, type LanguageModel, type UserContent } from 'ai';
@@ -24,36 +25,59 @@ export interface Midia {
 export type ResultadoIA = { ok: true; ordem: OrdemIA; modelo: string } | { ok: false; erro: string };
 export type ResultadoTexto = { ok: true; texto: string; modelo: string } | { ok: false; erro: string };
 
-type Caminho = { tipo: 'google'; modelo: LanguageModel; nome: string } | { tipo: 'gateway'; modelo: LanguageModel; nome: string };
+type Caminho = { tipo: 'google' | 'gateway'; modelo: LanguageModel; nome: string };
 
-function caminho(): Caminho | null {
+// Na camada grátis os modelos "lite" respondem mesmo quando os maiores estão cheios, e o
+// gemini-2.5-flash já não aceita chaves novas. O 3.8 Flash fica de reserva.
+export const MODELOS_GOOGLE = ['gemini-3.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-3.8-flash'];
+const MODELOS_GATEWAY = ['google/gemini-3.6-flash'];
+
+function lista(valor: string | undefined, padrao: string[]): string[] {
+  const nomes = (valor ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return nomes.length ? nomes : padrao;
+}
+
+function caminhos(): Caminho[] {
   const chaveGoogle = process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim();
   if (chaveGoogle) {
-    const nome = process.env.AGENTE_MODELO_GOOGLE?.trim() || 'gemini-2.5-flash';
     // AGENTE_GOOGLE_URL: outro endereço para a API do Google (um proxy, ou um servidor de teste)
     const baseURL = process.env.AGENTE_GOOGLE_URL?.trim() || undefined;
-    return { tipo: 'google', modelo: createGoogleGenerativeAI({ apiKey: chaveGoogle, baseURL })(nome), nome };
+    const google = createGoogleGenerativeAI({ apiKey: chaveGoogle, baseURL });
+    return lista(process.env.AGENTE_MODELO_GOOGLE, MODELOS_GOOGLE).map((nome) => ({ tipo: 'google', modelo: google(nome), nome }));
   }
   const naVercel = !!process.env.VERCEL || !!process.env.VERCEL_OIDC_TOKEN || !!process.env.AI_GATEWAY_API_KEY;
-  if (!naVercel) return null;
-  const nome = process.env.AGENTE_MODELO?.trim() || 'google/gemini-3.6-flash';
-  return { tipo: 'gateway', modelo: gateway(nome), nome };
+  if (!naVercel) return [];
+  return lista(process.env.AGENTE_MODELO, MODELOS_GATEWAY).map((nome) => ({ tipo: 'gateway', modelo: gateway(nome), nome }));
 }
 
 export function agenteLigado(): boolean {
-  return caminho() != null;
+  return caminhos().length > 0;
 }
 
 const DESLIGADA = 'A IA ainda não está ligada neste servidor.';
 
+function detalhes(e: unknown) {
+  const erro = (e as { lastError?: unknown })?.lastError ?? e;
+  return {
+    nome: String((erro as { name?: string })?.name ?? ''),
+    status: Number((erro as { statusCode?: number })?.statusCode ?? 0),
+    texto: String((erro as { message?: string })?.message ?? erro)
+  };
+}
+
+function erroDeChave(e: unknown): boolean {
+  const { nome, status, texto } = detalhes(e);
+  return /Authentication|Forbidden/.test(nome) || status === 401 || status === 403 || /api key|unauthori[sz]ed|permission/i.test(texto);
+}
+
 /** O que deu errado com a IA, em palavras que a oficina entende (e o motivo técnico para o log). */
 export function motivoDoErro(e: unknown, acao: 'ouvir' | 'montar' = 'montar'): { mensagem: string; tecnico: string } {
-  const erro = (e as { lastError?: unknown })?.lastError ?? e;
-  const nome = String((erro as { name?: string })?.name ?? '');
-  const status = Number((erro as { statusCode?: number })?.statusCode ?? 0);
-  const texto = String((erro as { message?: string })?.message ?? erro);
+  const { nome, status, texto } = detalhes(e);
   const tecnico = `${nome || 'Erro'}${status ? ` ${status}` : ''}: ${texto.split('\n')[0].slice(0, 160)}`;
-  if (/Authentication|Forbidden/.test(nome) || status === 401 || status === 403 || /api key|unauthori[sz]ed|permission/i.test(texto)) {
+  if (erroDeChave(e)) {
     return { mensagem: 'A IA ainda não está liberada neste servidor. Avise a equipe do Revisaí e registre à mão por enquanto.', tecnico };
   }
   if (status === 402 || /credit|insufficient|funds|balance|billing|quota/i.test(texto)) {
@@ -66,6 +90,29 @@ export function motivoDoErro(e: unknown, acao: 'ouvir' | 'montar' = 'montar'): {
   return { mensagem: 'A IA não conseguiu montar a ordem agora. Tente de novo em instantes ou registre à mão.', tecnico };
 }
 
+/**
+ * Tenta os modelos em ordem dentro do prazo. Um modelo cheio (503), sem cota (429) ou que recusou
+ * o pedido passa a vez ao próximo; chave recusada para tudo, porque vale para todos. Cada tentativa
+ * tem um teto (um modelo cheio às vezes demora para recusar) e a última fica com o resto do prazo.
+ */
+async function comOsModelos<T>(lista: Caminho[], prazo: number, fazer: (c: Caminho, tempo: number, novasTentativas: number) => Promise<T>): Promise<{ valor: T; caminho: Caminho }> {
+  const fim = Date.now() + prazo;
+  let ultimoErro: unknown = new Error('A IA não respondeu a tempo.');
+  for (const [i, c] of lista.entries()) {
+    const resta = fim - Date.now();
+    if (resta < 5_000) break;
+    const ultimo = i === lista.length - 1;
+    try {
+      return { valor: await fazer(c, ultimo ? resta : Math.min(resta, 35_000), ultimo ? 1 : 0), caminho: c };
+    } catch (e) {
+      ultimoErro = e;
+      console.error(`[agente] ${c.nome}`, motivoDoErro(e).tecnico);
+      if (erroDeChave(e)) break;
+    }
+  }
+  throw ultimoErro;
+}
+
 export interface EstadoDaIA {
   caminho: 'gateway' | 'google' | null;
   modelo: string | null;
@@ -76,15 +123,16 @@ export interface EstadoDaIA {
 
 /** Diagnóstico sem gastar: no AI Gateway, consulta os créditos (confere a autenticação também). */
 export async function estadoDaIA(): Promise<EstadoDaIA> {
-  const c = caminho();
-  if (!c) return { caminho: null, modelo: null, ok: false, motivo: 'Sem chave do Google e fora da Vercel.' };
-  if (c.tipo === 'google') return { caminho: 'google', modelo: c.nome, ok: true };
+  const l = caminhos();
+  if (!l.length) return { caminho: null, modelo: null, ok: false, motivo: 'Sem chave do Google e fora da Vercel.' };
+  const modelo = l.map((c) => c.nome).join(', ');
+  if (l[0].tipo === 'google') return { caminho: 'google', modelo, ok: true };
   try {
     const r = await gateway.getCredits();
     const saldo = Number(r.balance);
-    return { caminho: 'gateway', modelo: c.nome, ok: saldo > 0, creditos: saldo <= 0 ? 'zerado' : saldo < 0.5 ? 'acabando' : 'ok' };
+    return { caminho: 'gateway', modelo, ok: saldo > 0, creditos: saldo <= 0 ? 'zerado' : saldo < 0.5 ? 'acabando' : 'ok' };
   } catch (e) {
-    return { caminho: 'gateway', modelo: c.nome, ok: false, motivo: motivoDoErro(e).tecnico };
+    return { caminho: 'gateway', modelo, ok: false, motivo: motivoDoErro(e).tecnico };
   }
 }
 
@@ -97,17 +145,17 @@ function tipoDoAudio(mime: string): string {
 }
 
 function pareceFormatoDeAudio(e: unknown): boolean {
-  const t = String((e as { message?: string })?.message ?? e).toLowerCase();
+  const t = detalhes(e).texto.toLowerCase();
   return /audio|mime|media ?type|unsupported|format|invalid argument/.test(t);
 }
 
 // ---------------------------------------------------------------- passo 1: o áudio vira texto
 
-const PRAZO_TEXTO = 45_000;
-const PRAZO_WHISPER = 25_000;
-const PRAZO_ORDEM = 45_000;
+const PRAZO_TEXTO = 50_000;
+const PRAZO_ORDEM = 55_000;
 
-async function transcrever(c: Caminho, audios: Midia[]): Promise<{ texto: string; fim: string }> {
+/** O texto do áudio; vazio quando não tem fala. Resposta cortada pelo modelo vira erro (outro modelo tenta). */
+async function transcrever(c: Caminho, audios: Midia[], tempo: number, novasTentativas: number): Promise<string> {
   const conteudo: UserContent = [{ type: 'text', text: audios.length > 1 ? `Transcreva os ${audios.length} áudios, na ordem.` : 'Transcreva o áudio.' }];
   audios.forEach((a, i) => conteudo.push({ type: 'file', data: a.bytes, mediaType: tipoDoAudio(a.mime), filename: `audio-${i + 1}` }));
   const r = await generateText({
@@ -118,29 +166,32 @@ async function transcrever(c: Caminho, audios: Midia[]): Promise<{ texto: string
     // transcrever não pede raciocínio: sem ele a resposta vem mais rápido
     reasoning: 'none',
     maxOutputTokens: 8000,
-    maxRetries: 1,
-    timeout: PRAZO_TEXTO
+    maxRetries: novasTentativas,
+    timeout: tempo
   });
-  return { texto: r.text, fim: r.finishReason };
+  const texto = limparTranscricao(r.text);
+  // resposta vazia cortada pelo modelo (filtro, limite) não é "sem fala"
+  if (!texto && r.finishReason !== 'stop') throw new Error(`Transcrição vazia (${r.finishReason})`);
+  return texto;
 }
 
 export async function transcreverComIA(audios: Midia[]): Promise<ResultadoTexto> {
-  const c = caminho();
-  if (!c) return { ok: false, erro: DESLIGADA };
+  const l = caminhos();
+  if (!l.length) return { ok: false, erro: DESLIGADA };
   if (!audios.length) return { ok: false, erro: 'Nenhum áudio para passar para texto.' };
+  const fim = Date.now() + PRAZO_TEXTO;
   let ultimo: unknown;
   try {
-    const r = await transcrever(c, audios);
-    const texto = limparTranscricao(r.texto);
-    if (texto) return { ok: true, texto, modelo: c.nome };
-    // resposta vazia cortada pelo modelo (filtro, limite) não é "sem fala": dá para tentar de novo
-    if (r.fim !== 'stop') throw new Error(`Transcrição vazia (${r.fim})`);
-    return { ok: false, erro: SEM_FALA };
+    // no Gateway sobra um tempo para o Whisper, se o modelo recusar o formato do áudio
+    const prazo = l[0].tipo === 'gateway' ? PRAZO_TEXTO - 15_000 : PRAZO_TEXTO;
+    const { valor: texto, caminho } = await comOsModelos(l, prazo, (c, tempo, n) => transcrever(c, audios, tempo, n));
+    return texto ? { ok: true, texto, modelo: caminho.nome } : { ok: false, erro: SEM_FALA };
   } catch (e) {
     ultimo = e;
-    console.error('[agente] transcrição', motivoDoErro(e, 'ouvir').tecnico, e);
+    console.error('[agente] transcrição', motivoDoErro(e, 'ouvir').tecnico);
   }
-  if (c.tipo === 'gateway' && pareceFormatoDeAudio(ultimo)) {
+  const resta = fim - Date.now();
+  if (l[0].tipo === 'gateway' && pareceFormatoDeAudio(ultimo) && resta > 8_000) {
     try {
       const partes: string[] = [];
       for (const a of audios) {
@@ -148,7 +199,7 @@ export async function transcreverComIA(audios: Midia[]): Promise<ResultadoTexto>
           model: gateway.transcriptionModel('openai/whisper-1'),
           audio: a.bytes,
           providerOptions: { openai: { language: 'pt' } },
-          abortSignal: AbortSignal.timeout(PRAZO_WHISPER)
+          abortSignal: AbortSignal.timeout(Math.max(1_000, fim - Date.now()))
         });
         partes.push(t.text);
       }
@@ -156,7 +207,7 @@ export async function transcreverComIA(audios: Midia[]): Promise<ResultadoTexto>
       return texto ? { ok: true, texto, modelo: 'openai/whisper-1' } : { ok: false, erro: SEM_FALA };
     } catch (e2) {
       ultimo = e2;
-      console.error('[agente] transcrição pelo Whisper', motivoDoErro(e2, 'ouvir').tecnico, e2);
+      console.error('[agente] transcrição pelo Whisper', motivoDoErro(e2, 'ouvir').tecnico);
     }
   }
   return { ok: false, erro: motivoDoErro(ultimo, 'ouvir').mensagem };
@@ -164,7 +215,7 @@ export async function transcreverComIA(audios: Midia[]): Promise<ResultadoTexto>
 
 // ---------------------------------------------------------------- passo 2: o texto vira a ordem
 
-async function preencher(c: Caminho, contexto: ContextoOrdem, imagens: Midia[]): Promise<OrdemIA> {
+async function preencher(c: Caminho, contexto: ContextoOrdem, imagens: Midia[], tempo: number, novasTentativas: number): Promise<OrdemIA> {
   const conteudo: UserContent = [{ type: 'text', text: textoDoPedido(contexto) }];
   imagens.forEach((img, i) => {
     conteudo.push({ type: 'text', text: `Foto ${i + 1}:` });
@@ -179,19 +230,20 @@ async function preencher(c: Caminho, contexto: ContextoOrdem, imagens: Midia[]):
     // um pouco de raciocínio ajuda a separar o feito do recomendado sem deixar o mecânico esperando
     reasoning: 'minimal',
     maxOutputTokens: 8000,
-    maxRetries: 1,
-    timeout: PRAZO_ORDEM
+    maxRetries: novasTentativas,
+    timeout: tempo
   });
   return limparOrdem({ ...r.output, transcricao: contexto.transcricao?.trim() ?? '' });
 }
 
 export async function preencherComIA(contexto: ContextoOrdem, imagens: Midia[]): Promise<ResultadoIA> {
-  const c = caminho();
-  if (!c) return { ok: false, erro: DESLIGADA };
+  const l = caminhos();
+  if (!l.length) return { ok: false, erro: DESLIGADA };
   try {
-    return { ok: true, ordem: await preencher(c, contexto, imagens), modelo: c.nome };
+    const { valor: ordem, caminho } = await comOsModelos(l, PRAZO_ORDEM, (c, tempo, n) => preencher(c, contexto, imagens, tempo, n));
+    return { ok: true, ordem, modelo: caminho.nome };
   } catch (e) {
-    console.error('[agente] preencher a ordem', motivoDoErro(e).tecnico, e);
+    console.error('[agente] preencher a ordem', motivoDoErro(e).tecnico);
     return { ok: false, erro: motivoDoErro(e).mensagem };
   }
 }

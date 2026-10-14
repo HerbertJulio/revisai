@@ -102,8 +102,8 @@ The repository is connected to Vercel: every push to `main` deploys and every pu
 | `EQUIPE_CHAVE` | Random key (64 hex characters, `openssl rand -hex 32`) the server sends to Supabase; the database stores only its SHA-256 hash in `privado.chaves`, named `equipe`. It also signs supplier sessions |
 | `GOOGLE_GENERATIVE_AI_API_KEY` | Optional. Free Google AI Studio key; with it, voice orders call Gemini directly. Without it, on Vercel, they use the AI Gateway |
 | `AI_GATEWAY_API_KEY` | Optional. Only to use the AI Gateway outside Vercel; on Vercel it authenticates on its own |
-| `AGENTE_MODELO` | Optional. AI Gateway model (default `google/gemini-3.6-flash`) |
-| `AGENTE_MODELO_GOOGLE` | Optional. Model used with the Google key (default `gemini-2.5-flash`) |
+| `AGENTE_MODELO` | Optional. AI Gateway model, or several separated by commas, tried in order (default `google/gemini-3.6-flash`) |
+| `AGENTE_MODELO_GOOGLE` | Optional. Models used with the Google key, separated by commas and tried in order when one is busy or out of quota (default `gemini-3.5-flash-lite,gemini-flash-lite-latest,gemini-3.8-flash`) |
 | `WHATSAPP_TOKEN` | WhatsApp Cloud API access token (system user) |
 | `WHATSAPP_PHONE_NUMBER_ID` | Phone number ID in the Cloud API |
 | `WHATSAPP_VERIFY_TOKEN` | A string you choose so Meta can verify the webhook |

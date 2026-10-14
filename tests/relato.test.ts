@@ -2,16 +2,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
 
-const chamadas: { system?: string; partes: { type: string; text?: string; mediaType?: string }[]; estruturado: boolean; reasoning?: string }[] = [];
+const chamadas: { modelo: string; system?: string; partes: { type: string; text?: string; mediaType?: string }[]; estruturado: boolean; reasoning?: string }[] = [];
 let respostaDoTexto = 'Onix placa ABC1D23 com 45.210 km. Troquei o óleo Lubrax 5W-30 e o filtro.';
 let fimDoTexto = 'stop';
+// erros por modelo, um por chamada (para testar a troca de modelo)
+let errosDoModelo: Record<string, Error[]> = {};
 
 vi.mock('ai', async (original) => {
   const ai = await original<typeof import('ai')>();
   return {
     ...ai,
-    generateText: vi.fn(async (o: { system?: string; messages: { content: { type: string; text?: string; mediaType?: string }[] }[]; output?: unknown; reasoning?: string }) => {
-      chamadas.push({ system: o.system, partes: o.messages[0].content, estruturado: !!o.output, reasoning: o.reasoning });
+    generateText: vi.fn(async (o: { model: { modelId: string }; system?: string; messages: { content: { type: string; text?: string; mediaType?: string }[] }[]; output?: unknown; reasoning?: string }) => {
+      chamadas.push({ modelo: o.model.modelId, system: o.system, partes: o.messages[0].content, estruturado: !!o.output, reasoning: o.reasoning });
+      const erro = errosDoModelo[o.model.modelId]?.shift();
+      if (erro) throw erro;
       if (!o.output) return { text: respostaDoTexto, finishReason: fimDoTexto };
       return {
         output: {
@@ -66,12 +70,13 @@ describe('IA em dois passos', () => {
     chamadas.length = 0;
     respostaDoTexto = 'Onix placa ABC1D23 com 45.210 km. Troquei o óleo Lubrax 5W-30 e o filtro.';
     fimDoTexto = 'stop';
+    errosDoModelo = {};
   });
   afterEach(() => vi.unstubAllEnvs());
 
   it('o áudio vira texto sem raciocínio e com as regras de transcrição', async () => {
     const r = await transcreverComIA([audio]);
-    expect(r).toEqual({ ok: true, texto: respostaDoTexto, modelo: 'gemini-2.5-flash' });
+    expect(r).toEqual({ ok: true, texto: respostaDoTexto, modelo: 'gemini-3.5-flash-lite' });
     expect(chamadas).toHaveLength(1);
     expect(chamadas[0].system).toBe(INSTRUCOES_TRANSCRICAO);
     expect(chamadas[0].estruturado).toBe(false);
@@ -123,6 +128,34 @@ describe('IA em dois passos', () => {
     expect(r.ok).toBe(true);
     const sem = await interpretarComIA({ oficina: '', hoje: '2026-10-14', quantidadeFotos: 0 }, [audio], []);
     expect(sem).toEqual({ ok: false, erro: SEM_FALA });
+  });
+
+  it('modelo cheio passa a vez ao próximo da lista', async () => {
+    const cheio = Object.assign(new Error('This model is currently experiencing high demand.'), { name: 'AI_APICallError', statusCode: 503 });
+    errosDoModelo['gemini-3.5-flash-lite'] = [cheio];
+    const r = await transcreverComIA([audio]);
+    expect(r).toEqual({ ok: true, texto: respostaDoTexto, modelo: 'gemini-flash-lite-latest' });
+    expect(chamadas.map((c) => c.modelo)).toEqual(['gemini-3.5-flash-lite', 'gemini-flash-lite-latest']);
+    errosDoModelo['gemini-3.5-flash-lite'] = [cheio];
+    errosDoModelo['gemini-flash-lite-latest'] = [cheio];
+    const o = await preencherComIA({ oficina: '', hoje: '2026-10-14', transcricao: 'Troquei o óleo.', quantidadeFotos: 0 }, []);
+    expect(o.ok && o.modelo).toBe('gemini-3.8-flash');
+  });
+
+  it('chave recusada não tenta os outros modelos', async () => {
+    errosDoModelo['gemini-3.5-flash-lite'] = [Object.assign(new Error('API key not valid'), { statusCode: 400 })];
+    const r = await transcreverComIA([audio]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.erro).toMatch(/liberada/);
+    expect(chamadas).toHaveLength(1);
+  });
+
+  it('dá para escolher os modelos pela variável, em ordem', async () => {
+    vi.stubEnv('AGENTE_MODELO_GOOGLE', 'gemini-3.8-flash, gemini-3.5-flash-lite');
+    errosDoModelo['gemini-3.8-flash'] = [Object.assign(new Error('quota'), { statusCode: 429 })];
+    const r = await transcreverComIA([audio]);
+    expect(chamadas.map((c) => c.modelo)).toEqual(['gemini-3.8-flash', 'gemini-3.5-flash-lite']);
+    expect(r.ok && r.modelo).toBe('gemini-3.5-flash-lite');
   });
 
   it('sem chave e fora da Vercel, avisa que a IA está desligada', async () => {
