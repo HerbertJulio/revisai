@@ -85,6 +85,8 @@ export interface Oficina {
   cidade: string;
   uf: string;
   endereco: string;
+  /** Link do Google para o cliente avaliar a oficina (g.page/r/.../review). */
+  linkAvaliacao?: string;
 }
 
 export interface Preferencias {

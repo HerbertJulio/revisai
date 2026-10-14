@@ -1,12 +1,11 @@
 'use client';
 
 import { BellRing, Download, RotateCcw, Upload } from 'lucide-react';
-import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { Folha } from '@/components/Folha';
 import { IconeServico } from '@/components/icones';
 import { useToast } from '@/components/Toasts';
-import { Alternar, Botao, Campo, Secao, classeArea, classeBotao, classeEntrada } from '@/components/ui';
+import { Alternar, Botao, Campo, Secao, classeArea, classeEntrada } from '@/components/ui';
 import type { ItemAviso } from '@/lib/avisos';
 import { dataLocal, formatarData, somarDias } from '@/lib/datas';
 import { lerNumero } from '@/lib/formatos';
@@ -18,6 +17,7 @@ import { dadosParaBackup, useOficina, type DadosGuardados } from '@/lib/store';
 import type { Preferencias, ServicoId } from '@/lib/tipos';
 import { MENSAGEM_PADRAO, VARIAVEIS_MENSAGEM, montarMensagem } from '@/lib/whatsapp';
 import { AgenteWhatsApp } from './AgenteWhatsApp';
+import { PlanoDaOficina } from './plano';
 import { SeusProdutos } from './SeusProdutos';
 
 export function Ajustes() {
@@ -28,6 +28,7 @@ export function Ajustes() {
         <p className="mt-1 text-tinta-2">As mudanças valem na hora e ficam guardadas neste aparelho.</p>
       </header>
       <DadosOficina />
+      <PlanoDaOficina />
       <AgenteWhatsApp />
       <Avisos />
       <Mensagem />
@@ -35,16 +36,6 @@ export function Ajustes() {
       <SeusProdutos />
       <Aparencia />
       <SeusDados />
-      <Secao titulo="Plano">
-        <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-papel px-5 py-4 ring-1 ring-linha">
-          <p className="max-w-[60ch] text-tinta-2">
-            Você usa o plano grátis. O Plus vai trazer login com Google, os dados na nuvem e em vários aparelhos, e lembrete automático para o cliente.
-          </p>
-          <Link href="/planos" className={classeBotao('secundario')}>
-            Conhecer o Plus
-          </Link>
-        </div>
-      </Secao>
     </div>
   );
 }
@@ -57,7 +48,7 @@ function DadosOficina() {
   const oficina = useOficina((s) => s.oficina);
   const salvar = useOficina((s) => s.salvarOficina);
   return (
-    <Secao titulo="Oficina" descricao="Aparece na mensagem para o cliente, no cartão de manutenção e nos pedidos da loja.">
+    <Secao id="oficina" titulo="Oficina" descricao="Aparece na mensagem para o cliente, no cartão de manutenção e nos pedidos da loja.">
       <Cartao>
         <div className="grid gap-4 sm:grid-cols-6">
           <Campo rotulo="Nome" htmlFor="of-nome" className="sm:col-span-3">
@@ -79,10 +70,58 @@ function DadosOficina() {
               ))}
             </select>
           </Campo>
+          <LinkAvaliacao valor={oficina.linkAvaliacao ?? ''} aoSalvar={(v) => salvar({ linkAvaliacao: v })} />
         </div>
       </Cartao>
     </Secao>
   );
+}
+
+/** Link do Google para o cliente avaliar a oficina. Só aceita endereço do Google. */
+function LinkAvaliacao({ valor, aoSalvar }: { valor: string; aoSalvar: (v: string) => void }) {
+  const [erro, setErro] = useState<string | null>(null);
+  return (
+    <Campo
+      rotulo="Link de avaliação no Google"
+      htmlFor="of-avaliacao"
+      className="sm:col-span-6"
+      erro={erro ?? undefined}
+      dica="No Perfil da Empresa no Google, toque em Pedir avaliações e copie o link (começa com g.page/r). Vai no pedido de avaliação depois do serviço."
+    >
+      <input
+        id="of-avaliacao"
+        className={classeEntrada}
+        defaultValue={valor}
+        inputMode="url"
+        placeholder="https://g.page/r/..."
+        onBlur={(e) => {
+          const t = e.target.value.trim();
+          if (!t) {
+            setErro(null);
+            return aoSalvar('');
+          }
+          const url = linkDoGoogle(t);
+          if (!url) return setErro('Cole o link que o Google mostra em Pedir avaliações.');
+          setErro(null);
+          e.target.value = url;
+          aoSalvar(url);
+        }}
+      />
+    </Campo>
+  );
+}
+
+function linkDoGoogle(texto: string): string | null {
+  try {
+    const u = new URL(/^https?:\/\//i.test(texto) ? texto : `https://${texto}`);
+    const host = u.hostname.toLowerCase();
+    const doGoogle = host === 'g.page' || host === 'goo.gl' || host === 'maps.app.goo.gl' || host === 'search.google.com' || host.endsWith('.google.com') || host === 'google.com' || host.startsWith('google.com.') || host.startsWith('www.google.com.');
+    if (!doGoogle || (u.protocol !== 'https:' && u.protocol !== 'http:')) return null;
+    u.protocol = 'https:';
+    return u.toString();
+  } catch {
+    return null;
+  }
 }
 
 function Opcoes<T extends number>({ valor, opcoes, aoMudar, formato }: { valor: T; opcoes: T[]; aoMudar: (v: T) => void; formato: (v: T) => string }) {

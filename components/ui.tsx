@@ -136,9 +136,24 @@ export function Vazio({ titulo, children, acao }: { titulo: string; children?: R
   );
 }
 
-export function Secao({ titulo, descricao, acao, children, className = '' }: { titulo: ReactNode; descricao?: ReactNode; acao?: ReactNode; children: ReactNode; className?: string }) {
+export function Secao({
+  titulo,
+  descricao,
+  acao,
+  children,
+  className = '',
+  id
+}: {
+  titulo: ReactNode;
+  descricao?: ReactNode;
+  acao?: ReactNode;
+  children: ReactNode;
+  className?: string;
+  /** Âncora para links como /oficina/ajustes#plano. */
+  id?: string;
+}) {
   return (
-    <section className={`flex flex-col gap-3 ${className}`}>
+    <section id={id} className={`flex scroll-mt-20 flex-col gap-3 ${className}`}>
       <div className="flex items-end justify-between gap-3">
         <div className="min-w-0">
           <h2 className="text-[21px]">{titulo}</h2>

@@ -23,6 +23,7 @@ import { useOficina } from '@/lib/store';
 import { linkWhatsApp, montarMensagem } from '@/lib/whatsapp';
 import { useCartaoDoCarro, useContatar } from './acoes';
 import { useCatalogo } from './catalogo';
+import { AvisoDeLimite, RetornoDosAvisos, useOfertaDoPro, usePlano } from './plano';
 
 type Aba = 'avisar' | 'aguardando' | 'agendado' | 'proximos';
 
@@ -74,6 +75,7 @@ export function PainelAvisos() {
       </header>
 
       <ResumoDoDia />
+      <AvisoDeLimite />
 
       {exemplo ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-linha bg-papel px-4 py-3 text-[14px]">
@@ -131,6 +133,8 @@ export function PainelAvisos() {
               <CartaoGrupo key={g.veiculo.id} grupo={g} hoje={hoje} aoContatar={() => fixar(g.veiculo.id)} />
             ))}
           </div>
+
+          <RetornoDosAvisos />
 
           {aba === 'proximos' && recusados.length > 0 ? (
             <details className="rounded-xl border border-linha bg-papel px-4 py-3">
@@ -247,6 +251,8 @@ function CartaoGrupo({ grupo, hoje, aoContatar }: { grupo: GrupoAviso; hoje: str
   const toast = useToast();
   const { catalogo } = useCatalogo();
   const router = useRouter();
+  const plano = usePlano();
+  const abrirPro = useOfertaDoPro();
   const [agendar, setAgendar] = useState(false);
   const [carimboNovo, setCarimboNovo] = useState(false);
   const montado = useRef(false);
@@ -364,8 +370,14 @@ function CartaoGrupo({ grupo, hoje, aoContatar }: { grupo: GrupoAviso; hoje: str
             target="_blank"
             rel="noopener noreferrer"
             className={classeBotao(etapa === 'avisar' ? 'whatsapp' : 'secundario')}
-            onClick={() => {
+            onClick={(e) => {
               if (etapa === 'avisar' || etapa === 'futuro' || etapa === 'adiado' || etapa === 'recusou') {
+                // aviso novo: no grátis, conta para o limite do mês
+                if (!plano.podeAvisar) {
+                  e.preventDefault();
+                  abrirPro('avisos');
+                  return;
+                }
                 contatar(grupo, 'avisado', undefined, 'Mensagem aberta no WhatsApp. Marcado como avisado.');
                 aoContatar();
               }

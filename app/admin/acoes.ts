@@ -15,6 +15,8 @@ import {
   salvarFornecedorAdmin,
   type Gravacao as GravacaoMarketplace
 } from '@/lib/marketplace';
+import { criarAssinatura } from '@/lib/pro';
+import type { Assinatura } from '@/lib/pro-dados';
 import { COOKIE_EQUIPE, criarSessao, DURACAO_SESSAO_MS, senhaConfere } from '@/lib/sessao-equipe';
 
 export interface EstadoEntrada {
@@ -102,6 +104,14 @@ export async function decidirSugestaoDaBase(id: number, aprovar: boolean): Promi
   if ((await acessoDaEquipe()) !== 'dentro') return SESSAO_FIM;
   if (!Number.isSafeInteger(id) || id < 1) return { ok: false, erro: 'Linha inválida.' };
   const r = await decidirReferencia(id, aprovar);
+  if (r.ok) revalidatePath('/admin', 'layout');
+  return r;
+}
+
+/** Cria o código do Pro de uma oficina que pagou. */
+export async function criarCodigoPro(entrada: unknown): Promise<GravacaoMarketplace<{ assinatura: Assinatura }>> {
+  if ((await acessoDaEquipe()) !== 'dentro') return SESSAO_FIM;
+  const r = await criarAssinatura(entrada);
   if (r.ok) revalidatePath('/admin', 'layout');
   return r;
 }

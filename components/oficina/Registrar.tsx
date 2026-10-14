@@ -31,6 +31,7 @@ import { useOficina } from '@/lib/store';
 import type { ItemServico, ServicoId, Veiculo } from '@/lib/tipos';
 import { useCartaoDoCarro } from './acoes';
 import { useCatalogo } from './catalogo';
+import { BotaoAvaliacao } from './plano';
 import { useReferencias } from './referencias';
 import {
   CLIENTE_VAZIO,
@@ -843,6 +844,7 @@ function Feito({ atendimentoId, veiculoId, aoRegistrarOutro }: { atendimentoId: 
             <MessageCircle size={18} /> Mandar cartão no WhatsApp
           </a>
         ) : null}
+        <BotaoAvaliacao telefone={cliente?.telefone} nomeCliente={cliente?.nome ?? ''} carro={veiculo.modelo} />
         <Botao tamanho="grande" onClick={aoRegistrarOutro}>
           Registrar outro
         </Botao>

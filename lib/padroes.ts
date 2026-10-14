@@ -1,7 +1,7 @@
 import type { Oficina, Preferencias } from './tipos';
 import { MENSAGEM_PADRAO } from './whatsapp';
 
-export const OFICINA_VAZIA: Oficina = { nome: '', whatsapp: '', cidade: '', uf: 'RJ', endereco: '' };
+export const OFICINA_VAZIA: Oficina = { nome: '', whatsapp: '', cidade: '', uf: 'RJ', endereco: '', linkAvaliacao: '' };
 
 export const PREFERENCIAS_PADRAO: Preferencias = {
   antecedenciaDias: 15,

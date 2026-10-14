@@ -22,6 +22,8 @@ import { guardarMidia } from '@/lib/midia';
 import { useOficina } from '@/lib/store';
 import type { ServicoId, Veiculo } from '@/lib/tipos';
 import { linkWhatsApp } from '@/lib/whatsapp';
+import { PRO } from '@/lib/plano';
+import { BotaoAvaliacao, useOfertaDoPro, usePlano } from './plano';
 import {
   CLIENTE_VAZIO,
   CamposCliente,
@@ -103,6 +105,9 @@ export function OrdemPorVoz() {
   const registrarAtendimento = useOficina((s) => s.registrarAtendimento);
   const salvarOrdem = useOficina((s) => s.salvarOrdem);
   const aparelhoId = useOficina((s) => s.aparelhoId);
+  const contarMontagem = useOficina((s) => s.contarMontagem);
+  const plano = usePlano();
+  const abrirPro = useOfertaDoPro();
 
   const inicial = params.get('carro');
   const [veiculoId, setVeiculoId] = useState<string | null>(inicial && veiculos[inicial] ? inicial : null);
@@ -152,6 +157,10 @@ export function OrdemPorVoz() {
   function montar() {
     setErro(null);
     if (!clipes.length && !fotos.length && !anotacao.trim()) return setErro('Grave um áudio, tire uma foto ou escreva o que foi feito.');
+    if (!plano.podeDitar) {
+      if (plano.liberado) return setErro(`Este aparelho chegou a ${PRO.ordensPro} ordens por voz neste mês. Fale com a equipe do Revisaí para liberar mais.`);
+      return abrirPro('ordens');
+    }
     const dados = new FormData();
     dados.set(
       'contexto',
@@ -175,6 +184,7 @@ export function OrdemPorVoz() {
         return;
       }
       if (!r.ok) return setErro(r.erro);
+      contarMontagem(hoje);
       abrirRevisao(r.ordem, r.modelo);
     });
   }
@@ -545,7 +555,14 @@ export function OrdemPorVoz() {
 
       <div className="sticky bottom-[calc(72px+env(safe-area-inset-bottom))] z-20 -mx-4 border-t border-linha bg-fundo/95 px-4 py-3 backdrop-blur sm:mx-0 sm:rounded-xl sm:border sm:px-4 lg:bottom-4">
         <div className="flex items-center justify-between gap-3">
-          <p className="text-[14px] text-tinta-2">{montando ? 'A IA está ouvindo e olhando as fotos…' : `${clipes.length} ${clipes.length === 1 ? 'áudio' : 'áudios'}, ${fotos.length} ${fotos.length === 1 ? 'foto' : 'fotos'}`}</p>
+          <div className="min-w-0">
+            <p className="text-[14px] text-tinta-2">{montando ? 'A IA está ouvindo e olhando as fotos…' : `${clipes.length} ${clipes.length === 1 ? 'áudio' : 'áudios'}, ${fotos.length} ${fotos.length === 1 ? 'foto' : 'fotos'}`}</p>
+            {!plano.liberado && !montando ? (
+              <p className="num text-[12.5px] text-tinta-3">
+                {Math.min(plano.montagens, PRO.ordensGratis)} de {PRO.ordensGratis} ordens grátis usadas neste mês
+              </p>
+            ) : null}
+          </div>
           <Botao variante="primario" tamanho="grande" onClick={montar} disabled={montando}>
             <Sparkles size={18} /> {montando ? 'Montando…' : 'Montar a ordem'}
           </Botao>
@@ -899,6 +916,7 @@ function Pronto({ veiculoId, mensagem, atendimentoId, fotos, aoNova }: { veiculo
         <Botao tamanho="grande" onClick={() => void copiar()}>
           Copiar mensagem
         </Botao>
+        <BotaoAvaliacao telefone={cliente?.telefone} nomeCliente={cliente?.nome ?? ''} carro={veiculo?.modelo ?? 'carro'} />
         {atendimentoId ? (
           <Link href={`/oficina/etiqueta?atendimento=${atendimentoId}`} className={classeBotao('secundario', 'grande')}>
             Etiqueta do para-brisa

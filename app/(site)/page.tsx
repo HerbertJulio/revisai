@@ -108,9 +108,9 @@ export default function Inicio() {
       <section className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
         <div className="grid gap-10 rounded-[28px] bg-asfalto px-6 py-10 text-white sm:px-10 lg:grid-cols-[1.2fr_1fr] lg:items-center">
           <div>
-            <h2 className="largo text-[30px] sm:text-[36px]">Grátis hoje. O Plus vem aí.</h2>
+            <h2 className="largo text-[30px] sm:text-[36px]">Grátis para começar. Pro para avisar todo mundo.</h2>
             <p className="mt-4 max-w-[52ch] text-[17px] leading-relaxed text-white/80">
-              No Plus, a oficina entra com o Google ou o e-mail, usa em vários aparelhos com a equipe e o cliente recebe o lembrete sozinho. Deixe o contato para testar antes.
+              No grátis, a oficina avisa até 20 carros por mês. No Pro, avisa todos, dita as ordens de serviço por voz ou pelo WhatsApp e vê quanto os avisos rendem. Teste 30 dias sem pagar.
             </p>
           </div>
           <div className="flex flex-wrap gap-3 lg:justify-end">

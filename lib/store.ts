@@ -11,6 +11,7 @@ import { hojeISO } from './datas';
 import { normalizarPlaca } from './formatos';
 import { OFICINA_VAZIA, PREFERENCIAS_PADRAO } from './padroes';
 import type { OrdemServico } from './agente/ordem';
+import { contarMontagem, juntarPlanos, PLANO_INICIAL, type EstadoPlano } from './plano';
 import type { ProdutoProprio } from './referencias';
 import type {
   Atendimento,
@@ -49,6 +50,8 @@ export interface DadosGuardados {
   demandaEnviadaEm: string | null;
   /** Ordens de serviço montadas por voz e conferidas pelo mecânico. */
   ordens: Record<Id, OrdemServico>;
+  /** Teste e assinatura do Pro neste aparelho. */
+  plano: EstadoPlano;
   resumoMostradoEm: string | null;
   ultimoBackup: string | null;
   /** Quando esta cópia foi gravada (a mais nova vence entre IndexedDB e localStorage). */
@@ -84,6 +87,9 @@ interface Acoes {
   garantirAparelhoId(): string;
   salvarOrdem(o: Omit<OrdemServico, 'id' | 'criadoEm'> & { id?: Id }): Id;
   removerOrdem(id: Id): void;
+  comecarTeste(hoje: string): void;
+  ativarPro(ate: string, codigo: string): void;
+  contarMontagem(hoje: string): void;
   marcarDemandaEnviada(): void;
   marcarResumo(data: string): void;
   marcarBackup(): void;
@@ -111,6 +117,7 @@ const VAZIO: DadosGuardados = {
   aparelhoId: null,
   demandaEnviadaEm: null,
   ordens: {},
+  plano: PLANO_INICIAL,
   resumoMostradoEm: null,
   ultimoBackup: null
 };
@@ -363,6 +370,19 @@ export const useOficina = create<EstadoOficina>()(
         set({ ordens: semChaves(get().ordens, (_o, oid) => oid === id) });
       },
 
+      comecarTeste(hoje) {
+        if (get().plano.testeDesde) return;
+        set({ plano: { ...get().plano, testeDesde: hoje } });
+      },
+
+      ativarPro(ate, codigo) {
+        set({ plano: { ...get().plano, proAte: ate, codigo } });
+      },
+
+      contarMontagem(hoje) {
+        set({ plano: contarMontagem(get().plano, hoje) });
+      },
+
       marcarDemandaEnviada() {
         set({ demandaEnviadaEm: new Date().toISOString() });
       },
@@ -382,6 +402,8 @@ export const useOficina = create<EstadoOficina>()(
           configurado: true,
           oficina: { ...OFICINA_VAZIA, ...dados.oficina },
           preferencias: { ...PREFERENCIAS_PADRAO, ...dados.preferencias },
+          plano: juntarPlanos(get().plano, dados.plano),
+          aparelhoId: get().aparelhoId ?? dados.aparelhoId ?? null,
           carrinho: get().carrinho
         });
       },
@@ -404,7 +426,8 @@ export const useOficina = create<EstadoOficina>()(
       },
 
       apagarTudo() {
-        set({ ...VAZIO });
+        // o plano é da oficina, não dos dados: continua valendo depois de apagar
+        set({ ...VAZIO, plano: get().plano });
       }
     }),
     {
@@ -427,6 +450,7 @@ export const useOficina = create<EstadoOficina>()(
         aparelhoId: s.aparelhoId,
         demandaEnviadaEm: s.demandaEnviadaEm,
         ordens: s.ordens,
+        plano: s.plano,
         resumoMostradoEm: s.resumoMostradoEm,
         ultimoBackup: s.ultimoBackup,
         salvoEm: Date.now()
@@ -437,7 +461,8 @@ export const useOficina = create<EstadoOficina>()(
           ...atual,
           ...g,
           oficina: { ...OFICINA_VAZIA, ...g.oficina },
-          preferencias: { ...PREFERENCIAS_PADRAO, ...g.preferencias }
+          preferencias: { ...PREFERENCIAS_PADRAO, ...g.preferencias },
+          plano: { ...PLANO_INICIAL, ...g.plano }
         };
       }
     }
@@ -480,6 +505,7 @@ export function dadosParaBackup(s: DadosGuardados) {
     pedidos: s.pedidos,
     produtosProprios: s.produtosProprios,
     ordens: s.ordens,
+    plano: s.plano,
     exemplo: s.exemplo
   };
 }

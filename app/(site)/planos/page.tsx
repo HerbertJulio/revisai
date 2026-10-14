@@ -3,28 +3,38 @@ import { Check } from 'lucide-react';
 import Link from 'next/link';
 import { FormInteresse } from '@/components/site/FormInteresse';
 import { classeBotao } from '@/components/ui';
+import { formatarMoeda } from '@/lib/formatos';
+import { PRO } from '@/lib/plano';
 
 export const metadata: Metadata = {
   title: 'Planos',
-  description: 'Use o Revisaí grátis hoje. O plano Plus traz login com Google, dados na nuvem, equipe e lembrete automático para o cliente.'
+  description: `Use o Revisaí grátis, sem cadastro. O Pro libera avisos sem limite, ordem de serviço por voz, agente no WhatsApp e o relatório de retorno, por ${formatarMoeda(PRO.precoFundador)} por mês para as primeiras oficinas.`
 };
 
 const GRATIS = [
-  'Avisos pela data e pela quilometragem, com a antecedência que você escolher',
-  'Mensagem pronta no WhatsApp, agenda e histórico de contatos',
+  `${PRO.avisosGratis} avisos por mês pelo WhatsApp, pela data e pela quilometragem`,
+  `${PRO.ordensGratis} ordens de serviço por voz por mês, montadas pela IA`,
   'Cartão de manutenção para o cliente, com lembrete no calendário',
   'Etiqueta do para-brisa para imprimir',
   'Loja com promoções e a soma do que comprar no mês',
   'Dados guardados no aparelho, com backup em arquivo'
 ];
 
-const PLUS = [
-  'Entrar com o Google ou com o e-mail da oficina',
-  'Dados na nuvem, em vários aparelhos e com a equipe',
-  'Lembrete automático para o cliente, sem precisar tocar em nada',
-  'Relatório de quantos clientes voltaram e quanto isso rendeu',
-  'Etiqueta e cartão com a marca da oficina',
-  'Período de teste antes de assinar'
+const PRO_ITENS = [
+  'Avisos sem limite',
+  'Ordem de serviço por voz para a oficina toda e agente no WhatsApp: o mecânico manda áudio e foto, a ordem chega pronta',
+  'Relatório de retorno: quem voltou depois do aviso e quanto isso rendeu',
+  'Pedido de avaliação no Google depois do serviço, com um toque',
+  'Um código vale em até 3 aparelhos da oficina',
+  `${PRO.diasTeste} dias de teste direto no app, sem cartão`
+];
+
+const EM_BREVE = 'Entrar com o Google e guardar os dados na nuvem, acesso para a equipe toda, lembrete automático para o cliente e etiqueta com a marca da oficina.';
+
+const PASSOS = [
+  { t: 'Teste no app', d: 'Em Ajustes, na parte Plano, toque em Testar o Pro. São 30 dias com tudo liberado.' },
+  { t: 'Deixe o contato', d: 'A equipe do Revisaí chama no WhatsApp e manda o Pix, por mês ou por 3, 6 ou 12 meses.' },
+  { t: 'Digite o código', d: 'Depois do pagamento chega um código. Digite em Ajustes, na parte Plano, e pronto.' }
 ];
 
 const PERGUNTAS = [
@@ -33,11 +43,15 @@ const PERGUNTAS = [
     r: 'Não. Abra o painel, escreva o nome da oficina e comece. Os dados ficam no aparelho; em Ajustes dá para baixar um backup.'
   },
   {
-    p: 'Quanto vai custar o Plus?',
-    r: 'O preço ainda não foi definido. Quem deixar o contato fica sabendo primeiro e pode testar antes.'
+    p: 'O que é o preço de fundador?',
+    r: `As ${PRO.vagasFundador} primeiras oficinas que assinarem pagam ${formatarMoeda(PRO.precoFundador)} por mês. Depois, o Pro custa ${formatarMoeda(PRO.preco)} por mês.`
   },
   {
-    p: 'O que acontece com os meus dados quando o Plus chegar?',
+    p: 'Tem fidelidade?',
+    r: 'Não. Quando o Pro acaba, o app volta para o grátis e nenhum cliente, carro ou serviço se perde.'
+  },
+  {
+    p: 'O que acontece com os meus dados quando o login chegar?',
     r: 'Ao entrar com a sua conta, os clientes e serviços que estão no aparelho sobem para a nuvem. Nada se perde.'
   }
 ];
@@ -45,34 +59,64 @@ const PERGUNTAS = [
 export default function Planos() {
   return (
     <div className="mx-auto max-w-6xl px-4 pt-12 sm:px-6 lg:pt-16">
-      <h1 className="largo max-w-[18ch] text-[38px] leading-[1.02] sm:text-[52px]">Comece grátis. O Plus vem aí.</h1>
+      <h1 className="largo max-w-[20ch] text-[38px] leading-[1.02] sm:text-[52px]">Comece grátis. Avise todos os clientes no Pro.</h1>
 
       <div className="mt-12 grid gap-5 lg:grid-cols-2">
         <div className="flex flex-col gap-6 rounded-[22px] bg-papel px-6 py-8 ring-1 ring-linha sm:px-8">
           <div>
             <h2 className="text-[26px]">Grátis</h2>
-            <p className="mt-1 text-tinta-2">Para usar hoje, sem cadastro.</p>
+            <p className="mt-1 text-tinta-2">Para usar hoje, sem cadastro e sem cartão.</p>
           </div>
           <Lista itens={GRATIS} />
-          <Link href="/oficina" className={classeBotao('primario', 'grande', 'mt-auto self-start')}>
+          <Link href="/oficina" className={classeBotao('secundario', 'grande', 'mt-auto self-start')}>
             Abrir o painel
           </Link>
         </div>
         <div className="flex flex-col gap-6 rounded-[22px] bg-asfalto px-6 py-8 text-white sm:px-8">
           <div>
-            <h2 className="text-[26px]">Plus</h2>
-            <p className="mt-1 text-white/75">Em breve. Tudo do grátis e mais:</p>
+            <h2 className="text-[26px]">Pro</h2>
+            <p className="num mt-2">
+              <span className="largo text-[40px] leading-none font-extrabold text-oleo">{formatarMoeda(PRO.precoFundador)}</span>
+              <span className="ml-1.5 text-white/75">por mês</span>
+            </p>
+            <p className="mt-1 text-[14.5px] text-white/70">
+              Para as {PRO.vagasFundador} primeiras oficinas. Depois, {formatarMoeda(PRO.preco)} por mês. Tudo do grátis e mais:
+            </p>
           </div>
-          <Lista itens={PLUS} claro />
-          <a href="#quero-o-plus" className={classeBotao('primario', 'grande', 'mt-auto self-start')}>
-            Quero testar o Plus
-          </a>
+          <Lista itens={PRO_ITENS} claro />
+          <div className="rounded-xl bg-white/5 px-4 py-3">
+            <p className="text-[14px] font-semibold text-white/85">Chegando no Pro</p>
+            <p className="mt-0.5 text-[14px] text-white/65">{EM_BREVE}</p>
+          </div>
+          <div className="mt-auto flex flex-wrap gap-3">
+            <Link href="/oficina/ajustes#plano" className={classeBotao('primario', 'grande')}>
+              Testar 30 dias grátis
+            </Link>
+            <a href="#assinar" className={classeBotao('claro', 'grande')}>
+              Assinar
+            </a>
+          </div>
         </div>
       </div>
 
-      <div id="quero-o-plus" className="mt-20 grid scroll-mt-20 gap-12 lg:grid-cols-[1fr_1.1fr]">
-        <div className="flex flex-col gap-6">
-          <h2 className="largo text-[30px] sm:text-[36px]">Quero testar o Plus</h2>
+      <section id="assinar" className="mt-20 grid scroll-mt-20 gap-12 lg:grid-cols-[1fr_1.1fr]" aria-labelledby="t-assinar">
+        <div className="flex flex-col gap-8">
+          <div>
+            <h2 id="t-assinar" className="largo text-[30px] sm:text-[36px]">
+              Como assinar
+            </h2>
+            <ol className="mt-5 flex flex-col gap-4">
+              {PASSOS.map((x, i) => (
+                <li key={x.t} className="flex gap-4">
+                  <span className="num grid h-8 w-8 shrink-0 place-items-center rounded-full bg-tinta text-[15px] font-bold text-papel">{i + 1}</span>
+                  <div>
+                    <p className="font-bold">{x.t}</p>
+                    <p className="text-tinta-2">{x.d}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </div>
           <dl className="flex flex-col gap-5">
             {PERGUNTAS.map((x) => (
               <div key={x.p}>
@@ -82,7 +126,7 @@ export default function Planos() {
             ))}
           </dl>
         </div>
-        <div className="rounded-[22px] bg-papel p-6 ring-1 ring-linha sm:p-8">
+        <div className="self-start rounded-[22px] bg-papel p-6 ring-1 ring-linha sm:p-8">
           <FormInteresse
             tipo="oficina"
             origem="planos"
@@ -90,12 +134,12 @@ export default function Planos() {
             comEmpresa
             rotuloEmpresa="Nome da oficina"
             mensagem="Quantos carros a oficina atende por mês?"
-            dicaMensagem="Opcional. Ajuda a gente a montar o plano certo."
-            botao="Quero testar"
-            sucesso="Pronto. Você vai ser avisado quando o Plus abrir para teste."
+            dicaMensagem="Opcional. Ajuda a gente a combinar o melhor jeito de pagar."
+            botao="Quero assinar o Pro"
+            sucesso="Pronto. A equipe do Revisaí chama você no WhatsApp para combinar o pagamento."
           />
         </div>
-      </div>
+      </section>
     </div>
   );
 }

@@ -8,6 +8,7 @@ import { useToast } from '@/components/Toasts';
 import { Botao, Secao, classeBotao } from '@/components/ui';
 import { formatarTelefone } from '@/lib/formatos';
 import { useOficina } from '@/lib/store';
+import { useOfertaDoPro, usePlano } from './plano';
 
 /** Ajustes: ligar o WhatsApp do mecânico ao agente de ordens de serviço. */
 export function AgenteWhatsApp() {
@@ -18,6 +19,8 @@ export function AgenteWhatsApp() {
   const [estado, setEstado] = useState<EstadoWhatsApp | null>(null);
   const [codigo, setCodigo] = useState<{ codigo: string; numero: string | null } | null>(null);
   const [ocupado, iniciar] = useTransition();
+  const plano = usePlano();
+  const abrirPro = useOfertaDoPro();
 
   useEffect(() => {
     let vivo = true;
@@ -30,6 +33,7 @@ export function AgenteWhatsApp() {
   }, [aparelhoId]);
 
   function gerar() {
+    if (!plano.liberado) return abrirPro('whatsapp');
     const id = garantir();
     iniciar(async () => {
       try {

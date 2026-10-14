@@ -62,3 +62,12 @@ export function gerarIcs(eventos: EventoCalendario[], agora: Date = new Date()):
   linhas.push('END:VCALENDAR');
   return linhas.map(dobrar).join('\r\n') + '\r\n';
 }
+
+/** Link que abre o Google Agenda com o lembrete preenchido (o dia inteiro do vencimento). */
+export function linkGoogleAgenda(e: EventoCalendario): string {
+  const inicio = e.data.replace(/-/g, '');
+  const fim = somarDias(e.data, 1).replace(/-/g, '');
+  const p = new URLSearchParams({ action: 'TEMPLATE', text: e.titulo, dates: `${inicio}/${fim}` });
+  if (e.descricao) p.set('details', e.descricao);
+  return `https://calendar.google.com/calendar/render?${p.toString()}`;
+}

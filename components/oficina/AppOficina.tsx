@@ -12,6 +12,7 @@ import { armazenamentoComProblema, pedirArmazenamentoPersistente, useOficina } f
 import { ProvedorCatalogo } from './catalogo';
 import { useEnvioDeDemanda } from './demanda';
 import { Inicio } from './Inicio';
+import { LinhaDoPlano, ProvedorDoPro } from './plano';
 
 const ITENS = [
   { href: '/oficina', rotulo: 'Avisos', Icone: Bell },
@@ -36,7 +37,15 @@ export function AppOficina({ children }: { children: ReactNode }) {
 
   return (
     <Toasts>
-      <ProvedorCatalogo>{configurado ? <Moldura>{children}</Moldura> : <Inicio />}</ProvedorCatalogo>
+      <ProvedorCatalogo>
+        {configurado ? (
+          <ProvedorDoPro>
+            <Moldura>{children}</Moldura>
+          </ProvedorDoPro>
+        ) : (
+          <Inicio />
+        )}
+      </ProvedorCatalogo>
     </Toasts>
   );
 }
@@ -87,9 +96,7 @@ function Moldura({ children }: { children: ReactNode }) {
         </nav>
         <div className="mt-auto border-t border-linha px-2 pt-4">
           <p className="truncate font-bold">{nomeOficina || 'Minha oficina'}</p>
-          <Link href="/planos" className="text-[13px] text-tinta-3 hover:text-caneta">
-            Plano grátis. Conheça o Plus
-          </Link>
+          <LinhaDoPlano />
         </div>
       </aside>
 
