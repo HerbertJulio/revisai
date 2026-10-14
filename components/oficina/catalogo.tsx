@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import type { Catalogo, Produto } from '@/lib/catalogo';
+import { normalizarCatalogo, type Catalogo, type Produto } from '@/lib/catalogo';
 import { CATALOGO_EXEMPLO } from '@/lib/catalogo-demo';
 
 const CHAVE_CACHE = 'revisai:catalogo';
@@ -32,13 +32,13 @@ export function ProvedorCatalogo({ children }: { children: ReactNode }) {
     let vivo = true;
     try {
       const guardado = localStorage.getItem(CHAVE_CACHE);
-      if (guardado) setEstado(montar(JSON.parse(guardado) as Catalogo, true, false));
+      if (guardado) setEstado(montar(normalizarCatalogo(JSON.parse(guardado) as Catalogo), true, false));
     } catch {}
     fetch('/api/catalogo')
       .then((r) => (r.ok ? (r.json() as Promise<Catalogo>) : Promise.reject(new Error(String(r.status)))))
       .then((c) => {
         if (!vivo) return;
-        setEstado(montar(c, false, false));
+        setEstado(montar(normalizarCatalogo(c), false, false));
         try {
           localStorage.setItem(CHAVE_CACHE, JSON.stringify(c));
         } catch {}

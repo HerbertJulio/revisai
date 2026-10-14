@@ -140,10 +140,15 @@ export interface Leitura {
 }
 
 export interface ProdutoUsado {
+  /** Produto da loja. */
   id?: number;
   nome: string;
   categoria?: Categoria;
   especificacao?: EspecProduto;
+  /** Linha da base de prazos por produto (o que o fabricante recomenda). */
+  referenciaId?: number;
+  /** Produto cadastrado pela própria oficina. */
+  proprioId?: string;
 }
 
 export interface ItemServico {

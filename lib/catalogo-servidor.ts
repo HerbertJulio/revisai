@@ -1,5 +1,5 @@
 import 'server-only';
-import type { Catalogo, Fornecedor, Produto, Promocao } from './catalogo';
+import type { Catalogo, Fornecedor, Patrocinio, Produto, Promocao } from './catalogo';
 import { CATALOGO_EXEMPLO } from './catalogo-demo';
 import { supabaseServidor } from './supabase';
 
@@ -16,6 +16,26 @@ interface LinhaProduto {
   especificacao: Produto['especificacao'] | null;
   intervalo_km: number | null;
   intervalo_meses: number | null;
+  imagem_url: string | null;
+  referencia_id: number | null;
+}
+
+interface LinhaFornecedor {
+  id: number;
+  nome: string;
+  cidade: string | null;
+  uf: string | null;
+  demonstracao: boolean;
+  destaque: boolean;
+  destaque_ate: string | null;
+  descricao: string | null;
+}
+
+interface LinhaImpulso {
+  produto_id: number;
+  uf: string | null;
+  inicio: string;
+  fim: string;
 }
 
 interface LinhaPromocao {
@@ -40,18 +60,30 @@ export async function buscarCatalogo(): Promise<{ catalogo: Catalogo; erro?: str
   const sb = supabaseServidor();
   if (!sb) return { catalogo: CATALOGO_EXEMPLO, erro: 'Supabase não configurado' };
   try {
-    const [f, p, pr] = await Promise.all([
-      sb.from('fornecedores').select('id, nome, cidade, uf, demonstracao').order('id'),
+    const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+    const [f, p, pr, im] = await Promise.all([
+      sb.from('fornecedores').select('id, nome, cidade, uf, demonstracao, destaque, destaque_ate, descricao').order('id'),
       sb
         .from('produtos')
-        .select('id, fornecedor_id, categoria, nome, marca, descricao, unidade, conteudo, preco, especificacao, intervalo_km, intervalo_meses')
+        .select('id, fornecedor_id, categoria, nome, marca, descricao, unidade, conteudo, preco, especificacao, intervalo_km, intervalo_meses, imagem_url, referencia_id')
         .order('categoria')
         .order('preco'),
-      sb.from('promocoes').select('id, produto_id, titulo, preco_promocional, quantidade_minima, inicio, fim')
+      sb.from('promocoes').select('id, produto_id, titulo, preco_promocional, quantidade_minima, inicio, fim'),
+      sb.from('impulsos').select('produto_id, uf, inicio, fim').eq('status', 'ativo').gte('fim', hoje)
     ]);
     const erro = f.error ?? p.error ?? pr.error;
     if (erro) throw erro;
-    const fornecedores: Fornecedor[] = (f.data ?? []).map((x) => ({ id: Number(x.id), nome: x.nome, cidade: x.cidade, uf: x.uf, demonstracao: x.demonstracao }));
+    // sem a tabela de impulsos (banco antigo), a loja segue sem patrocinados
+    if (im.error) console.error('[catalogo] impulsos', im.error);
+    const fornecedores: Fornecedor[] = ((f.data ?? []) as LinhaFornecedor[]).map((x) => ({
+      id: Number(x.id),
+      nome: x.nome,
+      cidade: x.cidade,
+      uf: x.uf,
+      demonstracao: x.demonstracao,
+      destaque: !!x.destaque && (!x.destaque_ate || x.destaque_ate >= hoje),
+      descricao: x.descricao ?? null
+    }));
     const ativos = new Set(fornecedores.map((f) => f.id));
     const produtos: Produto[] = ((p.data ?? []) as LinhaProduto[]).filter((x) => ativos.has(Number(x.fornecedor_id))).map((x) => ({
       id: Number(x.id),
@@ -65,8 +97,14 @@ export async function buscarCatalogo(): Promise<{ catalogo: Catalogo; erro?: str
       preco: Number(x.preco),
       especificacao: x.especificacao ?? {},
       intervaloKm: x.intervalo_km,
-      intervaloMeses: x.intervalo_meses
+      intervaloMeses: x.intervalo_meses,
+      imagemUrl: x.imagem_url ?? null,
+      referenciaId: x.referencia_id == null ? null : Number(x.referencia_id)
     }));
+    const comProduto = new Set(produtos.map((x) => x.id));
+    const patrocinios: Patrocinio[] = ((im.data ?? []) as LinhaImpulso[])
+      .filter((x) => comProduto.has(Number(x.produto_id)))
+      .map((x) => ({ produtoId: Number(x.produto_id), uf: x.uf, inicio: x.inicio, fim: x.fim }));
     const promocoes: Promocao[] = ((pr.data ?? []) as LinhaPromocao[]).map((x) => ({
       id: Number(x.id),
       produtoId: Number(x.produto_id),
@@ -76,7 +114,7 @@ export async function buscarCatalogo(): Promise<{ catalogo: Catalogo; erro?: str
       inicio: x.inicio,
       fim: x.fim
     }));
-    const catalogo: Catalogo = { origem: 'banco', atualizadoEm: new Date().toISOString(), fornecedores, produtos, promocoes };
+    const catalogo: Catalogo = { origem: 'banco', atualizadoEm: new Date().toISOString(), fornecedores, produtos, promocoes, patrocinios };
     guardado = { em: Date.now(), catalogo };
     return { catalogo };
   } catch (e) {

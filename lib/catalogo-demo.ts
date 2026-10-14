@@ -1,20 +1,20 @@
 // Catálogo de exemplo. É a origem do seed do banco (npm run seed) e o que aparece
 // quando o Supabase não está configurado. Fornecedores fictícios e preços ilustrativos.
 
-import type { Catalogo, Fornecedor, Produto, Promocao } from './catalogo';
+import type { Catalogo, Fornecedor, Patrocinio, Produto, Promocao } from './catalogo';
 
 const fornecedores: Fornecedor[] = [
-  { id: 1, nome: 'Distribuidora de Lubrificantes', cidade: 'Rio de Janeiro', uf: 'RJ', demonstracao: true },
-  { id: 2, nome: 'Central de Filtros', cidade: 'Duque de Caxias', uf: 'RJ', demonstracao: true },
-  { id: 3, nome: 'Freios & Suspensão', cidade: 'Niterói', uf: 'RJ', demonstracao: true },
-  { id: 4, nome: 'Pneus & Baterias', cidade: 'Nova Iguaçu', uf: 'RJ', demonstracao: true }
+  { id: 1, nome: 'Distribuidora de Lubrificantes', cidade: 'Rio de Janeiro', uf: 'RJ', demonstracao: true, destaque: true, descricao: 'Óleos das normas das montadoras, entrega em 24 horas na capital.' },
+  { id: 2, nome: 'Central de Filtros', cidade: 'Duque de Caxias', uf: 'RJ', demonstracao: true, destaque: false, descricao: null },
+  { id: 3, nome: 'Freios & Suspensão', cidade: 'Niterói', uf: 'RJ', demonstracao: true, destaque: false, descricao: null },
+  { id: 4, nome: 'Pneus & Baterias', cidade: 'Nova Iguaçu', uf: 'RJ', demonstracao: true, destaque: false, descricao: null }
 ];
 
-type Novo = Omit<Produto, 'marca' | 'descricao' | 'intervaloKm' | 'intervaloMeses' | 'especificacao'> &
-  Partial<Pick<Produto, 'marca' | 'descricao' | 'intervaloKm' | 'intervaloMeses' | 'especificacao'>>;
+type Opcionais = 'marca' | 'descricao' | 'intervaloKm' | 'intervaloMeses' | 'especificacao' | 'imagemUrl' | 'referenciaId';
+type Novo = Omit<Produto, Opcionais> & Partial<Pick<Produto, Opcionais>>;
 
 function p(n: Novo): Produto {
-  return { marca: null, descricao: null, intervaloKm: null, intervaloMeses: null, especificacao: {}, ...n };
+  return { marca: null, descricao: null, intervaloKm: null, intervaloMeses: null, especificacao: {}, imagemUrl: null, referenciaId: null, ...n };
 }
 
 const APLICACAO = 'Consulte a aplicação pelo modelo, ano e motor antes de pedir.';
@@ -99,10 +99,17 @@ const promocoes: Promocao[] = [
   { id: 10, produtoId: 204, titulo: 'Verão sem cheiro', precoPromocional: 42.9, quantidadeMinima: 1, inicio: '2026-10-01', fim: '2027-02-28' }
 ];
 
+// Na demonstração, a bateria e o filtro de cabine aparecem como patrocinados.
+const patrocinios: Patrocinio[] = [
+  { produtoId: 406, uf: null, inicio: '2026-10-01', fim: '2026-12-31' },
+  { produtoId: 204, uf: 'RJ', inicio: '2026-10-01', fim: '2026-12-31' }
+];
+
 export const CATALOGO_EXEMPLO: Catalogo = {
   origem: 'exemplo',
   atualizadoEm: '2026-10-13T00:00:00.000Z',
   fornecedores,
   produtos,
-  promocoes
+  promocoes,
+  patrocinios
 };

@@ -17,6 +17,7 @@ import { notificar, pedirPermissao } from '@/lib/notificacao';
 import { dadosParaBackup, useOficina, type DadosGuardados } from '@/lib/store';
 import type { Preferencias, ServicoId } from '@/lib/tipos';
 import { MENSAGEM_PADRAO, VARIAVEIS_MENSAGEM, montarMensagem } from '@/lib/whatsapp';
+import { SeusProdutos } from './SeusProdutos';
 
 export function Ajustes() {
   return (
@@ -29,6 +30,7 @@ export function Ajustes() {
       <Avisos />
       <Mensagem />
       <Prazos />
+      <SeusProdutos />
       <Aparencia />
       <SeusDados />
       <Secao titulo="Plano">

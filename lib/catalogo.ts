@@ -10,6 +10,17 @@ export interface Fornecedor {
   cidade: string | null;
   uf: string | null;
   demonstracao: boolean;
+  /** Plano Destaque em dia: a loja aparece antes das outras e ganha o selo. */
+  destaque: boolean;
+  descricao: string | null;
+}
+
+/** Produto impulsionado (patrocinado) num período, no Brasil todo (uf null) ou num estado. */
+export interface Patrocinio {
+  produtoId: number;
+  uf: string | null;
+  inicio: string;
+  fim: string;
 }
 
 export interface Promocao {
@@ -36,6 +47,10 @@ export interface Produto {
   especificacao: EspecProduto;
   intervaloKm: number | null;
   intervaloMeses: number | null;
+  /** Foto do produto (enviada pelo fornecedor). Sem ela, a loja usa a foto da categoria. */
+  imagemUrl: string | null;
+  /** Linha da base de prazos do fabricante, quando o produto está ligado a uma. */
+  referenciaId: number | null;
 }
 
 export interface Catalogo {
@@ -44,6 +59,37 @@ export interface Catalogo {
   fornecedores: Fornecedor[];
   produtos: Produto[];
   promocoes: Promocao[];
+  patrocinios: Patrocinio[];
+}
+
+/** Completa um catálogo guardado por uma versão antiga do app (campos novos ficam no padrão). */
+export function normalizarCatalogo(c: Partial<Catalogo> & Pick<Catalogo, 'produtos'>): Catalogo {
+  return {
+    origem: c.origem ?? 'banco',
+    atualizadoEm: c.atualizadoEm ?? new Date(0).toISOString(),
+    fornecedores: (c.fornecedores ?? []).map((f) => ({ ...f, destaque: f.destaque ?? false, descricao: f.descricao ?? null })),
+    produtos: c.produtos.map((p) => ({ ...p, imagemUrl: p.imagemUrl ?? null, referenciaId: p.referenciaId ?? null })),
+    promocoes: c.promocoes ?? [],
+    patrocinios: c.patrocinios ?? []
+  };
+}
+
+/** O produto está impulsionado hoje para uma oficina deste estado. */
+export function patrocinado(produtoId: number, patrocinios: Patrocinio[], uf: string, hoje: string): boolean {
+  return patrocinios.some((x) => x.produtoId === produtoId && x.inicio <= hoje && x.fim >= hoje && (!x.uf || x.uf === uf));
+}
+
+/**
+ * A ordem da vitrine: patrocinados primeiro, depois as lojas Destaque, depois o resto
+ * (dentro de cada grupo, a ordem que já vinha, que é por categoria e preço).
+ */
+export function ordenarVitrine<T extends Pick<Produto, 'id' | 'fornecedorId'>>(produtos: T[], catalogo: Pick<Catalogo, 'fornecedores' | 'patrocinios'>, uf: string, hoje: string): T[] {
+  const destaques = new Set(catalogo.fornecedores.filter((f) => f.destaque).map((f) => f.id));
+  const peso = (p: T) => (patrocinado(p.id, catalogo.patrocinios, uf, hoje) ? 0 : destaques.has(p.fornecedorId) ? 1 : 2);
+  return produtos
+    .map((p, i) => ({ p, i, w: peso(p) }))
+    .sort((a, b) => a.w - b.w || a.i - b.i)
+    .map((x) => x.p);
 }
 
 export const CATEGORIAS: { id: Categoria; nome: string }[] = [

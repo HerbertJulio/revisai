@@ -303,6 +303,8 @@ export interface ProdutoComPrazo {
   intervaloKm?: number | null;
   intervaloMeses?: number | null;
   especificacao?: EspecProduto;
+  /** De onde vem o prazo do produto ("Indicado pela NGK", "Prazo do seu produto"). */
+  origem?: string;
 }
 
 export interface Sugestao extends Intervalo {
@@ -341,14 +343,18 @@ export function intervaloSugerido(
       const km = menor(base.km, p!.intervaloKm ?? null);
       const meses = menor(base.meses, p!.intervaloMeses ?? null);
       if (km !== base.km || meses !== base.meses) {
-        return { km, meses, origem: p!.especificacao?.base === 'mineral' ? 'Limite do óleo mineral' : 'Limite do óleo escolhido' };
+        return {
+          km,
+          meses,
+          origem: p!.origem ? `${p!.origem}, que é menor que o do carro` : p!.especificacao?.base === 'mineral' ? 'Limite do óleo mineral' : 'Limite do óleo escolhido'
+        };
       }
     }
     return { ...base, origem };
   }
 
   if (temPrazoProduto) {
-    return { km: p!.intervaloKm ?? null, meses: p!.intervaloMeses ?? null, origem: 'Vida útil indicada para o produto' };
+    return { km: p!.intervaloKm ?? null, meses: p!.intervaloMeses ?? null, origem: p!.origem ?? 'Vida útil indicada para o produto' };
   }
   const base = intervaloPadrao(id, ctx.prefs, severo);
   const s = servico(id);

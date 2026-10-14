@@ -10,6 +10,7 @@ import { ehExemplo, gerarExemplo } from './exemplo';
 import { hojeISO } from './datas';
 import { normalizarPlaca } from './formatos';
 import { OFICINA_VAZIA, PREFERENCIAS_PADRAO } from './padroes';
+import type { ProdutoProprio } from './referencias';
 import type {
   Atendimento,
   Cliente,
@@ -40,6 +41,8 @@ export interface DadosGuardados {
   contatos: Record<Id, Contato>;
   carrinho: ItemCarrinho[];
   pedidos: PedidoEnviado[];
+  /** Produtos que a oficina cadastrou, com o prazo que ela usa. */
+  produtosProprios: Record<Id, ProdutoProprio>;
   resumoMostradoEm: string | null;
   ultimoBackup: string | null;
   /** Quando esta cópia foi gravada (a mais nova vence entre IndexedDB e localStorage). */
@@ -70,6 +73,8 @@ interface Acoes {
   definirQuantidade(produtoId: number, quantidade: number): void;
   limparCarrinho(): void;
   registrarPedido(p: PedidoEnviado): void;
+  salvarProdutoProprio(p: Omit<ProdutoProprio, 'id' | 'criadoEm'> & { id?: Id }): Id;
+  removerProdutoProprio(id: Id): void;
   marcarResumo(data: string): void;
   marcarBackup(): void;
   importar(dados: Partial<DadosGuardados>): void;
@@ -92,6 +97,7 @@ const VAZIO: DadosGuardados = {
   contatos: {},
   carrinho: [],
   pedidos: [],
+  produtosProprios: {},
   resumoMostradoEm: null,
   ultimoBackup: null
 };
@@ -307,6 +313,22 @@ export const useOficina = create<EstadoOficina>()(
         set({ pedidos: [p, ...get().pedidos].slice(0, 50), carrinho: [] });
       },
 
+      salvarProdutoProprio(p) {
+        const id = p.id ?? novoId();
+        const anterior = get().produtosProprios[id];
+        set({
+          produtosProprios: {
+            ...get().produtosProprios,
+            [id]: { ...p, id, marca: p.marca.trim(), nome: p.nome.trim(), criadoEm: anterior?.criadoEm ?? new Date().toISOString() }
+          }
+        });
+        return id;
+      },
+
+      removerProdutoProprio(id) {
+        set({ produtosProprios: semChaves(get().produtosProprios, (_p, pid) => pid === id) });
+      },
+
       marcarResumo(data) {
         set({ resumoMostradoEm: data });
       },
@@ -363,6 +385,7 @@ export const useOficina = create<EstadoOficina>()(
         contatos: s.contatos,
         carrinho: s.carrinho,
         pedidos: s.pedidos,
+        produtosProprios: s.produtosProprios,
         resumoMostradoEm: s.resumoMostradoEm,
         ultimoBackup: s.ultimoBackup,
         salvoEm: Date.now()
@@ -414,6 +437,7 @@ export function dadosParaBackup(s: DadosGuardados) {
     leituras: s.leituras,
     contatos: s.contatos,
     pedidos: s.pedidos,
+    produtosProprios: s.produtosProprios,
     exemplo: s.exemplo
   };
 }

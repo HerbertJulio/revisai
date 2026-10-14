@@ -4,9 +4,12 @@
 // escolheu; o banco confere os produtos e recalcula preços (gatilho calcular_pedido).
 
 import { z } from 'zod';
+import { CATEGORIAS } from '@/lib/catalogo';
+import { clienteEquipe } from '@/lib/equipe';
 import { normalizarTelefone } from '@/lib/formatos';
 import { permitido } from '@/lib/limite';
 import { supabaseServidor } from '@/lib/supabase';
+import type { Categoria } from '@/lib/tipos';
 
 type Resposta<T = object> = ({ ok: true } & T) | { ok: false; erro: string };
 
@@ -146,6 +149,47 @@ export async function registrarInteresse(entrada: unknown): Promise<Resposta> {
   if (error?.code === 'P0001') return { ok: false, erro: 'Já recebemos o seu contato. A gente fala com você em breve.' };
   if (error) {
     console.error('[interesse]', error);
+    return { ok: false, erro: 'Não deu para enviar agora. Tente de novo em instantes.' };
+  }
+  return { ok: true };
+}
+
+const esquemaSugestao = z
+  .object({
+    categoria: z.enum(CATEGORIAS.map((c) => c.id) as [Categoria, ...Categoria[]]),
+    marca: z.string().trim().min(1, 'Escreva a marca do produto.').max(80),
+    nome: z.string().trim().min(2, 'Escreva o nome do produto.').max(160),
+    intervaloKm: z.number().int().min(100).max(500000).nullable(),
+    intervaloMeses: z.number().int().min(1).max(240).nullable(),
+    observacao: z.string().trim().max(600).optional().default('')
+  })
+  .refine((x) => x.intervaloKm != null || x.intervaloMeses != null, { message: 'Informe o prazo em km ou em meses.' });
+
+/**
+ * A oficina sugere um produto dela para a base de prazos. Entra como não aprovado:
+ * a equipe confere a fonte antes de aparecer para as outras oficinas.
+ */
+export async function sugerirParaBase(entrada: unknown): Promise<Resposta> {
+  const r = esquemaSugestao.safeParse(entrada);
+  if (!r.success) return { ok: false, erro: r.error.issues[0]?.message ?? 'Confira os dados.' };
+  if (!(await permitido('sugestao', 10, 60))) return { ok: false, erro: 'Recebemos várias sugestões seguidas. Tente de novo mais tarde.' };
+  const sb = clienteEquipe();
+  if (!sb) return { ok: false, erro: 'A base ainda não está ligada. Tente mais tarde.' };
+  const d = r.data;
+  const { error } = await sb.from('produtos_referencia').insert({
+    categoria: d.categoria,
+    marca: d.marca,
+    linha: d.nome,
+    intervalo_km: d.intervaloKm,
+    intervalo_meses: d.intervaloMeses,
+    observacao: d.observacao || null,
+    fonte_nome: 'Sugestão de oficina pelo app',
+    confianca: 'oficina',
+    origem: 'oficina',
+    aprovado: false
+  });
+  if (error) {
+    console.error('[sugestao]', error);
     return { ok: false, erro: 'Não deu para enviar agora. Tente de novo em instantes.' };
   }
   return { ok: true };

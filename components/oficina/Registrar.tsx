@@ -10,6 +10,17 @@ import { useToast } from '@/components/Toasts';
 import { Alternar, Botao, Campo, classeArea, classeBotao, classeEntrada } from '@/components/ui';
 import { calcularVencimento, estimarRodagem, pontosDoVeiculo } from '@/lib/agenda';
 import { nomeCategoria, type Produto } from '@/lib/catalogo';
+import type { ProdutoComPrazo } from '@/lib/manutencao';
+import {
+  NOMES_TIPO_INTERVALO,
+  nomeDaReferencia,
+  origemDaReferencia,
+  prazoDaReferencia,
+  referenciasDaCategoria,
+  textoDoPrazo,
+  type ProdutoProprio,
+  type Referencia
+} from '@/lib/referencias';
 import { dataValida, diasEntre, formatarData, formatarDataCurta } from '@/lib/datas';
 import { formatarKm, formatarMoeda, formatarPlaca, lerNumero, normalizarPlaca } from '@/lib/formatos';
 import { useHoje } from '@/lib/ganchos';
@@ -20,6 +31,7 @@ import { useOficina } from '@/lib/store';
 import type { ItemServico, ServicoId, Veiculo } from '@/lib/tipos';
 import { useCartaoDoCarro } from './acoes';
 import { useCatalogo } from './catalogo';
+import { useReferencias } from './referencias';
 import {
   CLIENTE_VAZIO,
   CamposCliente,
@@ -34,9 +46,11 @@ import {
 } from './formularios';
 
 interface Detalhe {
-  produtoId: number | null;
+  /** O que foi escolhido na lista: 'loja:12', 'ref:3', 'meu:<id>', 'outro' ou '' (não anotar). */
+  escolha: string;
   produtoTexto: string;
-  outro: boolean;
+  /** Guardar o produto escrito em "Seus produtos", com o prazo deste registro. */
+  guardar: boolean;
   km: string;
   meses: string;
   origem: string;
@@ -45,12 +59,22 @@ interface Detalhe {
 
 const OUTRO = 'outro';
 
+type Escolhido =
+  | { tipo: 'loja'; produto: Produto }
+  | { tipo: 'ref'; referencia: Referencia }
+  | { tipo: 'meu'; proprio: ProdutoProprio }
+  | { tipo: 'outro' }
+  | null;
+
 export function Registrar() {
   const params = useSearchParams();
   const router = useRouter();
   const hoje = useHoje();
   const toast = useToast();
   const { catalogo, produto: acharProduto } = useCatalogo();
+  const { referencias } = useReferencias();
+  const proprios = useOficina((s) => s.produtosProprios);
+  const salvarProprio = useOficina((s) => s.salvarProdutoProprio);
   const veiculos = useOficina((s) => s.veiculos);
   const clientes = useOficina((s) => s.clientes);
   const atendimentos = useOficina((s) => s.atendimentos);
@@ -107,19 +131,60 @@ export function Registrar() {
   );
   const [detalhes, setDetalhes] = useState<Partial<Record<ServicoId, Detalhe>>>({});
 
-  function sugestao(s: ServicoId, produtoId: number | null, severoAgora = usoSevero) {
-    const p = produtoId != null ? acharProduto(produtoId) : null;
-    return intervaloSugerido(s, { veiculo: { ...carroBase, usoSevero: severoAgora }, prefs, produto: p });
+  function escolhido(escolha: string): Escolhido {
+    if (escolha === OUTRO) return { tipo: 'outro' };
+    const [tipo, valor] = escolha.split(':');
+    if (tipo === 'loja') {
+      const produto = acharProduto(Number(valor));
+      return produto ? { tipo: 'loja', produto } : null;
+    }
+    if (tipo === 'ref') {
+      const referencia = referencias.find((r) => r.id === Number(valor));
+      return referencia ? { tipo: 'ref', referencia } : null;
+    }
+    if (tipo === 'meu') {
+      const proprio = proprios[valor ?? ''];
+      return proprio ? { tipo: 'meu', proprio } : null;
+    }
+    return null;
+  }
+
+  /** O prazo que vem do produto escolhido (a loja, a base do fabricante ou o cadastro da oficina). */
+  function prazoDoProduto(e: Escolhido, severoAgora: boolean): ProdutoComPrazo | null {
+    if (!e || e.tipo === 'outro') return null;
+    if (e.tipo === 'meu') return { intervaloKm: e.proprio.intervaloKm, intervaloMeses: e.proprio.intervaloMeses, origem: 'Prazo do seu produto' };
+    if (e.tipo === 'ref') {
+      const prazo = prazoDaReferencia(e.referencia, severoAgora);
+      return prazo ? { intervaloKm: prazo.km, intervaloMeses: prazo.meses, origem: origemDaReferencia(e.referencia) } : null;
+    }
+    const p = e.produto;
+    if (p.intervaloKm == null && p.intervaloMeses == null && p.referenciaId != null) {
+      const r = referencias.find((x) => x.id === p.referenciaId);
+      const prazo = r ? prazoDaReferencia(r, severoAgora) : null;
+      if (r && prazo) return { intervaloKm: prazo.km, intervaloMeses: prazo.meses, especificacao: p.especificacao, origem: origemDaReferencia(r) };
+    }
+    return p;
+  }
+
+  function sugestao(s: ServicoId, escolha: string, severoAgora = usoSevero) {
+    return intervaloSugerido(s, { veiculo: { ...carroBase, usoSevero: severoAgora }, prefs, produto: prazoDoProduto(escolhido(escolha), severoAgora) });
+  }
+
+  function escolhaAnterior(anterior: ItemServico['produto']): { escolha: string; texto: string } {
+    if (!anterior) return { escolha: '', texto: '' };
+    if (anterior.id != null && acharProduto(anterior.id)) return { escolha: `loja:${anterior.id}`, texto: '' };
+    if (anterior.referenciaId != null && referencias.some((r) => r.id === anterior.referenciaId)) return { escolha: `ref:${anterior.referenciaId}`, texto: '' };
+    if (anterior.proprioId && proprios[anterior.proprioId]) return { escolha: `meu:${anterior.proprioId}`, texto: '' };
+    return anterior.nome ? { escolha: OUTRO, texto: anterior.nome } : { escolha: '', texto: '' };
   }
 
   function detalheInicial(s: ServicoId): Detalhe {
-    const anterior = ultimosProdutos.get(s)?.produto;
-    const produtoId = anterior?.id != null && acharProduto(anterior.id) ? anterior.id : null;
-    const sug = sugestao(s, produtoId);
+    const { escolha, texto } = escolhaAnterior(ultimosProdutos.get(s)?.produto);
+    const sug = sugestao(s, escolha);
     return {
-      produtoId,
-      produtoTexto: produtoId == null ? anterior?.nome ?? '' : '',
-      outro: produtoId == null && !!anterior?.nome,
+      escolha,
+      produtoTexto: texto,
+      guardar: false,
       km: sug.km != null ? String(sug.km) : '',
       meses: sug.meses != null ? String(sug.meses) : '',
       origem: sug.origem,
@@ -147,13 +212,12 @@ export function Registrar() {
   function escolherProduto(s: ServicoId, valorSelect: string) {
     const atual = det(s);
     if (valorSelect === OUTRO) {
-      mudarDetalhe(s, { produtoId: null, outro: true });
+      mudarDetalhe(s, { escolha: OUTRO });
       return;
     }
-    const produtoId = valorSelect ? Number(valorSelect) : null;
-    const mudanca: Partial<Detalhe> = { produtoId, outro: false, produtoTexto: '' };
+    const mudanca: Partial<Detalhe> = { escolha: valorSelect, produtoTexto: '', guardar: false };
     if (!atual.editado) {
-      const sug = sugestao(s, produtoId);
+      const sug = sugestao(s, valorSelect);
       Object.assign(mudanca, { km: sug.km != null ? String(sug.km) : '', meses: sug.meses != null ? String(sug.meses) : '', origem: sug.origem });
     }
     mudarDetalhe(s, mudanca);
@@ -166,7 +230,7 @@ export function Registrar() {
       for (const s of selecionados) {
         const atual = d[s] ?? detalheInicial(s);
         if (atual.editado) continue;
-        const sug = sugestao(s, atual.produtoId, v);
+        const sug = sugestao(s, atual.escolha, v);
         r[s] = { ...atual, km: sug.km != null ? String(sug.km) : '', meses: sug.meses != null ? String(sug.meses) : '', origem: sug.origem };
       }
       return r;
@@ -237,13 +301,28 @@ export function Registrar() {
 
     const itens: ItemServico[] = selecionados.map((s) => {
       const d = det(s);
-      const p = d.produtoId != null ? acharProduto(d.produtoId) : null;
-      return {
-        servico: s,
-        produto: p ? { id: p.id, nome: p.nome, categoria: p.categoria, especificacao: p.especificacao } : d.produtoTexto.trim() ? { nome: d.produtoTexto.trim() } : null,
-        intervaloKm: lerNumero(d.km) || null,
-        intervaloMeses: lerNumero(d.meses) || null
-      };
+      const e = escolhido(d.escolha);
+      const intervaloKm = lerNumero(d.km) || null;
+      const intervaloMeses = lerNumero(d.meses) || null;
+      let produto: ItemServico['produto'] = null;
+      if (e?.tipo === 'loja') {
+        const p = e.produto;
+        produto = { id: p.id, nome: p.nome, categoria: p.categoria, especificacao: p.especificacao, ...(p.referenciaId != null ? { referenciaId: p.referenciaId } : {}) };
+      } else if (e?.tipo === 'ref') {
+        const r = e.referencia;
+        produto = { nome: nomeDaReferencia(r), categoria: r.categoria, referenciaId: r.id, ...(r.tipo ? { especificacao: { tipo: r.tipo } } : {}) };
+      } else if (e?.tipo === 'meu') {
+        const m = e.proprio;
+        produto = { nome: [m.marca, m.nome].filter(Boolean).join(' '), categoria: m.categoria, proprioId: m.id };
+      } else if (e?.tipo === 'outro' && d.produtoTexto.trim()) {
+        const nome = d.produtoTexto.trim().slice(0, 120);
+        const categoria = servico(s).categoria ?? 'outros';
+        if (d.guardar) {
+          const proprioId = salvarProprio({ categoria, marca: '', nome, intervaloKm, intervaloMeses });
+          produto = { nome, categoria, proprioId };
+        } else produto = { nome };
+      }
+      return { servico: s, produto, intervaloKm, intervaloMeses };
     });
     const atendimentoId = registrarAtendimento({ veiculoId: alvoVeiculo!, data, km: kmNum!, itens, valor: lerNumero(valor), observacao: obs.trim() || undefined });
 
@@ -446,6 +525,9 @@ export function Registrar() {
                 aoEscolherProduto={(v) => escolherProduto(s, v)}
                 aoMudar={(m) => mudarDetalhe(s, m)}
                 produtos={catalogo.produtos.filter((p) => p.categoria === servico(s).categoria)}
+                referencias={servico(s).categoria ? referenciasDaCategoria(referencias, servico(s).categoria!) : []}
+                proprios={Object.values(proprios).filter((p) => p.categoria === servico(s).categoria)}
+                escolhido={escolhido(det(s).escolha)}
                 recomendados={recomendarParaItem(s, carroBase, ultimosProdutos.get(s)?.produto, catalogo, hoje, 3).map((r) => r.produto.id)}
                 textoCarro={textoCarro}
               />
@@ -511,6 +593,9 @@ function DetalheServico({
   aoEscolherProduto,
   aoMudar,
   produtos,
+  referencias,
+  proprios,
+  escolhido,
   recomendados,
   textoCarro
 }: {
@@ -525,6 +610,9 @@ function DetalheServico({
   aoEscolherProduto: (v: string) => void;
   aoMudar: (m: Partial<Detalhe>) => void;
   produtos: Produto[];
+  referencias: Referencia[];
+  proprios: ProdutoProprio[];
+  escolhido: Escolhido;
   recomendados: number[];
   textoCarro: string;
 }) {
@@ -532,7 +620,9 @@ function DetalheServico({
   const kmI = lerNumero(d.km);
   const mesesI = lerNumero(d.meses);
   const venc = base && (kmI || mesesI) ? calcularVencimento(base, { km: kmI || null, meses: mesesI || null }, [], kmDia, hoje) : null;
-  const produto = d.produtoId != null ? produtos.find((p) => p.id === d.produtoId) : undefined;
+  const produto = escolhido?.tipo === 'loja' ? escolhido.produto : undefined;
+  const referencia = escolhido?.tipo === 'ref' ? escolhido.referencia : undefined;
+  const outro = escolhido?.tipo === 'outro';
   const exigido = s === 'troca_oleo' ? exigenciaDoCarro(veiculo.oleo, null) : null;
   const compat = produto && exigido ? oleoAtende(produto.especificacao, exigido) : null;
   const ordenados = [...produtos].sort((a, b) => Number(recomendados.includes(b.id)) - Number(recomendados.includes(a.id)));
@@ -560,25 +650,56 @@ function DetalheServico({
             rotulo={s === 'troca_oleo' ? 'Óleo usado' : 'Produto usado'}
             htmlFor={`p-${s}`}
             className="sm:col-span-2"
-            dica={anteriorNome && !produto && !d.outro ? `Da última vez: ${anteriorNome}.` : undefined}
+            dica={anteriorNome && !escolhido ? `Da última vez: ${anteriorNome}.` : undefined}
           >
-            <select id={`p-${s}`} className={classeEntrada} value={d.outro ? OUTRO : d.produtoId ?? ''} onChange={(e) => aoEscolherProduto(e.target.value)}>
+            <select id={`p-${s}`} className={classeEntrada} value={d.escolha} onChange={(e) => aoEscolherProduto(e.target.value)}>
               <option value="">Não anotar</option>
-              {ordenados.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {recomendados.includes(p.id) ? '★ ' : ''}
-                  {p.nome}
-                  {p.unidade === 'L' && (p.conteudo ?? 1) > 1 ? ` (${p.conteudo} L)` : ''}
-                </option>
-              ))}
+              {proprios.length ? (
+                <optgroup label="Seus produtos">
+                  {proprios.map((m) => (
+                    <option key={m.id} value={`meu:${m.id}`}>
+                      {[m.marca, m.nome].filter(Boolean).join(' ')} ({textoDoPrazo(m.intervaloKm, m.intervaloMeses)})
+                    </option>
+                  ))}
+                </optgroup>
+              ) : null}
+              {ordenados.length ? (
+                <optgroup label="Na loja">
+                  {ordenados.map((p) => (
+                    <option key={p.id} value={`loja:${p.id}`}>
+                      {recomendados.includes(p.id) ? '★ ' : ''}
+                      {p.nome}
+                      {p.unidade === 'L' && (p.conteudo ?? 1) > 1 ? ` (${p.conteudo} L)` : ''}
+                    </option>
+                  ))}
+                </optgroup>
+              ) : null}
+              {referencias.length ? (
+                <optgroup label="Prazo de fabricantes">
+                  {referencias.map((r) => (
+                    <option key={r.id} value={`ref:${r.id}`}>
+                      {nomeDaReferencia(r)} ({r.segueManual ? 'segue o manual' : textoDoPrazo(r.intervaloKm, r.intervaloMeses)})
+                    </option>
+                  ))}
+                </optgroup>
+              ) : null}
               <option value={OUTRO}>Outro produto (escrever)</option>
             </select>
           </Campo>
         ) : null}
-        {d.outro ? (
-          <Campo rotulo="Qual produto" htmlFor={`pt-${s}`} className="sm:col-span-2" dica={`Marca e especificação. Ex.: ${s === 'troca_oleo' ? '5W-30 sintético API SP' : nomeCategoria(info.categoria ?? 'outros')}`}>
-            <input id={`pt-${s}`} className={classeEntrada} value={d.produtoTexto} onChange={(e) => aoMudar({ produtoTexto: e.target.value })} autoComplete="off" />
-          </Campo>
+        {referencia ? <NotaReferencia r={referencia} /> : null}
+        {outro ? (
+          <div className="flex flex-col gap-2 sm:col-span-2">
+            <Campo rotulo="Qual produto" htmlFor={`pt-${s}`} dica={`Marca e especificação. Ex.: ${s === 'troca_oleo' ? '5W-30 sintético API SP' : nomeCategoria(info.categoria ?? 'outros')}`}>
+              <input id={`pt-${s}`} className={classeEntrada} value={d.produtoTexto} onChange={(e) => aoMudar({ produtoTexto: e.target.value })} autoComplete="off" maxLength={120} />
+            </Campo>
+            {d.produtoTexto.trim().length >= 3 ? (
+              <label className="flex items-center gap-2 text-[14px] text-tinta-2">
+                <input type="checkbox" className="h-4 w-4 accent-[var(--color-tinta)]" checked={d.guardar} onChange={(e) => aoMudar({ guardar: e.target.checked })} />
+                Guardar em Seus produtos com este prazo, para escolher da próxima vez
+              </label>
+            ) : null}
+          </div>
         ) : null}
         {compat && !compat.atende ? (
           <p className="flex items-start gap-2 rounded-lg bg-atraso-claro px-3 py-2 text-[14px] text-atraso sm:col-span-2" role="status">
@@ -619,6 +740,25 @@ function DetalheServico({
           {d.editado ? 'Prazo escolhido por você.' : `${d.origem}: ${rotuloIntervalo({ km: kmI || null, meses: mesesI || null })}.`} {info.dica}
         </p>
       </div>
+    </div>
+  );
+}
+
+function NotaReferencia({ r }: { r: Referencia }) {
+  const tipo = r.tipoIntervalo ? NOMES_TIPO_INTERVALO[r.tipoIntervalo] : null;
+  return (
+    <div className="rounded-lg bg-papel-2 px-3 py-2.5 text-[13.5px] leading-snug text-tinta-2 sm:col-span-2">
+      <p>
+        <span className="font-semibold text-tinta">{origemDaReferencia(r)}</span>
+        {r.segueManual ? ', que manda seguir o manual do carro.' : `, ${textoDoPrazo(r.intervaloKm, r.intervaloMeses)}${tipo && tipo !== 'troca' ? ` (${tipo})` : ''}.`}
+        {r.intervaloKmSevero || r.intervaloMesesSevero ? ` No uso severo, ${textoDoPrazo(r.intervaloKmSevero ?? r.intervaloKm, r.intervaloMesesSevero ?? r.intervaloMeses)}.` : ''}
+      </p>
+      {r.observacao ? <p className="mt-1">{r.observacao}</p> : null}
+      {r.fonteUrl ? (
+        <a href={r.fonteUrl} target="_blank" rel="noopener noreferrer" className="mt-1 inline-block font-semibold text-caneta hover:underline">
+          Ver a fonte{r.fonteNome ? ` (${r.fonteNome})` : ''}
+        </a>
+      ) : null}
     </div>
   );
 }
