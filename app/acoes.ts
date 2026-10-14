@@ -3,27 +3,12 @@
 // Ações do servidor: pedido da loja e cadastro de interesse. O navegador manda só o que a pessoa
 // escolheu; o banco confere os produtos e recalcula preços (gatilho calcular_pedido).
 
-import { headers } from 'next/headers';
 import { z } from 'zod';
 import { normalizarTelefone } from '@/lib/formatos';
+import { permitido } from '@/lib/limite';
 import { supabaseServidor } from '@/lib/supabase';
 
 type Resposta<T = object> = ({ ok: true } & T) | { ok: false; erro: string };
-
-// Limite simples por IP para evitar envios em série (por instância do servidor).
-const janela = new Map<string, number[]>();
-async function permitido(chave: string, maximo: number, minutos: number): Promise<boolean> {
-  const h = await headers();
-  const ip = (h.get('x-forwarded-for') ?? '').split(',')[0].trim() || h.get('x-real-ip') || 'local';
-  const agora = Date.now();
-  const id = `${chave}:${ip}`;
-  const recentes = (janela.get(id) ?? []).filter((t) => agora - t < minutos * 60_000);
-  if (recentes.length >= maximo) return false;
-  recentes.push(agora);
-  janela.set(id, recentes);
-  if (janela.size > 5000) janela.clear();
-  return true;
-}
 
 const LETRAS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 function codigoPedido(): string {

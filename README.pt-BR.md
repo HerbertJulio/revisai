@@ -87,6 +87,8 @@ O repositório está ligado à Vercel: cada push na `main` publica e cada pull r
 | `SUPABASE_URL` | Endereço do projeto no Supabase |
 | `SUPABASE_PUBLISHABLE_KEY` | Chave publicável (anon), usada só no servidor |
 | `CRON_SECRET` | Protege `/api/cron/manter-ativo`, a chamada diária que mantém o banco grátis acordado |
+| `EQUIPE_SENHA` | Senha do painel da equipe, em `/equipe` |
+| `EQUIPE_CHAVE` | Chave aleatória (64 caracteres hexadecimais) que o servidor manda ao Supabase pelo painel da equipe; o banco guarda só o hash SHA-256 dela em `privado.chaves` |
 
 Diagnóstico: `/api/saude` mostra se o banco está configurado e respondendo.
 
@@ -96,6 +98,7 @@ Diagnóstico: `/api/saude` mostra se o banco está configurado e respondendo.
 app/                 páginas (App Router)
   (site)/            páginas públicas: início, fornecedores, planos, quem tem carro, cartão, privacidade
   oficina/           o app da oficina: avisos, clientes, carro, registrar serviço, loja, ajustes, etiqueta
+  equipe/            painel da equipe: pedidos, cadastros e marketplace (com senha)
   api/               catálogo, diagnóstico e rotina diária
   acoes.ts           ações do servidor: pedidos e interessados
 components/          interface (app da oficina, site público, peças comuns)

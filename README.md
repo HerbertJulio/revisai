@@ -87,6 +87,8 @@ The repository is connected to Vercel: every push to `main` goes live and every 
 | `SUPABASE_URL` | Supabase project URL |
 | `SUPABASE_PUBLISHABLE_KEY` | Publishable (anon) key, used only on the server |
 | `CRON_SECRET` | Protects `/api/cron/manter-ativo`, the daily call that keeps the free database awake |
+| `EQUIPE_SENHA` | Password of the team panel at `/equipe` |
+| `EQUIPE_CHAVE` | Random key (64 hex characters) the server sends to Supabase for the team panel; the database keeps only its SHA-256 hash in `privado.chaves` |
 
 Diagnostics: `/api/saude` shows whether the database is configured and responding.
 
@@ -96,6 +98,7 @@ Diagnostics: `/api/saude` shows whether the database is configured and respondin
 app/                 pages (App Router)
   (site)/            public pages: home, suppliers, plans, car owners, card, privacy
   oficina/           the shop app: reminders, customers, car, register service, store, settings, sticker
+  equipe/            team panel: orders, sign-ups and the marketplace (password protected)
   api/               catalog, health check and cron
   acoes.ts           server actions: orders and leads
 components/          UI (shop app, public site, shared pieces)
