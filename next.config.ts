@@ -44,6 +44,9 @@ const config: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   agentRules: false,
+  // fotos dos produtos e a ordem de serviço por voz (áudio e fotos) passam por ações do servidor;
+  // a Vercel aceita até 4,5 MB por requisição
+  experimental: { serverActions: { bodySizeLimit: '4mb' } },
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: 'upload.wikimedia.org', pathname: '/wikipedia/commons/**' },
@@ -54,6 +57,15 @@ const config: NextConfig = {
   },
   async headers() {
     return [{ source: '/:path*', headers: seguranca }];
+  },
+  async redirects() {
+    return [
+      // o painel da equipe virou painel administrativo
+      { source: '/equipe', destination: '/admin', permanent: true },
+      { source: '/equipe/loja', destination: '/admin/promocoes', permanent: true },
+      { source: '/equipe/:caminho*', destination: '/admin/:caminho*', permanent: true },
+      { source: '/admin/loja', destination: '/admin/promocoes', permanent: true }
+    ];
   }
 };
 

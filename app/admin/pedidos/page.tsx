@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Pedidos' };
 
 export default async function PaginaPedidos() {
-  const portao = await portaoDaEquipe('/equipe/pedidos');
+  const portao = await portaoDaEquipe('/admin/pedidos');
   if (portao) return portao;
   const { dados, erro } = await buscarPedidos();
   return (

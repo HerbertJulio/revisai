@@ -2,7 +2,7 @@
 
 import { LockKeyhole } from 'lucide-react';
 import { useActionState, type ReactNode } from 'react';
-import { entrar, type EstadoEntrada } from '@/app/equipe/acoes';
+import { entrar, type EstadoEntrada } from '@/app/admin/acoes';
 import { Logo } from '@/components/marca';
 import { Botao, Campo, classeEntrada } from '@/components/ui';
 
@@ -14,7 +14,7 @@ export function Entrar({ voltar }: { voltar: string }) {
   return (
     <form action={acao} className="flex flex-col gap-5">
       <input type="hidden" name="voltar" value={voltar} />
-      <Campo rotulo="Senha da equipe" erro={estado.erro} htmlFor="senha-equipe">
+      <Campo rotulo="Senha do painel" erro={estado.erro} htmlFor="senha-equipe">
         <input
           id="senha-equipe"
           name="senha"
@@ -41,7 +41,7 @@ export function TelaEntrada({ children }: { children: ReactNode }) {
     <main className="grid min-h-dvh place-items-center px-4 py-10">
       <div className="w-full max-w-sm rounded-[22px] bg-papel p-6 ring-1 ring-linha sm:p-8">
         <Logo />
-        <h1 className="largo mt-6 text-[26px] leading-tight">Painel da equipe</h1>
+        <h1 className="largo mt-6 text-[26px] leading-tight">Painel administrativo</h1>
         <p className="mt-1.5 mb-6 text-[15px] text-tinta-2">Pedidos da loja, cadastros do site e promoções dos fornecedores.</p>
         {children}
       </div>

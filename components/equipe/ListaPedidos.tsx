@@ -2,7 +2,7 @@
 
 import { MessageCircle } from 'lucide-react';
 import { useMemo, useOptimistic, useState, useTransition, type ReactNode } from 'react';
-import { mudarSituacaoPedido } from '@/app/equipe/acoes';
+import { mudarSituacaoPedido } from '@/app/admin/acoes';
 import { useToast } from '@/components/Toasts';
 import { classeBotao, Vazio } from '@/components/ui';
 import {

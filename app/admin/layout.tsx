@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: { default: 'Painel da equipe', template: '%s | Equipe Revisaí' },
+  title: { default: 'Painel administrativo', template: '%s | Admin Revisaí' },
   robots: { index: false, follow: false }
 };
 

@@ -1,24 +1,28 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
-import { sair } from '@/app/equipe/acoes';
+import { sair } from '@/app/admin/acoes';
 import { Logo } from '@/components/marca';
 import { Toasts } from '@/components/Toasts';
 import { classeBotao } from '@/components/ui';
 import { contarNovos } from '@/lib/equipe';
 
-export type Aba = 'resumo' | 'pedidos' | 'cadastros' | 'loja';
+export type Aba = 'resumo' | 'pedidos' | 'cadastros' | 'fornecedores' | 'promocoes' | 'impulsos' | 'base' | 'pro';
 
 const ABAS: { id: Aba; href: string; rotulo: string }[] = [
-  { id: 'resumo', href: '/equipe', rotulo: 'Resumo' },
-  { id: 'pedidos', href: '/equipe/pedidos', rotulo: 'Pedidos' },
-  { id: 'cadastros', href: '/equipe/cadastros', rotulo: 'Cadastros' },
-  { id: 'loja', href: '/equipe/loja', rotulo: 'Loja' }
+  { id: 'resumo', href: '/admin', rotulo: 'Resumo' },
+  { id: 'pedidos', href: '/admin/pedidos', rotulo: 'Pedidos' },
+  { id: 'cadastros', href: '/admin/cadastros', rotulo: 'Cadastros' },
+  { id: 'fornecedores', href: '/admin/fornecedores', rotulo: 'Fornecedores' },
+  { id: 'promocoes', href: '/admin/promocoes', rotulo: 'Promoções' },
+  { id: 'impulsos', href: '/admin/impulsos', rotulo: 'Impulsos' },
+  { id: 'base', href: '/admin/base', rotulo: 'Base de prazos' },
+  { id: 'pro', href: '/admin/pro', rotulo: 'Pro' }
 ];
 
-/** Cabeçalho, abas e área de avisos do painel da equipe (só para quem já entrou). */
+/** Cabeçalho, abas e área de avisos do painel administrativo (só para quem já entrou). */
 export async function Moldura({ aba, titulo, descricao, children }: { aba: Aba; titulo: string; descricao?: ReactNode; children: ReactNode }) {
   const novos = await contarNovos();
-  const contador: Partial<Record<Aba, number>> = { pedidos: novos.pedidos, cadastros: novos.cadastros };
+  const contador: Partial<Record<Aba, number>> = { pedidos: novos.pedidos, cadastros: novos.cadastros, impulsos: novos.impulsos, base: novos.sugestoes };
 
   return (
     <Toasts>
@@ -26,10 +30,10 @@ export async function Moldura({ aba, titulo, descricao, children }: { aba: Aba; 
         <header className="border-b border-linha bg-papel">
           <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 pt-4 sm:px-6">
             <div className="flex items-center gap-3">
-              <Link href="/equipe" aria-label="Revisaí, painel da equipe">
+              <Link href="/admin" aria-label="Revisaí, painel administrativo">
                 <Logo />
               </Link>
-              <span className="rounded-full border border-linha px-2.5 py-0.5 text-[13px] font-semibold text-tinta-2">Equipe</span>
+              <span className="rounded-full border border-linha px-2.5 py-0.5 text-[13px] font-semibold text-tinta-2">Admin</span>
             </div>
             <form action={sair}>
               <button type="submit" className={classeBotao('fantasma', 'pequeno')}>

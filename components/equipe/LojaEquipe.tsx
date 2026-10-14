@@ -1,8 +1,7 @@
 'use client';
 
-import { MessageCircle } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { Chip, classeBotao, Vazio } from '@/components/ui';
+import { Chip, Vazio } from '@/components/ui';
 import {
   contarPor,
   dataCurta,
@@ -14,7 +13,6 @@ import {
   type SituacaoPromocao
 } from '@/lib/equipe-dados';
 import { formatarMoeda, plural } from '@/lib/formatos';
-import { linkWhatsApp } from '@/lib/whatsapp';
 import { Filtro, LinhaDeFiltros } from './comum';
 
 export function LojaEquipe({ loja, hoje }: { loja: Loja; hoje: string }) {
@@ -89,45 +87,6 @@ export function LojaEquipe({ loja, hoje }: { loja: Loja; hoje: string }) {
         )}
       </section>
 
-      <section className="flex flex-col gap-3" aria-labelledby="titulo-fornecedores">
-        <h2 id="titulo-fornecedores" className="text-[21px]">
-          Fornecedores
-        </h2>
-        {loja.fornecedores.length ? (
-          <ul className="divide-y divide-linha rounded-2xl bg-papel ring-1 ring-linha">
-            {loja.fornecedores.map((f) => {
-              const seus = loja.produtos.filter((p) => p.fornecedor_id === f.id);
-              const ativosDele = seus.filter((p) => p.ativo).length;
-              const idsDele = new Set(seus.map((p) => p.id));
-              const promosDele = promocoes.filter((p) => idsDele.has(p.produto_id) && p.situacao === 'em_vigor').length;
-              const whatsapp = f.whatsapp ? linkWhatsApp(f.whatsapp, 'Olá! Aqui é da equipe do Revisaí.') : null;
-              return (
-                <li key={f.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3.5 sm:px-5">
-                  <div className="min-w-0 flex-1 basis-56">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-bold">{f.nome}</p>
-                      {f.demonstracao ? <Chip>Exemplo</Chip> : null}
-                      {!f.ativo ? <Chip tom="atraso">Fora da loja</Chip> : null}
-                    </div>
-                    <p className="text-[14px] text-tinta-3">
-                      {[[f.cidade, f.uf].filter(Boolean).join(', '), plural(ativosDele, 'produto ativo', 'produtos ativos'), plural(promosDele, 'promoção em vigor', 'promoções em vigor')]
-                        .filter(Boolean)
-                        .join(', ')}
-                    </p>
-                  </div>
-                  {whatsapp ? (
-                    <a href={whatsapp} target="_blank" rel="noopener noreferrer" className={classeBotao('secundario', 'pequeno')}>
-                      <MessageCircle size={16} aria-hidden="true" /> WhatsApp
-                    </a>
-                  ) : null}
-                </li>
-              );
-            })}
-          </ul>
-        ) : (
-          <Vazio titulo="Nenhum fornecedor cadastrado" />
-        )}
-      </section>
     </div>
   );
 }

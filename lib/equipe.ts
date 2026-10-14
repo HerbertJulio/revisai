@@ -61,7 +61,7 @@ export interface Resultado<T> {
 }
 
 const ERRO_LEITURA = 'Não deu para carregar agora. Atualize a página em instantes.';
-const SEM_CONFIGURACAO = 'O painel da equipe não está configurado.';
+const SEM_CONFIGURACAO = 'O painel administrativo não está configurado.';
 
 function avisarDescartes(tabela: string, descartadas: number) {
   if (descartadas) console.warn(`[equipe] ${descartadas} linha(s) de ${tabela} fora do formato esperado`);
@@ -119,15 +119,17 @@ export async function buscarLoja(): Promise<Resultado<LojaEquipe>> {
   return { dados: { fornecedores: fornecedores.itens, produtos: produtos.itens, promocoes: promocoes.itens }, erro: null };
 }
 
-/** Quantos pedidos e cadastros estão esperando resposta (para as abas). */
-export async function contarNovos(): Promise<{ pedidos: number; cadastros: number }> {
+/** Quantos pedidos, cadastros, impulsos e sugestões estão esperando resposta (para as abas). */
+export async function contarNovos(): Promise<{ pedidos: number; cadastros: number; impulsos: number; sugestoes: number }> {
   const sb = clienteEquipe();
-  if (!sb) return { pedidos: 0, cadastros: 0 };
-  const [p, c] = await Promise.all([
+  if (!sb) return { pedidos: 0, cadastros: 0, impulsos: 0, sugestoes: 0 };
+  const [p, c, i, s] = await Promise.all([
     sb.from('pedidos').select('id', { count: 'exact', head: true }).eq('status', 'novo'),
-    sb.from('interessados').select('id', { count: 'exact', head: true }).eq('situacao', 'novo')
+    sb.from('interessados').select('id', { count: 'exact', head: true }).eq('situacao', 'novo'),
+    sb.from('impulsos').select('id', { count: 'exact', head: true }).eq('status', 'pedido'),
+    sb.from('produtos_referencia').select('id', { count: 'exact', head: true }).eq('aprovado', false).eq('ativo', true)
   ]);
-  return { pedidos: p.count ?? 0, cadastros: c.count ?? 0 };
+  return { pedidos: p.count ?? 0, cadastros: c.count ?? 0, impulsos: i.count ?? 0, sugestoes: s.count ?? 0 };
 }
 
 export type Gravacao = { ok: true } | { ok: false; erro: string };

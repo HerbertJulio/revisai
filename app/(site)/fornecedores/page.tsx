@@ -1,29 +1,14 @@
 import type { Metadata } from 'next';
-import { BadgePercent, LayoutGrid, Star } from 'lucide-react';
+import { BarChart3, Check, Rocket } from 'lucide-react';
 import { FormInteresse } from '@/components/site/FormInteresse';
+import { formatarMoeda } from '@/lib/formatos';
+import { DIAS_IMPULSO, PLANOS_FORNECEDOR, PRECO_IMPULSO, type PlanoFornecedor } from '@/lib/planos-fornecedor';
 
 export const metadata: Metadata = {
   title: 'Para fornecedores',
-  description: 'Venda óleo, filtros e peças para as oficinas no momento em que elas vão precisar. O Revisaí mostra a sua oferta no aviso de troca.'
+  description:
+    'Venda óleo, filtros e peças para as oficinas no momento em que elas vão precisar. Plano Vitrine sem mensalidade, plano Destaque para aparecer primeiro e impulso de produto por 7, 15 ou 30 dias.'
 };
-
-const FORMAS = [
-  {
-    Icone: LayoutGrid,
-    titulo: 'Vitrine',
-    texto: 'Seus produtos no catálogo da loja, com a especificação técnica (viscosidade, API, normas, medidas) para entrarem nas recomendações certas.'
-  },
-  {
-    Icone: Star,
-    titulo: 'Destaque',
-    texto: 'Quando mais de um produto atende ao carro, o seu aparece primeiro para a oficina.'
-  },
-  {
-    Icone: BadgePercent,
-    titulo: 'Oferta na hora certa',
-    texto: 'Sua promoção aparece dentro do aviso de troca e na soma de compras dos próximos 30 dias das oficinas da sua região.'
-  }
-];
 
 export default function Fornecedores() {
   return (
@@ -35,14 +20,55 @@ export default function Fornecedores() {
         </p>
       </div>
 
-      <div className="mt-14 grid gap-5 md:grid-cols-3">
-        {FORMAS.map(({ Icone, titulo, texto }) => (
-          <div key={titulo} className="flex flex-col gap-3 rounded-[22px] bg-papel px-6 py-7 ring-1 ring-linha">
-            <Icone size={24} className="text-tinta-2" aria-hidden="true" />
-            <h2 className="text-[22px]">{titulo}</h2>
-            <p className="text-tinta-2">{texto}</p>
-          </div>
-        ))}
+      <div className="mt-14 grid gap-5 lg:grid-cols-2">
+        {(Object.keys(PLANOS_FORNECEDOR) as PlanoFornecedor[]).map((id) => {
+          const p = PLANOS_FORNECEDOR[id];
+          const escuro = id === 'destaque';
+          return (
+            <section key={id} className={`flex flex-col gap-4 rounded-[22px] px-6 py-7 ${escuro ? 'bg-tinta text-papel' : 'bg-papel ring-1 ring-linha'}`}>
+              <div>
+                <h2 className="text-[26px]">{p.nome}</h2>
+                <p className={escuro ? 'text-papel/75' : 'text-tinta-2'}>{p.resumo}</p>
+              </div>
+              <p>
+                <span className="largo num text-[34px] font-extrabold">{p.mensalidade ? formatarMoeda(p.mensalidade) : 'Grátis'}</span>
+                {p.mensalidade ? <span className={escuro ? 'text-papel/75' : 'text-tinta-3'}> por mês</span> : null}
+                <span className={`block text-[15px] ${escuro ? 'text-papel/75' : 'text-tinta-3'}`}>e {p.comissao}% sobre os pedidos entregues</span>
+              </p>
+              <ul className="flex flex-col gap-2">
+                {p.itens.map((item) => (
+                  <li key={item} className="flex gap-2">
+                    <Check size={19} className={`mt-0.5 shrink-0 ${escuro ? 'text-oleo' : 'text-ok'}`} aria-hidden="true" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          );
+        })}
+      </div>
+
+      <div className="mt-5 grid gap-5 md:grid-cols-2">
+        <div className="flex flex-col gap-3 rounded-[22px] bg-papel px-6 py-7 ring-1 ring-linha">
+          <Rocket size={24} className="text-tinta-2" aria-hidden="true" />
+          <h2 className="text-[22px]">Impulsionar um produto</h2>
+          <p className="text-tinta-2">Lançamento ou estoque parado: o produto aparece primeiro na categoria e ao lado da sugestão de compra das oficinas, com o selo Patrocinado, no seu estado ou no Brasil todo.</p>
+          <p className="flex flex-wrap gap-2 pt-1">
+            {DIAS_IMPULSO.map((d) => (
+              <span key={d} className="rounded-xl bg-papel-2 px-3 py-1.5 text-[15px]">
+                {d} dias, <span className="num font-semibold">{formatarMoeda(PRECO_IMPULSO[d])}</span>
+              </span>
+            ))}
+          </p>
+        </div>
+        <div className="flex flex-col gap-3 rounded-[22px] bg-papel px-6 py-7 ring-1 ring-linha">
+          <BarChart3 size={24} className="text-tinta-2" aria-hidden="true" />
+          <h2 className="text-[22px]">Saiba o que a região vai comprar</h2>
+          <p className="text-tinta-2">
+            No seu painel aparece a soma do que as oficinas da região vão precisar nos próximos 30 dias, como 48 litros de 5W-30 ou 20 filtros de ar, com uma sugestão de promoção pronta para publicar. Você vê as
+            quantidades, nunca quem são as oficinas ou os clientes delas.
+          </p>
+        </div>
       </div>
 
       <div className="mt-20 grid gap-12 lg:grid-cols-[1fr_1.1fr]">

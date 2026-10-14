@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Cadastros' };
 
 export default async function PaginaCadastros() {
-  const portao = await portaoDaEquipe('/equipe/cadastros');
+  const portao = await portaoDaEquipe('/admin/cadastros');
   if (portao) return portao;
   const { dados, erro } = await buscarCadastros();
   return (

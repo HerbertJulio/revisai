@@ -50,7 +50,8 @@ export const NOMES_ORIGEM: Record<string, string> = {
   fornecedores: 'página de fornecedores',
   motorista: 'calculadora do motorista',
   privacidade: 'página de privacidade',
-  app: 'painel da oficina'
+  app: 'painel da oficina',
+  'painel-fornecedor': 'painel do fornecedor'
 };
 
 const texto = z.string();

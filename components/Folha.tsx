@@ -1,7 +1,7 @@
 'use client';
 
 import { X } from 'lucide-react';
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type ReactNode } from 'react';
 
 /** Diálogo nativo: sobe do rodapé no celular e fica no centro no computador. Esc e toque fora fecham. */
 export function Folha({
@@ -20,6 +20,7 @@ export function Folha({
   rodape?: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const id = useId();
 
   useEffect(() => {
     const d = ref.current;
@@ -32,6 +33,8 @@ export function Folha({
     <dialog
       ref={ref}
       className="folha"
+      aria-labelledby={`${id}-titulo`}
+      aria-describedby={descricao ? `${id}-descricao` : undefined}
       onClose={aoFechar}
       onCancel={(e) => {
         e.preventDefault();
@@ -45,8 +48,14 @@ export function Folha({
         <div className="flex max-h-[92dvh] flex-col">
           <header className="flex items-start justify-between gap-3 border-b border-linha px-5 pt-4 pb-3">
             <div className="min-w-0">
-              <h2 className="text-[19px]">{titulo}</h2>
-              {descricao ? <p className="mt-1 text-[14px] text-tinta-2">{descricao}</p> : null}
+              <h2 id={`${id}-titulo`} className="text-[19px]">
+                {titulo}
+              </h2>
+              {descricao ? (
+                <p id={`${id}-descricao`} className="mt-1 text-[14px] text-tinta-2">
+                  {descricao}
+                </p>
+              ) : null}
             </div>
             <button type="button" onClick={aoFechar} aria-label="Fechar" className="-mr-2 grid h-10 w-10 shrink-0 place-items-center rounded-full text-tinta-2 hover:bg-papel-2">
               <X size={20} />
