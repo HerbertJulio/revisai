@@ -105,3 +105,15 @@ describe('WhatsApp', () => {
     expect(comando('cancelar')).toBe('cancelar');
   });
 });
+
+describe('erros da IA', () => {
+  it('traduz o erro técnico para a oficina', async () => {
+    const { motivoDoErro } = await import('@/lib/agente/ia');
+    const auth = Object.assign(new Error('AI Gateway authentication failed: No authentication provided.\nOption 1'), { name: 'GatewayAuthenticationError', statusCode: 401 });
+    expect(motivoDoErro(auth).mensagem).toMatch(/liberada/);
+    expect(motivoDoErro(auth).tecnico).toBe('GatewayAuthenticationError 401: AI Gateway authentication failed: No authentication provided.');
+    expect(motivoDoErro({ lastError: Object.assign(new Error('Too many'), { name: 'GatewayRateLimitError', statusCode: 429 }) }).mensagem).toMatch(/um minuto/);
+    expect(motivoDoErro(Object.assign(new Error('Insufficient funds'), { statusCode: 402 })).mensagem).toMatch(/limite de uso/);
+    expect(motivoDoErro(new Error('boom')).mensagem).toMatch(/não conseguiu/);
+  });
+});

@@ -40,6 +40,47 @@ export function agenteLigado(): boolean {
   return caminho() != null;
 }
 
+/** O que deu errado com a IA, em palavras que a oficina entende (e o motivo técnico para o log). */
+export function motivoDoErro(e: unknown): { mensagem: string; tecnico: string } {
+  const erro = (e as { lastError?: unknown })?.lastError ?? e;
+  const nome = String((erro as { name?: string })?.name ?? '');
+  const status = Number((erro as { statusCode?: number })?.statusCode ?? 0);
+  const texto = String((erro as { message?: string })?.message ?? erro);
+  const tecnico = `${nome || 'Erro'}${status ? ` ${status}` : ''}: ${texto.split('\n')[0].slice(0, 160)}`;
+  if (/Authentication|Forbidden/.test(nome) || status === 401 || status === 403 || /api key|unauthori[sz]ed|permission/i.test(texto)) {
+    return { mensagem: 'A IA ainda não está liberada neste servidor. Avise a equipe do Revisaí e registre à mão por enquanto.', tecnico };
+  }
+  if (status === 402 || /credit|insufficient|funds|balance|billing|quota/i.test(texto)) {
+    return { mensagem: 'A IA chegou ao limite de uso por agora. Registre à mão e tente de novo mais tarde.', tecnico };
+  }
+  if (/RateLimit/.test(nome) || status === 429) {
+    return { mensagem: 'Muitas ordens ao mesmo tempo na IA. Tente de novo em um minuto.', tecnico };
+  }
+  return { mensagem: 'A IA não conseguiu montar a ordem agora. Tente de novo em instantes ou registre à mão.', tecnico };
+}
+
+export interface EstadoDaIA {
+  caminho: 'gateway' | 'google' | null;
+  modelo: string | null;
+  ok: boolean;
+  creditos?: 'ok' | 'acabando' | 'zerado';
+  motivo?: string;
+}
+
+/** Diagnóstico sem gastar: no AI Gateway, consulta os créditos (confere a autenticação também). */
+export async function estadoDaIA(): Promise<EstadoDaIA> {
+  const c = caminho();
+  if (!c) return { caminho: null, modelo: null, ok: false, motivo: 'Sem chave do Google e fora da Vercel.' };
+  if (c.tipo === 'google') return { caminho: 'google', modelo: c.nome, ok: true };
+  try {
+    const r = await gateway.getCredits();
+    const saldo = Number(r.balance);
+    return { caminho: 'gateway', modelo: c.nome, ok: saldo > 0, creditos: saldo <= 0 ? 'zerado' : saldo < 0.5 ? 'acabando' : 'ok' };
+  } catch (e) {
+    return { caminho: 'gateway', modelo: c.nome, ok: false, motivo: motivoDoErro(e).tecnico };
+  }
+}
+
 /** O áudio que o navegador ou o WhatsApp manda, no tipo que o modelo entende. */
 function tipoDoAudio(mime: string): string {
   const base = mime.split(';')[0].trim().toLowerCase();
@@ -79,10 +120,12 @@ function pareceFormatoDeAudio(e: unknown): boolean {
 export async function interpretarComIA(contexto: ContextoOrdem, audios: Midia[], imagens: Midia[]): Promise<ResultadoIA> {
   const c = caminho();
   if (!c) return { ok: false, erro: 'A IA ainda não está ligada neste servidor.' };
+  let ultimo: unknown;
   try {
     return { ok: true, ordem: await montar(c, contexto, audios, imagens), modelo: c.nome };
   } catch (e) {
-    console.error('[agente] primeira tentativa', e);
+    ultimo = e;
+    console.error('[agente] primeira tentativa', motivoDoErro(e).tecnico, e);
     if (audios.length && c.tipo === 'gateway' && pareceFormatoDeAudio(e)) {
       try {
         const textos: string[] = [];
@@ -92,9 +135,10 @@ export async function interpretarComIA(contexto: ContextoOrdem, audios: Midia[],
         }
         return { ok: true, ordem: await montar(c, contexto, textos, imagens), modelo: `${c.nome} + whisper` };
       } catch (e2) {
-        console.error('[agente] com transcrição', e2);
+        ultimo = e2;
+        console.error('[agente] com transcrição', motivoDoErro(e2).tecnico, e2);
       }
     }
-    return { ok: false, erro: 'A IA não conseguiu montar a ordem agora. Tente de novo em instantes ou registre à mão.' };
+    return { ok: false, erro: motivoDoErro(ultimo).mensagem };
   }
 }
