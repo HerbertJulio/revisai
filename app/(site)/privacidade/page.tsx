@@ -15,12 +15,22 @@ const SECOES = [
   {
     titulo: 'O que recebemos',
     texto:
-      'Os pedidos da loja (nome, WhatsApp e cidade da oficina, produtos e quantidades) e os cadastros de interesse (nome, WhatsApp ou e-mail, cidade e mensagem), sempre com o seu consentimento. Usamos esses dados para responder, para passar o pedido ao fornecedor dos produtos e para avisar sobre o que você pediu.'
+      'Os pedidos da loja (nome, WhatsApp, cidade e endereço de entrega da oficina, produtos e quantidades) e os cadastros de interesse (nome, WhatsApp ou e-mail, cidade e mensagem), sempre com o seu consentimento. Usamos esses dados para responder, para passar o pedido ao fornecedor dos produtos e para avisar sobre o que você pediu. Para a oficina acompanhar o pedido, o app manda junto um número aleatório do aparelho, que não identifica ninguém.'
+  },
+  {
+    titulo: 'Alerta de preço',
+    texto:
+      'Quando a oficina pede um preço às lojas, o alerta leva o produto, a quantidade, o preço que ela quer, a cidade e o estado. As lojas do mesmo estado veem só isso: o nome e o WhatsApp da oficina vão apenas para a loja que ela escolher, junto com o pedido.'
+  },
+  {
+    titulo: 'Pix e entrega',
+    texto:
+      'O pagamento por Pix vai direto da oficina para a conta da loja; o Revisaí não recebe nem guarda dados bancários, só a chave Pix que a loja cadastrou (e as anteriores, para tirar dúvidas) para montar o código, que a oficina vê depois que a loja confirma o pedido. Na entrega, o celular do entregador manda a posição enquanto a página da entrega está aberta, para a oficina acompanhar no mapa (OpenStreetMap). Quando a entrega termina, a posição é apagada e o link deixa de funcionar; o que sobrar é apagado em no máximo 3 dias.'
   },
   {
     titulo: 'Ordem de serviço por voz',
     texto:
-      'O áudio da ordem por voz vai para o servidor só para a inteligência artificial (o Gemini, do Google) passar a fala para texto. Depois, o texto e as fotos vão só para ela preencher a ordem e a mensagem para o cliente. O Revisaí não guarda esse material: o áudio, o texto, as fotos e a ordem conferida ficam no aparelho da oficina.'
+      'O áudio da ordem por voz vai para o servidor só para a inteligência artificial (o Gemini, do Google) passar a fala para texto. Depois, o texto e as fotos vão só para ela preencher a ordem e a mensagem para o cliente. O Revisaí não guarda esse material: o áudio, o texto, as fotos e a ordem conferida ficam no aparelho da oficina. A voz que faz as perguntas no passo a passo é gravada uma vez pela mesma inteligência artificial a partir de frases fixas, sem nenhum dado da oficina.'
   },
   {
     titulo: 'Agente no WhatsApp',
@@ -40,7 +50,7 @@ const SECOES = [
   {
     titulo: 'Quem cuida da estrutura',
     texto:
-      'O site é hospedado na Vercel. Pedidos, cadastros, a loja e os rascunhos do agente ficam num banco de dados do Supabase, na região de São Paulo. Os únicos cookies são os de entrada dos painéis do fornecedor e da equipe. Não usamos cookies de rastreamento nem anúncios.'
+      'O site é hospedado na Vercel. Pedidos, cadastros, alertas de preço, a loja e os rascunhos do agente ficam num banco de dados do Supabase, na região de São Paulo. Os únicos cookies são os de entrada dos painéis do fornecedor e da equipe. Não usamos cookies de rastreamento nem anúncios.'
   },
   {
     titulo: 'Seus direitos',

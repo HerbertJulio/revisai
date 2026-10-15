@@ -27,6 +27,7 @@ export default async function PaginaPromocoes({ searchParams }: { searchParams: 
       aba="promocoes"
       loja={fornecedor.nome}
       novos={pedidos.filter((p) => p.status === 'novo').length}
+      alertas={r.painel.alertasNovos}
       titulo="Promoções"
       descricao="A promoção aparece na loja, na soma de compras das oficinas e dentro dos avisos de troca."
     >

@@ -5,6 +5,7 @@
 
 import { z } from 'zod';
 import { CATEGORIAS } from '@/lib/catalogo';
+import { codigoPedido } from '@/lib/codigo-pedido';
 import { clienteEquipe } from '@/lib/equipe';
 import { normalizarTelefone } from '@/lib/formatos';
 import { permitido } from '@/lib/limite';
@@ -12,12 +13,6 @@ import { supabaseServidor } from '@/lib/supabase';
 import type { Categoria } from '@/lib/tipos';
 
 type Resposta<T = object> = ({ ok: true } & T) | { ok: false; erro: string };
-
-const LETRAS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-function codigoPedido(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(6));
-  return Array.from(bytes, (b) => LETRAS[b % LETRAS.length]).join('');
-}
 
 const esquemaPedido = z.object({
   oficina: z.object({
@@ -35,7 +30,10 @@ const esquemaPedido = z.object({
     .array(z.object({ produtoId: z.number().int().positive(), quantidade: z.number().int().min(1).max(999) }))
     .min(1, 'O pedido está vazio.')
     .max(50),
-  observacao: z.string().trim().max(500).optional().default('')
+  observacao: z.string().trim().max(500).optional().default(''),
+  /** Número aleatório do aparelho: com ele e o código, a oficina acompanha o pedido. */
+  aparelhoId: z.uuid().optional(),
+  endereco: z.string().trim().max(160).optional().default('')
 });
 
 function hojeEmSaoPaulo(): string {
@@ -66,7 +64,7 @@ async function totalNoBanco(sb: NonNullable<ReturnType<typeof supabaseServidor>>
 export async function enviarPedido(entrada: unknown): Promise<Resposta<{ codigo: string; total: number | null }>> {
   const r = esquemaPedido.safeParse(entrada);
   if (!r.success) return { ok: false, erro: r.error.issues[0]?.message ?? 'Confira os dados do pedido.' };
-  const { oficina, itens, observacao } = r.data;
+  const { oficina, itens, observacao, aparelhoId, endereco } = r.data;
   const whatsapp = normalizarTelefone(oficina.whatsapp);
   if (!whatsapp) return { ok: false, erro: 'Confira o WhatsApp da oficina, com DDD. É por ele que o fornecedor fala com você.' };
   if (!(await permitido('pedido', 8, 10))) return { ok: false, erro: 'Muitos pedidos seguidos. Espere alguns minutos e tente de novo.' };
@@ -87,7 +85,9 @@ export async function enviarPedido(entrada: unknown): Promise<Resposta<{ codigo:
       oficina_cidade: oficina.cidade || null,
       oficina_uf: oficina.uf || null,
       itens: [...porProduto].map(([produto_id, quantidade]) => ({ produto_id, quantidade })),
-      observacao: observacao || null
+      observacao: observacao || null,
+      aparelho_id: aparelhoId ?? null,
+      oficina_endereco: endereco || null
     });
     if (!error) return { ok: true, codigo, total: await totalNoBanco(sb, porProduto).catch(() => null) };
     if (error.code === '23505') continue; // código repetido: tenta outro

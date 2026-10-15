@@ -18,7 +18,13 @@ export default async function PaginaProdutos({ searchParams }: { searchParams: P
     );
   const { fornecedor, produtos, promocoes, impulsos, pedidos, hoje } = r.painel;
   return (
-    <MolduraFornecedor aba="produtos" loja={fornecedor.nome} novos={pedidos.filter((p) => p.status === 'novo').length} titulo="Produtos">
+    <MolduraFornecedor
+      aba="produtos"
+      loja={fornecedor.nome}
+      novos={pedidos.filter((p) => p.status === 'novo').length}
+      alertas={r.painel.alertasNovos}
+      titulo="Produtos"
+    >
       <ProdutosFornecedor produtos={produtos} promocoes={promocoes} impulsos={impulsos} uf={fornecedor.uf} hoje={hoje} abrirNovo={(await searchParams).novo === '1'} />
     </MolduraFornecedor>
   );

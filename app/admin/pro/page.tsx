@@ -5,6 +5,7 @@ import { portaoDaEquipe } from '@/components/equipe/Portao';
 import { ProAdmin } from '@/components/equipe/ProAdmin';
 import { buscarCadastros } from '@/lib/equipe';
 import { diaEmBrasilia } from '@/lib/equipe-dados';
+import { usoDosAlertas } from '@/lib/alertas';
 import { listarAssinaturas } from '@/lib/pro';
 
 export const dynamic = 'force-dynamic';
@@ -14,6 +15,8 @@ export default async function PaginaPro() {
   const portao = await portaoDaEquipe('/admin/pro');
   if (portao) return portao;
   const [a, c] = await Promise.all([listarAssinaturas(), buscarCadastros()]);
+  const uso = await usoDosAlertas(a.dados).catch(() => new Map());
+  const pedidosDeAlertas = c.dados.filter((x) => x.plano === 'alertas' && x.situacao === 'novo');
   const comCodigo = new Set(a.dados.map((x) => x.oficina_nome.trim().toLowerCase()));
   const interessados = c.dados.filter(
     (x) => x.tipo === 'oficina' && (x.plano === 'plus' || x.plano === 'pro') && x.situacao !== 'arquivado' && !comCodigo.has((x.empresa || x.nome).trim().toLowerCase())
@@ -21,7 +24,7 @@ export default async function PaginaPro() {
   return (
     <Moldura aba="pro" titulo="Pro" descricao="Códigos do plano Pro das oficinas. Crie o código depois do pagamento e mande para a oficina digitar no app.">
       {a.erro ? <AvisoErro>{a.erro}</AvisoErro> : null}
-      <ProAdmin assinaturas={a.dados} interessados={interessados} hoje={diaEmBrasilia(Date.now())} />
+      <ProAdmin assinaturas={a.dados} interessados={interessados} hoje={diaEmBrasilia(Date.now())} usoAlertas={Object.fromEntries(uso)} pedidosDeAlertas={pedidosDeAlertas} />
     </Moldura>
   );
 }

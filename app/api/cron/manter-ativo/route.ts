@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { limparRascunhosVelhos } from '@/lib/agente/rascunhos';
+import { limparEntregasVelhas } from '@/lib/entregas';
 import { supabaseServidor } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
@@ -7,7 +8,7 @@ export const dynamic = 'force-dynamic';
 /**
  * Chamada uma vez por dia pelo Vercel Cron (vercel.json). Uma consulta leve mantém o projeto
  * grátis do Supabase ativo, que pausa depois de uma semana sem uso. Aproveita para apagar a mídia
- * dos rascunhos do agente que ficaram parados.
+ * dos rascunhos do agente que ficaram parados e para encerrar as entregas esquecidas.
  */
 export async function GET(req: NextRequest) {
   const segredo = process.env.CRON_SECRET;
@@ -22,5 +23,10 @@ export async function GET(req: NextRequest) {
     console.error('[cron] limpeza dos rascunhos', e);
     return { rascunhos: 0 };
   });
-  return NextResponse.json({ ok: true, produtos: count, rascunhosLimpos: limpeza.rascunhos }, { headers: { 'Cache-Control': 'no-store' } });
+  // entregas esquecidas: o link do entregador para de valer e a posição dele é apagada
+  const entregas = await limparEntregasVelhas().catch((e) => {
+    console.error('[cron] limpeza das entregas', e);
+    return 0;
+  });
+  return NextResponse.json({ ok: true, produtos: count, rascunhosLimpos: limpeza.rascunhos, entregasLimpas: entregas }, { headers: { 'Cache-Control': 'no-store' } });
 }

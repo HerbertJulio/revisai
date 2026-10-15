@@ -1,4 +1,4 @@
-import { BadgePercent, LayoutDashboard, Megaphone, Package, ShoppingCart } from 'lucide-react';
+import { BadgePercent, BellRing, LayoutDashboard, Megaphone, Package, ShoppingCart } from 'lucide-react';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { sairDoPainel } from '@/app/fornecedor/acoes';
@@ -6,7 +6,7 @@ import { Logo } from '@/components/marca';
 import { MolduraDePainel, type GrupoPainel } from '@/components/painel/MolduraDePainel';
 import { classeBotao } from '@/components/ui';
 
-export type AbaFornecedor = 'inicio' | 'produtos' | 'promocoes' | 'pedidos' | 'plano';
+export type AbaFornecedor = 'inicio' | 'produtos' | 'promocoes' | 'pedidos' | 'alertas' | 'plano';
 
 /** Lateral, abas e título do painel do fornecedor. */
 export function MolduraFornecedor({
@@ -16,6 +16,7 @@ export function MolduraFornecedor({
   descricao,
   acao,
   novos = 0,
+  alertas = 0,
   children
 }: {
   aba: AbaFornecedor;
@@ -24,6 +25,8 @@ export function MolduraFornecedor({
   descricao?: ReactNode;
   acao?: ReactNode;
   novos?: number;
+  /** Alertas de preço esperando resposta. */
+  alertas?: number;
   children: ReactNode;
 }) {
   const grupos: GrupoPainel[] = [
@@ -39,6 +42,7 @@ export function MolduraFornecedor({
       titulo: 'Vendas',
       itens: [
         { id: 'pedidos', href: '/fornecedor/pedidos', rotulo: 'Pedidos', Icone: ShoppingCart, contador: novos },
+        { id: 'alertas', href: '/fornecedor/alertas', rotulo: 'Alertas de preço', Icone: BellRing, contador: alertas },
         { id: 'plano', href: '/fornecedor/plano', rotulo: 'Plano e impulsos', Icone: Megaphone }
       ]
     }

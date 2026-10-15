@@ -52,8 +52,10 @@ export interface DadosGuardados {
   pedidos: PedidoEnviado[];
   /** Produtos que a oficina cadastrou, com o prazo que ela usa. */
   produtosProprios: Record<Id, ProdutoProprio>;
-  /** Número aleatório deste aparelho (não identifica a oficina; serve para a demanda e os rascunhos). */
+  /** Número aleatório deste aparelho (não identifica a oficina; serve para a demanda, os rascunhos, os alertas e o acompanhamento dos pedidos). */
   aparelhoId: string | null;
+  /** Quando este aparelho mandou o primeiro alerta de preço (para saber se vale buscar as respostas). */
+  alertasDesde: string | null;
   demandaEnviadaEm: string | null;
   /** Ordens de serviço montadas por voz e conferidas pelo mecânico. */
   ordens: Record<Id, OrdemServico>;
@@ -96,10 +98,12 @@ interface Acoes {
   adicionarAoCarrinho(produtoId: number, quantidade: number): void;
   definirQuantidade(produtoId: number, quantidade: number): void;
   limparCarrinho(): void;
-  registrarPedido(p: PedidoEnviado): void;
+  /** Guarda o pedido enviado; o do carrinho esvazia o carrinho (o do alerta de preço, não). */
+  registrarPedido(p: PedidoEnviado, opcoes?: { manterCarrinho?: boolean }): void;
   salvarProdutoProprio(p: Omit<ProdutoProprio, 'id' | 'criadoEm'> & { id?: Id }): Id;
   removerProdutoProprio(id: Id): void;
   garantirAparelhoId(): string;
+  marcarAlerta(): void;
   salvarOrdem(o: Omit<OrdemServico, 'id' | 'criadoEm'> & { id?: Id }): Id;
   removerOrdem(id: Id): void;
   comecarTeste(hoje: string): void;
@@ -145,6 +149,7 @@ const VAZIO: DadosGuardados = {
   pedidos: [],
   produtosProprios: {},
   aparelhoId: null,
+  alertasDesde: null,
   demandaEnviadaEm: null,
   ordens: {},
   plano: PLANO_INICIAL,
@@ -159,6 +164,19 @@ const VAZIO: DadosGuardados = {
 function novoId(): Id {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+/** UUID v4 também nos navegadores sem crypto.randomUUID (o servidor só aceita esse formato). */
+function novoUuid(): string {
+  const c: Crypto = globalThis.crypto;
+  if (typeof c.randomUUID === 'function') return c.randomUUID();
+  const b = c.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const h = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
 function semChaves<T>(registro: Record<Id, T>, remover: (item: T, id: Id) => boolean): Record<Id, T> {
@@ -367,8 +385,8 @@ export const useOficina = create<EstadoOficina>()(
         set({ carrinho: [] });
       },
 
-      registrarPedido(p) {
-        set({ pedidos: [p, ...get().pedidos].slice(0, 50), carrinho: [] });
+      registrarPedido(p, opcoes) {
+        set({ pedidos: [p, ...get().pedidos.filter((x) => x.codigo !== p.codigo)].slice(0, 50), ...(opcoes?.manterCarrinho ? {} : { carrinho: [] }) });
       },
 
       salvarProdutoProprio(p) {
@@ -389,10 +407,14 @@ export const useOficina = create<EstadoOficina>()(
 
       garantirAparelhoId() {
         const atual = get().aparelhoId;
-        if (atual) return atual;
-        const id = novoId();
+        if (atual && UUID.test(atual)) return atual;
+        const id = novoUuid();
         set({ aparelhoId: id });
         return id;
+      },
+
+      marcarAlerta() {
+        if (!get().alertasDesde) set({ alertasDesde: new Date().toISOString() });
       },
 
       salvarOrdem(o) {
@@ -595,6 +617,8 @@ export const useOficina = create<EstadoOficina>()(
           preferencias: { ...PREFERENCIAS_PADRAO, ...dados.preferencias },
           plano: juntarPlanos(get().plano, dados.plano),
           aparelhoId: get().aparelhoId ?? dados.aparelhoId ?? null,
+          // os alertas são deste aparelho, não do backup
+          alertasDesde: get().alertasDesde,
           carrinho: get().carrinho,
           estoque: dados.estoque ?? {},
           movimentos: dados.movimentos ?? {},
@@ -648,6 +672,7 @@ export const useOficina = create<EstadoOficina>()(
         pedidos: s.pedidos,
         produtosProprios: s.produtosProprios,
         aparelhoId: s.aparelhoId,
+        alertasDesde: s.alertasDesde,
         demandaEnviadaEm: s.demandaEnviadaEm,
         ordens: s.ordens,
         plano: s.plano,

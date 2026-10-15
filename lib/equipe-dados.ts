@@ -42,7 +42,8 @@ export const NOMES_PLANO: Record<string, string> = {
   pro: 'Pro',
   vitrine: 'Vitrine',
   destaque: 'Destaque',
-  oferta: 'Oferta da semana'
+  oferta: 'Oferta da semana',
+  alertas: 'Pacote de alertas de preço'
 };
 
 export const NOMES_ORIGEM: Record<string, string> = {

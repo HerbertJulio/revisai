@@ -5,6 +5,8 @@
 import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { responderAlerta } from '@/lib/alertas';
+import { confirmarPagamento, saidaParaEntrega, salvarPixDaLoja } from '@/lib/entregas';
 import { fornecedorDaSessao } from '@/lib/fornecedor-servidor';
 import { permitido } from '@/lib/limite';
 import {
@@ -84,4 +86,42 @@ export async function quererDestaque(): Promise<Gravacao> {
   if (!id) return FORA;
   if (!(await permitido(`fornecedor-plano-${id}`, 3, 60))) return { ok: false, erro: 'Já recebemos o seu pedido. A equipe fala com você em breve.' };
   return registrarPedidoDePlano(id);
+}
+
+export async function responderAlertaPreco(entrada: unknown): Promise<Gravacao> {
+  const id = await fornecedorDaSessao();
+  if (!id) return FORA;
+  if (!(await permitido(`fornecedor-alerta-${id}`, 120, 60))) return { ok: false, erro: 'Muitas respostas seguidas. Espere alguns minutos.' };
+  const r = await responderAlerta(id, entrada);
+  if (r.ok) atualizar();
+  return r;
+}
+
+export async function salvarChavePix(entrada: unknown): Promise<Gravacao> {
+  const id = await fornecedorDaSessao();
+  if (!id) return FORA;
+  if (!(await permitido(`fornecedor-pix-${id}`, 20, 60))) return { ok: false, erro: 'Muitas mudanças seguidas. Espere alguns minutos.' };
+  const r = await salvarPixDaLoja(id, entrada);
+  if (r.ok) atualizar();
+  return r;
+}
+
+/** Marca que o pedido saiu e devolve o código do link do entregador (só aparece agora). */
+export async function marcarSaida(parteId: number, previsao: string): Promise<Gravacao<{ token: string }>> {
+  const id = await fornecedorDaSessao();
+  if (!id) return FORA;
+  if (!Number.isSafeInteger(parteId) || parteId < 1) return { ok: false, erro: 'Pedido inválido.' };
+  if (!(await permitido(`fornecedor-saida-${id}`, 60, 60))) return { ok: false, erro: 'Muitas mudanças seguidas. Espere alguns minutos.' };
+  const r = await saidaParaEntrega(id, parteId, String(previsao ?? '').slice(0, 40));
+  if (r.ok) atualizar();
+  return r;
+}
+
+export async function confirmarPagamentoParte(parteId: number, confirmado: boolean): Promise<Gravacao> {
+  const id = await fornecedorDaSessao();
+  if (!id) return FORA;
+  if (!Number.isSafeInteger(parteId) || parteId < 1) return { ok: false, erro: 'Pedido inválido.' };
+  const r = await confirmarPagamento(id, parteId, confirmado === true);
+  if (r.ok) atualizar();
+  return r;
 }

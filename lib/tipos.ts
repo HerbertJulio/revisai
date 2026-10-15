@@ -214,6 +214,8 @@ export interface ItemPedidoEnviado {
   chave?: string;
   /** Preço por litro (óleo) ou por unidade, para comparar embalagens diferentes. */
   precoComparavel?: number;
+  /** Preço combinado num alerta de preço. */
+  combinado?: boolean;
 }
 
 export interface PedidoEnviado {
@@ -223,6 +225,8 @@ export interface PedidoEnviado {
   total: number;
   /** Já deu entrada no estoque. */
   recebidoEm?: string;
+  /** Saiu de um alerta de preço. */
+  alertaId?: string;
 }
 
 // ---------------------------------------------------------------- estoque

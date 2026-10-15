@@ -97,3 +97,29 @@ export function lerDataBr(texto: string): string | null {
   const iso = `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
   return dataValida(iso) ? iso : null;
 }
+
+/**
+ * A hora de um instante: '14:05'. No fuso do aparelho ou, com `fuso`, num fuso fixo (o que é montado
+ * no servidor precisa dele, senão a hora do servidor e a do navegador não batem).
+ */
+export function formatarHora(instante: string, fuso?: string): string {
+  const d = new Date(instante);
+  if (Number.isNaN(d.getTime())) return '';
+  if (fuso) return new Intl.DateTimeFormat('pt-BR', { timeZone: fuso, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(d);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+/** O dia ('AAAA-MM-DD') de um instante, no fuso do aparelho ou no fuso dado. */
+function diaDoInstante(d: Date, fuso?: string): string {
+  return fuso ? new Intl.DateTimeFormat('en-CA', { timeZone: fuso, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d) : hojeISO(d);
+}
+
+/** Dia e hora de um instante: 'hoje às 14:05', 'amanhã às 9:30', '16/10 às 14:05'. */
+export function formatarDiaHora(instante: string, agora: Date = new Date(), fuso?: string): string {
+  const d = new Date(instante);
+  if (Number.isNaN(d.getTime())) return '';
+  const dia = diaDoInstante(d, fuso);
+  const dias = diasEntre(diaDoInstante(agora, fuso), dia);
+  const nome = dias === 0 ? 'hoje' : dias === 1 ? 'amanhã' : dias === -1 ? 'ontem' : formatarDataCurta(dia);
+  return `${nome} às ${formatarHora(instante, fuso)}`;
+}

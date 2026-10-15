@@ -4,11 +4,12 @@ import Link from 'next/link';
 import { FormInteresse } from '@/components/site/FormInteresse';
 import { classeBotao } from '@/components/ui';
 import { formatarMoeda } from '@/lib/formatos';
+import { ALERTAS } from '@/lib/alertas-dados';
 import { PRO } from '@/lib/plano';
 
 export const metadata: Metadata = {
   title: 'Planos',
-  description: `Use o Revisaí grátis, sem cadastro. O Pro libera avisos sem limite, ordem de serviço por voz, agente no WhatsApp e o relatório de retorno, por ${formatarMoeda(PRO.precoFundador)} por mês para as primeiras oficinas.`
+  description: `Use o Revisaí grátis, sem cadastro. O Pro libera avisos sem limite, ordem de serviço por voz, agente no WhatsApp, alerta de preço e o relatório de retorno, por ${formatarMoeda(PRO.precoFundador)} por mês para as primeiras oficinas.`
 };
 
 const GRATIS = [
@@ -16,7 +17,10 @@ const GRATIS = [
   `${PRO.ordensGratis} ordens de serviço por voz por mês, montadas pela IA`,
   'Cartão de manutenção para o cliente, com lembrete no calendário',
   'Etiqueta do para-brisa para imprimir',
-  'Loja com promoções e a soma do que comprar no mês',
+  'Orçamento e ordem de serviço no passo a passo, com o link para o cliente aprovar',
+  'Estoque com a previsão do que vai faltar',
+  'Loja com promoções, o preço que você pagou e o das outras lojas',
+  'Pedido acompanhado, Pix direto para a loja e entrega no mapa',
   'Dados guardados no aparelho, com backup em arquivo'
 ];
 
@@ -25,6 +29,7 @@ const PRO_ITENS = [
   'Ordem de serviço por voz para a oficina toda e agente no WhatsApp: o mecânico manda áudio e foto, a ordem chega pronta',
   'Relatório de retorno: quem voltou depois do aviso e quanto isso rendeu',
   'Pedido de avaliação no Google depois do serviço, com um toque',
+  `Alerta de preço: diga quanto quer pagar e as lojas do seu estado respondem, ${ALERTAS.porMesPro} por mês (dá para comprar mais)`,
   'Um código vale em até 3 aparelhos da oficina',
   `${PRO.diasTeste} dias de teste direto no app, sem cartão`
 ];

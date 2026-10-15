@@ -1,15 +1,17 @@
 'use client';
 
-import { Copy, MessageCircle, Plus, Wrench } from 'lucide-react';
+import { BellPlus, Copy, MessageCircle, Plus, Wrench } from 'lucide-react';
 import { useState, useTransition } from 'react';
-import { criarCodigoPro } from '@/app/admin/acoes';
+import { criarCodigoPro, liberarAlertasPro } from '@/app/admin/acoes';
 import { Folha } from '@/components/Folha';
 import { useToast } from '@/components/Toasts';
 import { Botao, Campo, Chip, Vazio, classeBotao, classeEntrada } from '@/components/ui';
 import { diasEntre, formatarData } from '@/lib/datas';
 import { dataCurta, type Cadastro } from '@/lib/equipe-dados';
 import { formatarMoeda, formatarTelefone, lerNumero, plural } from '@/lib/formatos';
-import { formatarCodigo, PRO } from '@/lib/plano';
+import { ALERTAS, PACOTES_ALERTAS } from '@/lib/alertas-dados';
+import { formatarCodigo, normalizarCodigo, PRO } from '@/lib/plano';
+import type { UsoDeAlertas } from '@/lib/alertas';
 import { MAX_APARELHOS, MESES_PRO, mensagemDoCodigo, resumoDaAssinatura, vagasDeFundador, valorSugerido, type Assinatura } from '@/lib/pro-dados';
 import { linkWhatsApp } from '@/lib/whatsapp';
 import { AvisoErro } from './comum';
@@ -27,8 +29,21 @@ function valorTexto(n: number): string {
   return n.toFixed(2).replace('.', ',');
 }
 
-export function ProAdmin({ assinaturas, interessados, hoje }: { assinaturas: Assinatura[]; interessados: Cadastro[]; hoje: string }) {
+export function ProAdmin({
+  assinaturas,
+  interessados,
+  hoje,
+  usoAlertas = {},
+  pedidosDeAlertas = []
+}: {
+  assinaturas: Assinatura[];
+  interessados: Cadastro[];
+  hoje: string;
+  usoAlertas?: Record<string, UsoDeAlertas>;
+  pedidosDeAlertas?: Cadastro[];
+}) {
   const toast = useToast();
+  const [liberar, setLiberar] = useState<{ codigo: string; oficina: string; quantidade: number; valor: string; cadastroId: number | null } | null>(null);
   const [rascunho, setRascunho] = useState<Rascunho | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [criada, setCriada] = useState<Assinatura | null>(null);
@@ -139,6 +154,12 @@ export function ProAdmin({ assinaturas, interessados, hoje }: { assinaturas: Ass
                         <p className="text-[13px] text-tinta-3">
                           {[resumoDaAssinatura(a), `criado ${dataCurta(a.criado_em.slice(0, 10), hoje)}`, a.observacao].filter(Boolean).join(', ')}
                         </p>
+                        {usoAlertas[a.codigo] ? (
+                          <p className="num text-[13px] text-tinta-3">
+                            Alertas: {usoAlertas[a.codigo].noMes} de {ALERTAS.porMesPro} no mês
+                            {usoAlertas[a.codigo].creditos ? `, ${usoAlertas[a.codigo].extrasRestantes} de ${usoAlertas[a.codigo].creditos} extras sobrando` : ''}
+                          </p>
+                        ) : null}
                       </td>
                       <td className="sm:px-4 sm:py-3">
                         <span className="num text-[14px] font-semibold tracking-wide">{formatarCodigo(a.codigo)}</span>
@@ -158,6 +179,15 @@ export function ProAdmin({ assinaturas, interessados, hoje }: { assinaturas: Ass
                       </td>
                       <td className="sm:px-4 sm:py-3">
                         <div className="flex justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setLiberar({ codigo: a.codigo, oficina: a.oficina_nome, quantidade: PACOTES_ALERTAS[0].quantidade, valor: valorTexto(PACOTES_ALERTAS[0].preco), cadastroId: null })}
+                            className="grid h-9 w-9 place-items-center rounded-lg text-tinta-2 hover:bg-papel-2"
+                            aria-label={`Liberar alertas de preço para a ${a.oficina_nome}`}
+                            title="Liberar alertas extras"
+                          >
+                            <BellPlus size={17} />
+                          </button>
                           <button
                             type="button"
                             onClick={() => void copiar(mensagemDoCodigo(a), 'Mensagem com o código copiada.')}
@@ -193,6 +223,42 @@ export function ProAdmin({ assinaturas, interessados, hoje }: { assinaturas: Ass
           </Vazio>
         )}
       </section>
+
+      {pedidosDeAlertas.length ? (
+        <section className="flex flex-col gap-3" aria-labelledby="t-pacotes">
+          <h2 id="t-pacotes" className="text-[21px]">
+            Pacotes de alertas pedidos
+          </h2>
+          <p className="-mt-1 text-[15px] text-tinta-2">Libere depois de receber o pagamento. A oficina vê os alertas extras na hora.</p>
+          <ul className="divide-y divide-linha rounded-2xl bg-papel ring-1 ring-linha">
+            {pedidosDeAlertas.map((c) => {
+              const codigo = normalizarCodigo(c.mensagem?.match(/Código do Pro: ([0-9A-Z-]{16,19})/)?.[1] ?? '');
+              const quantidade = Number(c.mensagem?.match(/Quer (\d+) alertas/)?.[1] ?? 0);
+              const pacote = PACOTES_ALERTAS.find((p) => p.quantidade === quantidade);
+              const zap = c.whatsapp ? linkWhatsApp(c.whatsapp, `Olá! Aqui é da equipe do Revisaí. Recebemos o seu pedido de ${quantidade || ''} alertas de preço. Já liberamos assim que o Pix cair.`) : null;
+              return (
+                <li key={c.id} className="flex flex-wrap items-center gap-3 px-4 py-3 sm:px-5">
+                  <BellPlus size={18} className="text-tinta-3" aria-hidden="true" />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold">{c.empresa || c.nome}</p>
+                    <p className="text-[13.5px] text-tinta-3">{[c.mensagem, dataCurta(c.criado_em.slice(0, 10), hoje)].filter(Boolean).join(', ')}</p>
+                  </div>
+                  {zap ? (
+                    <a href={zap} target="_blank" rel="noopener noreferrer" className={classeBotao('secundario', 'pequeno')}>
+                      <MessageCircle size={15} aria-hidden="true" /> WhatsApp
+                    </a>
+                  ) : null}
+                  {codigo.length === 16 && pacote ? (
+                    <Botao tamanho="pequeno" onClick={() => setLiberar({ codigo, oficina: c.empresa || c.nome, quantidade: pacote.quantidade, valor: valorTexto(pacote.preco), cadastroId: c.id })}>
+                      Liberar {pacote.quantidade}
+                    </Botao>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : null}
 
       {interessados.length ? (
         <section className="flex flex-col gap-3" aria-labelledby="t-querem">
@@ -280,6 +346,8 @@ export function ProAdmin({ assinaturas, interessados, hoje }: { assinaturas: Ass
         ) : null}
       </Folha>
 
+      <FolhaLiberar pedido={liberar} aoFechar={() => setLiberar(null)} />
+
       <Folha
         aberta={criada != null}
         aoFechar={() => setCriada(null)}
@@ -309,3 +377,94 @@ export function ProAdmin({ assinaturas, interessados, hoje }: { assinaturas: Ass
   );
 }
 
+function FolhaLiberar({ pedido, aoFechar }: { pedido: { codigo: string; oficina: string; quantidade: number; valor: string; cadastroId: number | null } | null; aoFechar: () => void }) {
+  const toast = useToast();
+  const [quantidade, setQuantidade] = useState('10');
+  const [valor, setValor] = useState('');
+  const [observacao, setObservacao] = useState('');
+  const [erro, setErro] = useState<string | null>(null);
+  const [aberto, setAberto] = useState<string | null>(null);
+  const [salvando, iniciar] = useTransition();
+  if (pedido && aberto !== `${pedido.codigo}-${pedido.cadastroId}`) {
+    setAberto(`${pedido.codigo}-${pedido.cadastroId}`);
+    setQuantidade(String(pedido.quantidade));
+    setValor(pedido.valor);
+    setObservacao('');
+    setErro(null);
+  }
+
+  function liberar() {
+    if (!pedido) return;
+    setErro(null);
+    const q = Number(quantidade);
+    if (!Number.isInteger(q) || q < 1 || q > 1000) return setErro('A quantidade vai de 1 a 1000.');
+    const v = valor.trim() ? lerNumero(valor) : null;
+    if (valor.trim() && (v == null || v < 0)) return setErro('Confira o valor recebido.');
+    iniciar(async () => {
+      try {
+        const r = await liberarAlertasPro(pedido.codigo, q, v, observacao, pedido.cadastroId);
+        if (!r.ok) return setErro(r.erro);
+        toast({ texto: `${q} alertas liberados para a ${pedido.oficina}.` });
+        setAberto(null);
+        aoFechar();
+      } catch {
+        setErro('Sem conexão com o servidor. Tente de novo.');
+      }
+    });
+  }
+
+  return (
+    <Folha
+      aberta={pedido != null}
+      aoFechar={aoFechar}
+      titulo="Liberar alertas de preço"
+      descricao={pedido ? `Para a ${pedido.oficina}, código ${formatarCodigo(pedido.codigo)}. Libere depois de receber o pagamento.` : undefined}
+      rodape={
+        <div className="flex w-full justify-end gap-2">
+          <Botao variante="fantasma" onClick={aoFechar}>
+            Cancelar
+          </Botao>
+          <Botao variante="primario" onClick={liberar} disabled={salvando}>
+            {salvando ? 'Liberando…' : 'Liberar'}
+          </Botao>
+        </div>
+      }
+    >
+      <div className="grid gap-4 sm:grid-cols-6">
+        <div className="sm:col-span-6">
+          <p className="mb-2 text-[14px] font-semibold">Pacote</p>
+          <div className="flex flex-wrap gap-2">
+            {PACOTES_ALERTAS.map((p) => (
+              <button
+                key={p.quantidade}
+                type="button"
+                aria-pressed={quantidade === String(p.quantidade)}
+                onClick={() => {
+                  setQuantidade(String(p.quantidade));
+                  setValor(valorTexto(p.preco));
+                }}
+                className={`num h-10 rounded-full border px-4 text-[14px] font-semibold ${quantidade === String(p.quantidade) ? 'border-tinta bg-tinta text-papel' : 'border-linha bg-papel text-tinta-2 hover:border-tinta-3'}`}
+              >
+                {p.quantidade} por {formatarMoeda(p.preco)}
+              </button>
+            ))}
+          </div>
+        </div>
+        <Campo rotulo="Alertas" htmlFor="la-qtd" className="sm:col-span-2">
+          <input id="la-qtd" className={classeEntrada} value={quantidade} onChange={(e) => setQuantidade(e.target.value.replace(/\D/g, ''))} inputMode="numeric" />
+        </Campo>
+        <Campo rotulo="Valor recebido (R$)" htmlFor="la-valor" className="sm:col-span-2">
+          <input id="la-valor" className={classeEntrada} value={valor} onChange={(e) => setValor(e.target.value)} inputMode="decimal" />
+        </Campo>
+        <Campo rotulo="Observação interna" htmlFor="la-obs" className="sm:col-span-2">
+          <input id="la-obs" className={classeEntrada} value={observacao} onChange={(e) => setObservacao(e.target.value)} maxLength={200} />
+        </Campo>
+        {erro ? (
+          <div className="sm:col-span-6">
+            <AvisoErro>{erro}</AvisoErro>
+          </div>
+        ) : null}
+      </div>
+    </Folha>
+  );
+}

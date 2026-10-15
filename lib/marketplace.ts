@@ -7,7 +7,9 @@ import 'server-only';
 import { z } from 'zod';
 import { CATEGORIAS } from './catalogo';
 import { somarDemanda, type DemandaRecebida, type DemandaRegional, type ItemDemanda } from './demanda';
+import { alertasSemResposta } from './alertas';
 import { clienteEquipe } from './equipe';
+import { mudancasDaSituacao } from './entregas-dados';
 import {
   COLUNAS_CONTRATO,
   COLUNAS_FORNECEDOR,
@@ -295,6 +297,8 @@ export interface PainelFornecedor {
   impulsos: LinhaImpulso[];
   pedidos: PedidoDoFornecedor[];
   demanda: DemandaRegional | null;
+  /** Alertas de preço abertos que a loja ainda não respondeu. */
+  alertasNovos: number;
   hoje: string;
 }
 
@@ -305,6 +309,7 @@ const esquemaPedidoBruto = z.object({
   oficina_whatsapp: z.string(),
   oficina_cidade: z.string().nullable(),
   oficina_uf: z.string().nullable(),
+  oficina_endereco: z.string().nullish().transform((v) => v ?? null),
   itens: z.array(z.record(z.string(), z.unknown())),
   observacao: z.string().nullable()
 });
@@ -331,7 +336,7 @@ export async function carregarPainelFornecedor(fornecedorId: number): Promise<{ 
   const ids = produtos.map((x) => x.id);
   const promos = ids.length ? await sb.from('promocoes').select(COLUNAS_PROMOCAO).in('produto_id', ids).order('fim', { ascending: false }) : { data: [], error: null };
   const partes = lerPartes(pf.data).itens;
-  const pedidosBrutos = partes.length ? await sb.from('pedidos').select('id, codigo, oficina_nome, oficina_whatsapp, oficina_cidade, oficina_uf, itens, observacao').in('id', partes.map((x) => x.pedido_id)) : { data: [], error: null };
+  const pedidosBrutos = partes.length ? await sb.from('pedidos').select('id, codigo, oficina_nome, oficina_whatsapp, oficina_cidade, oficina_uf, oficina_endereco, itens, observacao').in('id', partes.map((x) => x.pedido_id)) : { data: [], error: null };
   const mapaPedidos = new Map<number, z.infer<typeof esquemaPedidoBruto>>();
   for (const linha of pedidosBrutos.data ?? []) {
     const r = esquemaPedidoBruto.safeParse(linha);
@@ -348,7 +353,8 @@ export async function carregarPainelFornecedor(fornecedorId: number): Promise<{ 
           nome: String(x.nome ?? ''),
           fornecedor_id: fornecedorId,
           quantidade: Number(x.quantidade),
-          preco_unitario: Number(x.preco_unitario)
+          preco_unitario: Number(x.preco_unitario),
+          combinado: x.combinado === true
         })
       );
     return [
@@ -359,12 +365,20 @@ export async function carregarPainelFornecedor(fornecedorId: number): Promise<{ 
         status: parte.status,
         subtotal: parte.subtotal,
         comissaoPercentual: parte.comissao_percentual,
-        oficina: { nome: ped.oficina_nome, whatsapp: ped.oficina_whatsapp, cidade: ped.oficina_cidade, uf: ped.oficina_uf },
+        oficina: { nome: ped.oficina_nome, whatsapp: ped.oficina_whatsapp, cidade: ped.oficina_cidade, uf: ped.oficina_uf, endereco: ped.oficina_endereco },
         observacao: ped.observacao,
-        itens
+        itens,
+        pagamento: parte.pagamento,
+        pagamentoEm: parte.pagamento_em,
+        entrega: { previsao: parte.entrega_previsao, saiuEm: parte.entrega_saiu_em, posicaoEm: parte.entrega_posicao_em, entregueEm: parte.entregue_em }
       }
     ];
   });
+  const categorias = [...new Set(produtos.filter((x) => x.ativo).map((x) => x.categoria))];
+  const [demanda, alertasNovos] = await Promise.all([
+    fornecedor.uf ? demandaDaRegiao(fornecedor.uf) : Promise.resolve(null),
+    fornecedor.ativo ? alertasSemResposta(fornecedorId, fornecedor.uf, categorias).catch(() => 0) : Promise.resolve(0)
+  ]);
   return {
     dados: {
       fornecedor,
@@ -373,7 +387,8 @@ export async function carregarPainelFornecedor(fornecedorId: number): Promise<{ 
       promocoes: lerPromocoesCompletas(promos.data).itens,
       impulsos: lerImpulsos(i.data).itens,
       pedidos,
-      demanda: fornecedor.uf ? await demandaDaRegiao(fornecedor.uf) : null,
+      demanda,
+      alertasNovos,
       hoje
     },
     erro: null
@@ -587,9 +602,11 @@ export async function pedirImpulso(fornecedorId: number, produtoId: number, dias
 export async function mudarSituacaoDaParte(fornecedorId: number, parteId: number, status: SituacaoParte): Promise<Gravacao> {
   const sb = clienteEquipe();
   if (!sb) return { ok: false, erro: SEM_BANCO };
+  const atual = await sb.from('pedidos_fornecedores').select('entrega_saiu_em').eq('id', parteId).eq('fornecedor_id', fornecedorId).maybeSingle();
+  if (atual.error || !atual.data) return { ok: false, erro: atual.error ? ERRO_GRAVACAO : 'Pedido não encontrado.' };
   const { data, error } = await sb
     .from('pedidos_fornecedores')
-    .update({ status, atualizado_em: new Date().toISOString() })
+    .update(mudancasDaSituacao(status, { entrega_saiu_em: (atual.data.entrega_saiu_em as string | null) ?? null }, new Date().toISOString()))
     .eq('id', parteId)
     .eq('fornecedor_id', fornecedorId)
     .select('id')

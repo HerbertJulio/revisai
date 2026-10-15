@@ -59,6 +59,7 @@ export default async function InicioFornecedor({ searchParams }: { searchParams:
       aba="inicio"
       loja={fornecedor.nome}
       novos={novos}
+      alertas={r.painel.alertasNovos}
       titulo={`Olá, ${fornecedor.nome}`}
       descricao={
         <>
@@ -69,8 +70,9 @@ export default async function InicioFornecedor({ searchParams }: { searchParams:
     >
       {r.erro ? <AvisoErro>{r.erro}</AvisoErro> : null}
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
         <Numero rotulo="Pedidos novos" valor={String(novos)} href="/fornecedor/pedidos" />
+        <Numero rotulo="Alertas para responder" valor={String(r.painel.alertasNovos)} href="/fornecedor/alertas" />
         <Numero rotulo="Vendas no mês" valor={formatarMoeda(vendas)} detalhe={`${formatarMoeda(comissao)} de comissão`} />
         <Numero rotulo="Produtos à venda" valor={String(ativos)} href="/fornecedor/produtos" />
         <Numero rotulo="Promoções no ar" valor={String(vigentes.length)} href="/fornecedor/promocoes" />

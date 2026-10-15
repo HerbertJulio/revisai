@@ -247,3 +247,17 @@ export function reposicao(item: Pick<ItemEstoque, 'quantidade' | 'minimo'>, prod
   const falta = Math.max(0, alvo - item.quantidade);
   return Math.max(1, Math.ceil(falta / fatorDoProduto(produto) - 1e-9));
 }
+
+/**
+ * A falta mais urgente em uma frase, para o resumo do dia: "Vai faltar Óleo 5W-30 nos próximos 30 dias:
+ * tem 25 L e precisa de mais 5 L." O óleo vem primeiro; depois a maior falta.
+ */
+export function faltaMaisUrgente(linhas: LinhaPrevisao[]): LinhaPrevisao | null {
+  const faltando = linhas.filter((l) => l.faltam > 0 && !l.semEspecificacao && l.tem > 0);
+  if (!faltando.length) return null;
+  return [...faltando].sort((a, b) => Number(b.categoria === 'oleo_motor') - Number(a.categoria === 'oleo_motor') || b.faltam / b.precisa - a.faltam / a.precisa)[0];
+}
+
+export function fraseDaFalta(l: Pick<LinhaPrevisao, 'titulo' | 'tem' | 'faltam' | 'unidade'>): string {
+  return `Vai faltar ${l.titulo} nos próximos 30 dias: você tem ${textoQuantidade(l.tem, l.unidade)} e vai precisar de mais ${textoQuantidade(l.faltam, l.unidade)}.`;
+}

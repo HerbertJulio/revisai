@@ -22,10 +22,18 @@ export const SITUACOES_PARTE = [
   { id: 'novo', nome: 'Novo', tom: 'oleo' },
   { id: 'em_contato', nome: 'Em contato', tom: 'caneta' },
   { id: 'confirmado', nome: 'Confirmado', tom: 'ok' },
+  { id: 'saiu_entrega', nome: 'Saiu para entrega', tom: 'caneta' },
   { id: 'entregue', nome: 'Entregue', tom: 'neutro' },
   { id: 'cancelado', nome: 'Cancelado', tom: 'atraso' }
 ] as const;
 export type SituacaoParte = (typeof SITUACOES_PARTE)[number]['id'];
+
+export const SITUACOES_PAGAMENTO = [
+  { id: 'pendente', nome: 'Pagamento a combinar', tom: 'neutro' },
+  { id: 'informado', nome: 'A oficina diz que pagou', tom: 'oleo' },
+  { id: 'confirmado', nome: 'Pagamento confirmado', tom: 'ok' }
+] as const;
+export type SituacaoPagamentoParte = (typeof SITUACOES_PAGAMENTO)[number]['id'];
 
 export function situacaoParteValida(s: string): s is SituacaoParte {
   return SITUACOES_PARTE.some((x) => x.id === s);
@@ -108,8 +116,14 @@ const esquemaParte = z.object({
   fornecedor_id: numero,
   subtotal: numero,
   comissao_percentual: numero,
-  status: z.enum(['novo', 'em_contato', 'confirmado', 'entregue', 'cancelado']),
-  criado_em: z.string()
+  status: z.enum(['novo', 'em_contato', 'confirmado', 'saiu_entrega', 'entregue', 'cancelado']),
+  criado_em: z.string(),
+  pagamento: z.enum(['pendente', 'informado', 'confirmado']).nullish().transform((v) => v ?? 'pendente'),
+  pagamento_em: z.string().nullish().transform((v) => v ?? null),
+  entrega_previsao: z.string().nullish().transform((v) => v ?? null),
+  entrega_saiu_em: z.string().nullish().transform((v) => v ?? null),
+  entrega_posicao_em: z.string().nullish().transform((v) => v ?? null),
+  entregue_em: z.string().nullish().transform((v) => v ?? null)
 });
 export type LinhaParte = z.infer<typeof esquemaParte>;
 
@@ -161,7 +175,8 @@ export const COLUNAS_CONTRATO = 'fornecedor_id, plano, comissao_percentual, mens
 export const COLUNAS_PRODUTO = 'id, fornecedor_id, categoria, nome, marca, descricao, unidade, conteudo, preco, especificacao, intervalo_km, intervalo_meses, ativo, imagem_url, referencia_id';
 export const COLUNAS_PROMOCAO = 'id, produto_id, titulo, preco_promocional, quantidade_minima, inicio, fim, ativo';
 export const COLUNAS_IMPULSO = 'id, produto_id, fornecedor_id, uf, dias, valor, inicio, fim, status, observacao, criado_em';
-export const COLUNAS_PARTE = 'id, pedido_id, fornecedor_id, subtotal, comissao_percentual, status, criado_em';
+export const COLUNAS_PARTE =
+  'id, pedido_id, fornecedor_id, subtotal, comissao_percentual, status, criado_em, pagamento, pagamento_em, entrega_previsao, entrega_saiu_em, entrega_posicao_em, entregue_em';
 export const COLUNAS_REFERENCIA_ADMIN =
   'id, categoria, marca, linha, tipo, intervalo_km, intervalo_meses, intervalo_km_severo, intervalo_meses_severo, segue_manual, observacao, fonte_nome, fonte_url, confianca, origem, fornecedor_id, aprovado, ativo, criado_em';
 
@@ -182,6 +197,8 @@ export interface ItemDoPedido {
   fornecedor_id: number;
   quantidade: number;
   preco_unitario: number;
+  /** Preço combinado num alerta de preço. */
+  combinado?: boolean;
 }
 
 /** A parte de um pedido que cabe a um fornecedor, com a oficina para ele chamar no WhatsApp. */
@@ -192,9 +209,12 @@ export interface PedidoDoFornecedor {
   status: SituacaoParte;
   subtotal: number;
   comissaoPercentual: number;
-  oficina: { nome: string; whatsapp: string; cidade: string | null; uf: string | null };
+  oficina: { nome: string; whatsapp: string; cidade: string | null; uf: string | null; endereco: string | null };
   observacao: string | null;
   itens: ItemDoPedido[];
+  pagamento: SituacaoPagamentoParte;
+  pagamentoEm: string | null;
+  entrega: { previsao: string | null; saiuEm: string | null; posicaoEm: string | null; entregueEm: string | null };
 }
 
 /** Primeiro dia do mês em Brasília, para somar as vendas do mês. */

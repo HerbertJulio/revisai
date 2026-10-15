@@ -67,6 +67,7 @@ export function Passo({
   aoMudar,
   rotulo,
   minimo = 1,
+  maximo = 999,
   escuro = false,
   pequeno = false
 }: {
@@ -75,6 +76,7 @@ export function Passo({
   rotulo: string;
   /** Com 0, o menos tira o produto do pedido. */
   minimo?: number;
+  maximo?: number;
   escuro?: boolean;
   pequeno?: boolean;
 }) {
@@ -94,8 +96,9 @@ export function Passo({
       </span>
       <button
         type="button"
-        className={`grid h-full w-8 place-items-center ${escuro ? 'text-papel/80 hover:text-papel' : 'text-tinta-2 hover:text-tinta'}`}
-        onClick={() => aoMudar(Math.min(999, valor + 1))}
+        className={`grid h-full w-8 place-items-center disabled:opacity-30 ${escuro ? 'text-papel/80 hover:text-papel' : 'text-tinta-2 hover:text-tinta'}`}
+        onClick={() => aoMudar(Math.min(maximo, valor + 1))}
+        disabled={valor >= maximo}
         aria-label={`Mais ${rotulo}`}
       >
         <Plus size={15} />

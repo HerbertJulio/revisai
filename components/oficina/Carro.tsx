@@ -47,7 +47,6 @@ export function Carro() {
   const hoje = useHoje();
   const veiculo = dados.veiculos[id];
   const cliente = veiculo ? dados.clientes[veiculo.clienteId] : undefined;
-  const salvarVeiculo = useOficina((s) => s.salvarVeiculo);
   const salvarCliente = useOficina((s) => s.salvarCliente);
   const removerVeiculo = useOficina((s) => s.removerVeiculo);
   const removerAtendimento = useOficina((s) => s.removerAtendimento);

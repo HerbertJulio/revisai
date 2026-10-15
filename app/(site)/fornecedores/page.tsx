@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { BarChart3, Check, Rocket } from 'lucide-react';
+import { BarChart3, BellRing, Check, Rocket, Truck } from 'lucide-react';
 import { FormInteresse } from '@/components/site/FormInteresse';
 import { formatarMoeda } from '@/lib/formatos';
 import { DIAS_IMPULSO, PLANOS_FORNECEDOR, PRECO_IMPULSO, type PlanoFornecedor } from '@/lib/planos-fornecedor';
@@ -67,6 +67,20 @@ export default function Fornecedores() {
           <p className="text-tinta-2">
             No seu painel aparece a soma do que as oficinas da região vão precisar nos próximos 30 dias, como 48 litros de 5W-30 ou 20 filtros de ar, com uma sugestão de promoção pronta para publicar. Você vê as
             quantidades, nunca quem são as oficinas ou os clientes delas.
+          </p>
+        </div>
+        <div className="flex flex-col gap-3 rounded-[22px] bg-papel px-6 py-7 ring-1 ring-linha">
+          <BellRing size={24} className="text-tinta-2" aria-hidden="true" />
+          <h2 className="text-[22px]">Responda os pedidos de preço</h2>
+          <p className="text-tinta-2">
+            A oficina do seu estado diz quanto quer pagar, como 5 filtros por R$ 24 cada. Você aceita, faz uma contraproposta (vendo por 24, levando 10) ou passa a vez. Se ela escolher a sua loja, o pedido chega pronto, com o preço combinado.
+          </p>
+        </div>
+        <div className="flex flex-col gap-3 rounded-[22px] bg-papel px-6 py-7 ring-1 ring-linha">
+          <Truck size={24} className="text-tinta-2" aria-hidden="true" />
+          <h2 className="text-[22px]">Receba por Pix e mostre a entrega</h2>
+          <p className="text-tinta-2">
+            Cadastre a sua chave Pix e, quando você confirmar o pedido, a oficina paga pelo app, com o QR Code do valor do pedido, direto na sua conta. Quando o pedido sair, mande o link para o entregador: a oficina acompanha a entrega no mapa, sem precisar ligar.
           </p>
         </div>
       </div>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { calcularVencimento, estimarRodagem, kmEstimado, pontosDoVeiculo } from '@/lib/agenda';
-import { diasEntre, formatarData, lerDataBr, relativo, somarMeses } from '@/lib/datas';
+import { diasEntre, formatarData, formatarDiaHora, formatarHora, lerDataBr, relativo, somarMeses } from '@/lib/datas';
 
 describe('datas', () => {
   it('soma meses sem estourar o fim do mês', () => {
@@ -18,6 +18,18 @@ describe('datas', () => {
     expect(relativo(0)).toBe('hoje');
     expect(relativo(9)).toBe('em 9 dias');
     expect(relativo(-3)).toBe('há 3 dias');
+  });
+});
+
+describe('hora num fuso fixo (o que é montado no servidor)', () => {
+  const fuso = 'America/Sao_Paulo';
+  it('a mesma hora no servidor (UTC) e no navegador', () => {
+    expect(formatarHora('2026-10-15T05:55:00Z', fuso)).toBe('02:55');
+    expect(formatarHora('2026-10-15T03:00:00Z', fuso)).toBe('00:00');
+    const agora = new Date('2026-10-15T12:00:00Z');
+    expect(formatarDiaHora('2026-10-17T05:55:00Z', agora, fuso)).toBe('17/10 às 02:55');
+    expect(formatarDiaHora('2026-10-16T02:30:00Z', agora, fuso)).toBe('hoje às 23:30');
+    expect(formatarDiaHora('2026-10-16T03:30:00Z', agora, fuso)).toBe('amanhã às 00:30');
   });
 });
 

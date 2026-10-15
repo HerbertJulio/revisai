@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { AvisoErro } from '@/components/equipe/comum';
 import { MolduraFornecedor, SemAcesso } from '@/components/fornecedor/Moldura';
 import { PedidosFornecedor } from '@/components/fornecedor/Pedidos';
+import { lerPixDaLoja } from '@/lib/entregas';
 import { painelDaSessao } from '@/lib/fornecedor-servidor';
 
 export const dynamic = 'force-dynamic';
@@ -17,15 +18,17 @@ export default async function PaginaPedidos() {
       </main>
     );
   const { fornecedor, pedidos } = r.painel;
+  const pix = await lerPixDaLoja(fornecedor.id);
   return (
     <MolduraFornecedor
       aba="pedidos"
       loja={fornecedor.nome}
       novos={pedidos.filter((p) => p.status === 'novo').length}
+      alertas={r.painel.alertasNovos}
       titulo="Pedidos"
-      descricao="A parte de cada pedido que é sua. Chame a oficina no WhatsApp para combinar entrega e pagamento."
+      descricao="A parte de cada pedido que é sua. Combine com a oficina, confirme o Pix e mande o link da entrega: a oficina acompanha tudo pelo app."
     >
-      <PedidosFornecedor pedidos={pedidos} loja={fornecedor.nome} />
+      <PedidosFornecedor pedidos={pedidos} loja={fornecedor.nome} pix={pix} />
     </MolduraFornecedor>
   );
 }

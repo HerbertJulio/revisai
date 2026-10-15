@@ -12,6 +12,7 @@ import { armazenamentoComProblema, pedirArmazenamentoPersistente, useOficina } f
 import { ProvedorCatalogo } from './catalogo';
 import { useEnvioDeDemanda } from './demanda';
 import { Inicio } from './Inicio';
+import { ProvedorDeAndamento, useAndamento } from './loja/andamento';
 import { LinhaDoPlano, ProvedorDoPro } from './plano';
 
 const ITENS = [
@@ -42,7 +43,9 @@ export function AppOficina({ children }: { children: ReactNode }) {
       <ProvedorCatalogo>
         {configurado ? (
           <ProvedorDoPro>
-            <Moldura>{children}</Moldura>
+            <ProvedorDeAndamento>
+              <Moldura>{children}</Moldura>
+            </ProvedorDeAndamento>
           </ProvedorDoPro>
         ) : (
           <Inicio />
@@ -65,6 +68,8 @@ function Moldura({ children }: { children: ReactNode }) {
   const ordensAbertas = useOficina((s) => Object.values(s.documentos).filter((d) => (d.tipo === 'ordem' && d.situacao === 'aberta') || (d.tipo === 'orcamento' && d.situacao === 'enviado')).length);
   const { resumo, hoje } = useGrupos();
   const paraAvisar = resumo.avisar;
+  // propostas para escolher e entregas a caminho chamam mais atenção que o carrinho
+  const { pendencias } = useAndamento();
 
   useNotificacaoDoDia(paraAvisar, resumo.atrasados, resumo.agendadosHoje, hoje);
   useEnvioDeDemanda();
@@ -107,7 +112,11 @@ function Moldura({ children }: { children: ReactNode }) {
                 <span className="flex-1">{lateral}</span>
                 {href === '/oficina' && paraAvisar > 0 ? <Contador n={paraAvisar} invertido={sel} /> : null}
                 {href === '/oficina/ordens' && ordensAbertas > 0 ? <Contador n={ordensAbertas} invertido={sel} neutro /> : null}
-                {href === '/oficina/loja' && carrinho > 0 ? <Contador n={carrinho} invertido={sel} neutro /> : null}
+                {href === '/oficina/loja' && pendencias > 0 ? (
+                  <Contador n={pendencias} invertido={sel} />
+                ) : href === '/oficina/loja' && carrinho > 0 ? (
+                  <Contador n={carrinho} invertido={sel} neutro />
+                ) : null}
               </Link>
             );
           })}
@@ -174,7 +183,11 @@ function Moldura({ children }: { children: ReactNode }) {
                   <Icone size={22} aria-hidden="true" strokeWidth={sel ? 2.4 : 2} />
                   {href === '/oficina' && paraAvisar > 0 ? <Contador n={paraAvisar} flutuante /> : null}
                   {href === '/oficina/ordens' && ordensAbertas > 0 ? <Contador n={ordensAbertas} flutuante neutro /> : null}
-                  {href === '/oficina/loja' && carrinho > 0 ? <Contador n={carrinho} flutuante neutro /> : null}
+                  {href === '/oficina/loja' && pendencias > 0 ? (
+                    <Contador n={pendencias} flutuante />
+                  ) : href === '/oficina/loja' && carrinho > 0 ? (
+                    <Contador n={carrinho} flutuante neutro />
+                  ) : null}
                 </span>
               )}
               <span>{rotulo}</span>

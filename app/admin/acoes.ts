@@ -15,6 +15,8 @@ import {
   salvarFornecedorAdmin,
   type Gravacao as GravacaoMarketplace
 } from '@/lib/marketplace';
+import { liberarAlertas } from '@/lib/alertas';
+import { normalizarCodigo } from '@/lib/plano';
 import { criarAssinatura } from '@/lib/pro';
 import type { Assinatura } from '@/lib/pro-dados';
 import { COOKIE_EQUIPE, criarSessao, DURACAO_SESSAO_MS, senhaConfere } from '@/lib/sessao-equipe';
@@ -115,6 +117,16 @@ export async function criarCodigoPro(entrada: unknown): Promise<GravacaoMarketpl
   if ((await acessoDaEquipe()) !== 'dentro') return SESSAO_FIM;
   const r = await criarAssinatura(entrada);
   if (r.ok) revalidatePath('/admin', 'layout');
+  return r;
+}
+
+/** Libera alertas de preço extras para um código do Pro (depois do pagamento do pacote). */
+export async function liberarAlertasPro(codigo: string, quantidade: number, valor: number | null, observacao: string, cadastroId: number | null): Promise<GravacaoMarketplace> {
+  if ((await acessoDaEquipe()) !== 'dentro') return SESSAO_FIM;
+  const r = await liberarAlertas(normalizarCodigo(String(codigo ?? '')), Number(quantidade), valor != null && Number.isFinite(valor) && valor >= 0 ? valor : null, String(observacao ?? ''));
+  if (!r.ok) return r;
+  if (cadastroId != null && Number.isSafeInteger(cadastroId) && cadastroId > 0) await salvarSituacaoCadastro(cadastroId, 'respondido');
+  revalidatePath('/admin', 'layout');
   return r;
 }
 

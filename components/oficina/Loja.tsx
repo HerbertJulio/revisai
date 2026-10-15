@@ -1,6 +1,6 @@
 'use client';
 
-import { Package, PackageCheck, PackageSearch, Search, SlidersHorizontal, ShoppingCart, Truck, X } from 'lucide-react';
+import { Package, PackageCheck, PackageSearch, Search, SlidersHorizontal, ShoppingCart, X } from 'lucide-react';
 import Link from 'next/link';
 import { Fragment, useMemo, useRef, useState } from 'react';
 import { TrocaExibicao, useExibicao, type Exibicao } from '@/components/exibicao';
@@ -10,8 +10,7 @@ import { useToast } from '@/components/Toasts';
 import { Botao, Chip, Secao, Vazio, classeBotao } from '@/components/ui';
 import { itensParaComprar } from '@/lib/avisos';
 import { desconto, ordenarVitrine, patrocinado, precoNaQuantidade, quantidadeComUnidade, type Produto } from '@/lib/catalogo';
-import { dataLocal, formatarData } from '@/lib/datas';
-import { formatarMoeda, formatarNumero } from '@/lib/formatos';
+import { formatarMoeda } from '@/lib/formatos';
 import { useDadosAvisos, useHoje } from '@/lib/ganchos';
 import { compraSugerida, preverEstoque, textoQuantidade } from '@/lib/estoque';
 import { calcularDemanda, type LinhaDemanda, type Recomendacao } from '@/lib/recomendacao';
@@ -37,7 +36,10 @@ import { BotaoPor, nomeComMarca, SeloPatrocinado } from './loja/comum';
 import { DetalheProduto } from './loja/Detalhe';
 import { PainelFiltros } from './loja/Filtros';
 import { CartaoGrade, CartaoLojaDestaque, LinhaLista } from './loja/Produtos';
+import { BotaoPedirPreco, FolhaAlerta, FolhaNovoAlerta, FolhaPacotes, ListaDeAlertas } from './loja/Alertas';
+import { EmAndamento, FolhaPedido, PedidosEnviados } from './loja/Pedidos';
 import { ProvedorDePrecos } from './loja/precos';
+import { useOfertaDoPro, usePlano } from './plano';
 import { Vitrine } from './loja/Vitrine';
 
 const POR_PAGINA = 24;
@@ -60,7 +62,6 @@ function ConteudoDaLoja() {
   const uf = useOficina((s) => s.oficina.uf);
   const carrinho = useOficina((s) => s.carrinho);
   const adicionar = useOficina((s) => s.adicionarAoCarrinho);
-  const pedidos = useOficina((s) => s.pedidos);
   const toast = useToast();
   const [aberto, setAberto] = useState(false);
   const [detalhe, setDetalhe] = useState<Produto | null>(null);
@@ -69,6 +70,12 @@ function ConteudoDaLoja() {
   const [exibicao, setExibicao] = useExibicao(CHAVE_EXIBICAO);
   const [limite, setLimite] = useState(POR_PAGINA);
   const [painelAberto, setPainelAberto] = useState(false);
+  const [novoAlerta, setNovoAlerta] = useState<{ produto: Produto; quantidade: number } | null>(null);
+  const [alertaAberto, setAlertaAberto] = useState<string | null>(null);
+  const [pedidoAberto, setPedidoAberto] = useState<string | null>(null);
+  const [pacotes, setPacotes] = useState(false);
+  const plano = usePlano();
+  const ofertaPro = useOfertaDoPro();
   const catalogoRef = useRef<HTMLElement>(null);
 
   const fornecedores = useMemo(() => new Map(catalogo.fornecedores.map((f) => [f.id, f])), [catalogo]);
@@ -97,6 +104,17 @@ function ConteudoDaLoja() {
   function por(p: Produto, quantidade: number) {
     adicionar(p.id, quantidade);
     toast({ texto: `${quantidadeComUnidade(p, quantidade)} de ${nomeComMarca(p)} no pedido.`, acao: { rotulo: 'Ver pedido', fazer: () => setAberto(true) } });
+  }
+
+  function pedirPreco(p: Produto, quantidade: number) {
+    setDetalhe(null);
+    if (!plano.liberado) return ofertaPro('alertas');
+    setNovoAlerta({ produto: p, quantidade });
+  }
+
+  function verAlerta(id: string) {
+    setDetalhe(null);
+    setAlertaAberto(id);
   }
 
   function verLoja(id: number) {
@@ -128,6 +146,8 @@ function ConteudoDaLoja() {
         </p>
       ) : null}
       {semConexao ? <p className="text-[14px] text-oleo-tinta">Sem conexão. Mostrando a última versão da loja que ficou salva.</p> : null}
+
+      <EmAndamento aoAbrirAlerta={setAlertaAberto} aoAbrirPedido={setPedidoAberto} />
 
       <Vitrine destaques={destaques} fornecedores={fornecedores} hoje={hoje} aoPor={por} aoAbrir={setDetalhe} />
 
@@ -257,30 +277,9 @@ function ConteudoDaLoja() {
         </div>
       </section>
 
-      {pedidos.length ? (
-        <Secao titulo="Pedidos enviados">
-          <ul className="divide-y divide-linha rounded-2xl bg-papel ring-1 ring-linha">
-            {pedidos.map((p) => (
-              <li key={p.codigo} className="flex flex-wrap items-center gap-3 px-4 py-3">
-                <Truck size={18} className="text-tinta-3" aria-hidden="true" />
-                <span className="largo num font-extrabold tracking-wider">{p.codigo}</span>
-                <span className="text-[14px] text-tinta-2">{formatarData(dataLocal(p.quando))}</span>
-                <span className="text-[14px] text-tinta-2">
-                  {p.itens.length} {p.itens.length === 1 ? 'item' : 'itens'}
-                </span>
-                <span className="num ml-auto font-semibold">{formatarMoeda(p.total)}</span>
-                {p.recebidoEm ? (
-                  <Chip tom="ok">No estoque</Chip>
-                ) : (
-                  <Link href="/oficina/estoque" className="text-[13.5px] font-semibold text-caneta hover:underline">
-                    Chegou? Dar entrada
-                  </Link>
-                )}
-              </li>
-            ))}
-          </ul>
-        </Secao>
-      ) : null}
+      <PedidosEnviados aoAbrir={setPedidoAberto} />
+
+      <ListaDeAlertas aoAbrir={setAlertaAberto} aoComprar={() => setPacotes(true)} />
 
       <Folha
         aberta={painelAberto}
@@ -300,8 +299,22 @@ function ConteudoDaLoja() {
         <PainelFiltros filtros={filtros} facetas={facetas} aoMudar={mudarFiltros} />
       </Folha>
 
-      <DetalheProduto produto={detalhe} aoFechar={() => setDetalhe(null)} aoPor={por} aoAbrir={setDetalhe} uf={uf} />
-      <Carrinho aberto={aberto} aoFechar={() => setAberto(false)} />
+      <DetalheProduto
+        produto={detalhe}
+        aoFechar={() => setDetalhe(null)}
+        aoPor={por}
+        aoAbrir={setDetalhe}
+        uf={uf}
+        acaoPreco={(p, q) => <BotaoPedirPreco produto={p} aoPedir={() => pedirPreco(p, q)} aoVerAlerta={verAlerta} />}
+      />
+      <Carrinho aberto={aberto} aoFechar={() => setAberto(false)} aoAcompanhar={setPedidoAberto} />
+      <FolhaNovoAlerta pedido={novoAlerta} aoFechar={() => setNovoAlerta(null)} aoVerAlerta={setAlertaAberto} aoComprar={() => setPacotes(true)} />
+      <FolhaAlerta alertaId={alertaAberto} aoFechar={() => setAlertaAberto(null)} aoAcompanhar={(c) => {
+        setAlertaAberto(null);
+        setPedidoAberto(c);
+      }} />
+      <FolhaPedido codigo={pedidoAberto} aoFechar={() => setPedidoAberto(null)} />
+      <FolhaPacotes aberta={pacotes} aoFechar={() => setPacotes(false)} />
     </div>
   );
 }

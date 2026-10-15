@@ -36,6 +36,19 @@ export function fraseValida(id: string): id is FraseId {
   return Object.prototype.hasOwnProperty.call(FRASES, id);
 }
 
+/** Muda quando o texto (ou a voz) muda: entra no nome do arquivo guardado e no endereço da rota. */
+const VOZ_VERSAO = 'v1';
+
+export function versaoDaFrase(id: FraseId): string {
+  // FNV-1a de 32 bits: curto e estável, só para separar versões
+  let h = 0x811c9dc5;
+  for (const c of `${VOZ_VERSAO}|${FRASES[id]}`) {
+    h ^= c.codePointAt(0)!;
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(36);
+}
+
 /** Nome da peça na pergunta: "Qual filtro de óleo foi usado?". */
 const PECA: Partial<Record<Categoria, string>> = {
   filtro_oleo: 'filtro de óleo',

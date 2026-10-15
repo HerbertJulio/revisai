@@ -10,7 +10,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { montarOrdemComIA, transcreverAudio } from '@/app/oficina/acoes-agente';
 import { IconeServico } from '@/components/icones';
 import { Placa } from '@/components/pecas';
-import { useToast } from '@/components/Toasts';
 import { Alternar, Botao, Campo, classeEntrada } from '@/components/ui';
 import { pontosDoVeiculo } from '@/lib/agenda';
 import { formatarData } from '@/lib/datas';
@@ -130,7 +129,6 @@ export function PassoAPasso() {
   const params = useSearchParams();
   const router = useRouter();
   const hoje = useHoje();
-  const toast = useToast();
   const plano = usePlano();
   const ofertaPro = useOfertaDoPro();
   const prefs = useOficina((s) => s.preferencias);

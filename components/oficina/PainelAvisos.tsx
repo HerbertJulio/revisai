@@ -1,6 +1,6 @@
 'use client';
 
-import { BadgePercent, BellRing, CalendarCheck, Car, Clock3, MessageCircle, Plus, Send, UserX } from 'lucide-react';
+import { BadgePercent, BellRing, CalendarCheck, Car, Clock3, MessageCircle, PackageMinus, Plus, Send, UserX } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -14,6 +14,7 @@ import { itensParaComprar, type Etapa, type GrupoAviso } from '@/lib/avisos';
 import { desconto, quantidadeComUnidade } from '@/lib/catalogo';
 import { dataLocal, diasEntre, formatarDataCurta, somarDias } from '@/lib/datas';
 import { formatarKm, formatarMoeda } from '@/lib/formatos';
+import { compraSugerida, faltaMaisUrgente, fraseDaFalta, preverEstoque } from '@/lib/estoque';
 import { useDadosAvisos, useGrupos } from '@/lib/ganchos';
 import { servico } from '@/lib/manutencao';
 import { calcularDemanda, recomendarParaItem, type Recomendacao } from '@/lib/recomendacao';
@@ -168,6 +169,8 @@ function AbaVazia({ aba, irPara }: { aba: Aba; irPara: (a: Aba) => void }) {
 function ResumoDoDia() {
   const { resumo, hoje } = useGrupos(30);
   const dados = useDadosAvisos();
+  const estoque = useOficina((s) => s.estoque);
+  const documentos = useOficina((s) => s.documentos);
   const { catalogo } = useCatalogo();
   const mostradoEm = useOficina((s) => s.resumoMostradoEm);
   const marcar = useOficina((s) => s.marcarResumo);
@@ -191,7 +194,25 @@ function ResumoDoDia() {
     return null;
   }, [dados, catalogo, hoje]);
 
-  if (mostradoEm === hoje || (resumo.avisar === 0 && resumo.agendadosHoje === 0)) return null;
+  // o estoque que não dá para as trocas que vêm aí, e quem está com promoção do que falta
+  const falta = useMemo(() => {
+    if (!Object.keys(estoque).length) return null;
+    const demanda = calcularDemanda(itensParaComprar(dados, hoje, 30), catalogo, hoje, 30);
+    const linha = faltaMaisUrgente(preverEstoque(demanda, Object.values(documentos), Object.values(estoque), hoje));
+    if (!linha) return null;
+    const r = compraSugerida(linha, estoque, catalogo, hoje);
+    const promo = r?.promocao ?? r?.oferta ?? null;
+    const loja = r ? catalogo.fornecedores.find((f) => f.id === r.produto.fornecedorId)?.nome : undefined;
+    return {
+      frase: fraseDaFalta(linha),
+      promocao:
+        r && promo && loja
+          ? `A ${loja} está com promoção: ${formatarMoeda(promo.precoPromocional)} ${promo.quantidadeMinima > 1 ? `a partir de ${quantidadeComUnidade(r.produto, promo.quantidadeMinima)}` : 'cada'}.`
+          : null
+    };
+  }, [estoque, documentos, dados, catalogo, hoje]);
+
+  if (mostradoEm === hoje || (resumo.avisar === 0 && resumo.agendadosHoje === 0 && !falta)) return null;
 
   const frases: string[] = [];
   if (resumo.atrasados > 0) frases.push(`${resumo.atrasados} ${resumo.atrasados === 1 ? 'está com serviço atrasado' : 'estão com serviço atrasado'}`);
@@ -207,7 +228,15 @@ function ResumoDoDia() {
         {resumo.avisar > 0 ? `Hoje ${resumo.avisar === 1 ? 'é 1 cliente' : `são ${resumo.avisar} clientes`} para avisar.` : 'Nenhum cliente novo para avisar.'}
       </p>
       {frases.length ? <p className="mt-1 text-white/80">{frases.join(' e ')}.</p> : null}
-      {promocao ? (
+      {falta ? (
+        <p className="mt-3 flex items-start gap-2 text-[14.5px] text-white/90">
+          <PackageMinus size={18} className="mt-0.5 shrink-0 text-oleo" aria-hidden="true" />
+          <span>
+            {falta.frase}
+            {falta.promocao ? ` ${falta.promocao}` : ''}
+          </span>
+        </p>
+      ) : promocao ? (
         <p className="mt-3 flex items-start gap-2 text-[14.5px] text-white/90">
           <BadgePercent size={18} className="mt-0.5 shrink-0 text-oleo" aria-hidden="true" />
           <span>
@@ -231,9 +260,9 @@ function ResumoDoDia() {
             <BellRing size={17} /> Avisar neste aparelho
           </Botao>
         ) : null}
-        {promocao ? (
+        {falta || promocao ? (
           <Link href="/oficina/loja" className={classeBotao('claro')}>
-            Ver a loja
+            {falta ? 'Comprar o que falta' : 'Ver a loja'}
           </Link>
         ) : null}
       </div>

@@ -16,7 +16,7 @@ import { useCatalogo } from '../catalogo';
 import { FotoProduto } from '../FotoProduto';
 import { nomeComMarca, Passo } from './comum';
 
-export function Carrinho({ aberto, aoFechar }: { aberto: boolean; aoFechar: () => void }) {
+export function Carrinho({ aberto, aoFechar, aoAcompanhar }: { aberto: boolean; aoFechar: () => void; aoAcompanhar?: (codigo: string) => void }) {
   const { catalogo, produto, carregando } = useCatalogo();
   const hoje = useHoje();
   const carrinho = useOficina((s) => s.carrinho);
@@ -25,6 +25,7 @@ export function Carrinho({ aberto, aoFechar }: { aberto: boolean; aoFechar: () =
   const oficina = useOficina((s) => s.oficina);
   const salvarOficina = useOficina((s) => s.salvarOficina);
   const registrarPedido = useOficina((s) => s.registrarPedido);
+  const garantirAparelhoId = useOficina((s) => s.garantirAparelhoId);
   const [obs, setObs] = useState('');
   const [erro, setErro] = useState<string | null>(null);
   const [enviado, setEnviado] = useState<string | null>(null);
@@ -57,7 +58,9 @@ export function Carrinho({ aberto, aoFechar }: { aberto: boolean; aoFechar: () =
         r = await enviarPedido({
           oficina: { nome: oficina.nome, whatsapp: oficina.whatsapp, cidade: oficina.cidade, uf: oficina.uf },
           itens: linhas.map((l) => ({ produtoId: l.p.id, quantidade: l.quantidade })),
-          observacao: obs
+          observacao: obs,
+          aparelhoId: garantirAparelhoId(),
+          endereco: oficina.endereco
         });
       } catch {
         setErro('Não deu para falar com o servidor. Confira a internet e tente de novo. Se o app ficou aberto muito tempo, recarregue a página.');
@@ -92,7 +95,30 @@ export function Carrinho({ aberto, aoFechar }: { aberto: boolean; aoFechar: () =
 
   if (enviado) {
     return (
-      <Folha aberta={aberto} aoFechar={fechar} titulo="Pedido enviado" rodape={<Botao variante="primario" onClick={fechar}>Fechar</Botao>}>
+      <Folha
+        aberta={aberto}
+        aoFechar={fechar}
+        titulo="Pedido enviado"
+        rodape={
+          <div className="flex w-full flex-wrap justify-end gap-2">
+            <Botao variante="fantasma" onClick={fechar}>
+              Fechar
+            </Botao>
+            {aoAcompanhar ? (
+              <Botao
+                variante="primario"
+                onClick={() => {
+                  const codigo = enviado;
+                  fechar();
+                  aoAcompanhar(codigo);
+                }}
+              >
+                Acompanhar o pedido
+              </Botao>
+            ) : null}
+          </div>
+        }
+      >
         <div className="flex flex-col items-start gap-4">
           <span className="grid h-12 w-12 place-items-center rounded-full bg-ok-claro text-ok">
             <Check size={26} />
@@ -101,7 +127,7 @@ export function Carrinho({ aberto, aoFechar }: { aberto: boolean; aoFechar: () =
             Pedido <strong className="largo num tracking-wider">{enviado}</strong> recebido.
           </p>
           <p className="text-tinta-2">
-            O fornecedor chama você no WhatsApp {formatarTelefone(oficina.whatsapp)} para combinar pagamento e entrega. Os preços seguem as promoções de hoje.
+            A loja chama você no WhatsApp {formatarTelefone(oficina.whatsapp)} para combinar a entrega. Dá para acompanhar o pedido e pagar por Pix aqui na Loja, em Pedidos. Os preços seguem as promoções de hoje.
           </p>
         </div>
       </Folha>
@@ -157,6 +183,9 @@ export function Carrinho({ aberto, aoFechar }: { aberto: boolean; aoFechar: () =
             </Campo>
             <Campo rotulo="WhatsApp" htmlFor="ped-whats">
               <input id="ped-whats" className={classeEntrada} value={oficina.whatsapp} onChange={(e) => salvarOficina({ whatsapp: e.target.value })} inputMode="tel" />
+            </Campo>
+            <Campo rotulo="Endereço para entrega" htmlFor="ped-end" className="sm:col-span-2">
+              <input id="ped-end" className={classeEntrada} value={oficina.endereco} onChange={(e) => salvarOficina({ endereco: e.target.value })} maxLength={160} autoComplete="street-address" placeholder="Rua, número, bairro" />
             </Campo>
             <Campo rotulo="Observação" htmlFor="ped-obs" className="sm:col-span-2" dica="Ex.: entregar até sexta, pagar no PIX.">
               <textarea id="ped-obs" rows={2} className={classeArea} value={obs} onChange={(e) => setObs(e.target.value)} maxLength={500} />

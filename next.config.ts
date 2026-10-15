@@ -21,7 +21,8 @@ const csp = [
   "connect-src 'self'",
   "manifest-src 'self'",
   "worker-src 'self' blob:",
-  "frame-src 'none'",
+  // o mapa da entrega (OpenStreetMap) na tela do pedido
+  'frame-src https://www.openstreetmap.org',
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
@@ -42,6 +43,9 @@ const seguranca = [
   { key: 'X-Permitted-Cross-Domain-Policies', value: 'none' }
 ];
 
+// a página do entregador pede a localização do celular para a oficina acompanhar a entrega
+const permissoesDaEntrega = 'camera=(), microphone=(), geolocation=(self), payment=(), usb=(), serial=(), hid=(), browsing-topics=()';
+
 const config: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
@@ -58,7 +62,11 @@ const config: NextConfig = {
     minimumCacheTTL: 60 * 60 * 24 * 31
   },
   async headers() {
-    return [{ source: '/:path*', headers: seguranca }];
+    return [
+      { source: '/:path*', headers: seguranca },
+      // vem depois para valer no lugar da regra geral
+      { source: '/entrega/:token*', headers: [{ key: 'Permissions-Policy', value: permissoesDaEntrega }] }
+    ];
   },
   async redirects() {
     return [

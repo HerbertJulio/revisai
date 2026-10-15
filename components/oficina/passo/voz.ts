@@ -7,7 +7,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { transcreverAudio } from '@/app/oficina/acoes-agente';
-import { FRASES, type FraseId } from '@/lib/voz-frases';
+import { FRASES, versaoDaFrase, type FraseId } from '@/lib/voz-frases';
 
 export type EstadoVoz = 'parada' | 'falando' | 'ouvindo' | 'pensando';
 
@@ -40,7 +40,7 @@ async function audioDaFrase(id: FraseId, espera: number): Promise<string | null>
   if (!p) {
     p = (async () => {
       try {
-        const r = await fetch(`/api/voz/${id}`);
+        const r = await fetch(`/api/voz/${id}?v=${versaoDaFrase(id)}`);
         if (!r.ok) throw new Error(String(r.status));
         const blob = await r.blob();
         if (!blob.type.startsWith('audio/') || blob.size < 1000) throw new Error('vazio');

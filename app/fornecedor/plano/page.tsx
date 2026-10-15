@@ -23,7 +23,13 @@ export default async function PaginaPlano() {
   const { fornecedor, contrato, impulsos, produtos, pedidos, hoje } = r.painel;
   const nomes = new Map(produtos.map((p) => [p.id, [p.marca, p.nome].filter(Boolean).join(' ')]));
   return (
-    <MolduraFornecedor aba="plano" loja={fornecedor.nome} novos={pedidos.filter((p) => p.status === 'novo').length} titulo="Plano e impulsos">
+    <MolduraFornecedor
+      aba="plano"
+      loja={fornecedor.nome}
+      novos={pedidos.filter((p) => p.status === 'novo').length}
+      alertas={r.painel.alertasNovos}
+      titulo="Plano e impulsos"
+    >
       <PlanoFornecedorTela atual={contrato?.plano ?? 'vitrine'} comissao={contrato?.comissao_percentual ?? null} mensalidade={contrato?.mensalidade ?? null} />
       {impulsos.length ? (
         <section className="flex flex-col gap-3">

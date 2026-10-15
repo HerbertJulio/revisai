@@ -215,3 +215,18 @@ describe('link do orçamento', () => {
     expect(mensagemDeAprovacao(dados, new Set([1]), formatar)).toContain('- Mão de obra');
   });
 });
+
+describe('falta mais urgente para o resumo do dia', () => {
+  it('o óleo vem primeiro e só conta o que já tem um pouco no estoque', async () => {
+    const { faltaMaisUrgente, fraseDaFalta } = await import('@/lib/estoque');
+    const linha = (x: Record<string, unknown>) =>
+      ({ chave: String(x.titulo), titulo: 'x', servico: 'troca_oleo', categoria: 'oleo_motor', unidade: 'L', precisa: 30, tem: 25, faltam: 5, carros: 7, ordens: 0, itens: [], exigido: null, semEspecificacao: false, ...x }) as never;
+    const filtro = linha({ titulo: 'Filtro de óleo', categoria: 'filtro_oleo', unidade: 'un', precisa: 8, tem: 2, faltam: 6 });
+    const oleo = linha({ titulo: 'Óleo 5W-30' });
+    const zerado = linha({ titulo: 'Filtro de ar', categoria: 'filtro_ar', unidade: 'un', precisa: 4, tem: 0, faltam: 4 });
+    expect(faltaMaisUrgente([filtro, zerado, oleo])).toBe(oleo);
+    expect(faltaMaisUrgente([filtro, zerado])).toBe(filtro);
+    expect(faltaMaisUrgente([zerado])).toBeNull();
+    expect(fraseDaFalta(oleo)).toBe('Vai faltar Óleo 5W-30 nos próximos 30 dias: você tem 25 L e vai precisar de mais 5 L.');
+  });
+});

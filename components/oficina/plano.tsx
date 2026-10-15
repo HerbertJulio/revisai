@@ -3,20 +3,20 @@
 // O plano da oficina no app: quanto do grátis já foi usado, a folha que apresenta o Pro quando
 // um limite chega, a parte Plano dos Ajustes e o relatório de retorno dos avisos.
 
-import { BellRing, KeyRound, MessageCircle, Mic, Star, TrendingUp } from 'lucide-react';
+import { BellRing, KeyRound, MessageCircle, Mic, Star, Tag, TrendingUp } from 'lucide-react';
 import Link from 'next/link';
 import { createContext, useContext, useMemo, useState, useTransition, type ReactNode } from 'react';
 import { ativarCodigoPro } from '@/app/oficina/acoes-pro';
 import { Folha } from '@/components/Folha';
 import { useToast } from '@/components/Toasts';
 import { Botao, Chip, Secao, classeBotao, classeEntrada } from '@/components/ui';
+import { ALERTAS } from '@/lib/alertas-dados';
 import { formatarData, somarDias } from '@/lib/datas';
 import { ehExemplo } from '@/lib/exemplo';
 import { formatarMoeda, plural, primeiroNome } from '@/lib/formatos';
 import { useHoje } from '@/lib/ganchos';
 import {
   avisosNoMes,
-  formatarCodigo,
   liberado,
   montagensNoMes,
   normalizarCodigo,
@@ -54,7 +54,7 @@ export function usePlano(): UsoDoPlano {
 
 // ---------------------------------------------------------------- folha do Pro
 
-export type MotivoPro = 'avisos' | 'ordens' | 'retorno' | 'avaliacao' | 'whatsapp' | 'geral';
+export type MotivoPro = 'avisos' | 'ordens' | 'retorno' | 'avaliacao' | 'whatsapp' | 'alertas' | 'geral';
 
 const Contexto = createContext<(m: MotivoPro) => void>(() => {});
 
@@ -79,6 +79,7 @@ const TITULOS: Record<MotivoPro, string> = {
   retorno: 'Veja quanto os avisos rendem',
   avaliacao: 'Peça avaliação no Google com um toque',
   whatsapp: 'O agente no WhatsApp é do Pro',
+  alertas: 'O alerta de preço é do Pro',
   geral: 'Revisaí Pro'
 };
 
@@ -88,6 +89,7 @@ const DESCRICOES: Record<MotivoPro, string> = {
   retorno: 'O Pro mostra quantos clientes voltaram depois do aviso e quanto esses serviços somaram.',
   avaliacao: 'Depois do serviço, o Pro manda ao cliente o link para avaliar a oficina no Google. Mais avaliação, mais cliente novo.',
   whatsapp: 'O mecânico manda áudio e foto para o número do Revisaí e a ordem chega pronta no app para conferir.',
+  alertas: 'Diga quanto quer pagar por uma peça e as lojas do seu estado respondem: aceitam, fazem uma contraproposta ou dizem que não dá. Você escolhe e o pedido sai com o preço combinado.',
   geral: 'Para a oficina que avisa todo cliente e quer ver o retorno disso.'
 };
 
@@ -95,7 +97,8 @@ const VANTAGENS = [
   { Icone: BellRing, texto: 'Avisos sem limite pelo WhatsApp' },
   { Icone: Mic, texto: 'Ordem por voz e agente no WhatsApp para a oficina toda' },
   { Icone: TrendingUp, texto: 'Relatório de quem voltou depois do aviso e quanto rendeu' },
-  { Icone: Star, texto: 'Pedido de avaliação no Google depois do serviço' }
+  { Icone: Star, texto: 'Pedido de avaliação no Google depois do serviço' },
+  { Icone: Tag, texto: `Alerta de preço: ${ALERTAS.porMesPro} pedidos de preço por mês para as lojas da região` }
 ];
 
 function FolhaDoPro({ motivo, aoFechar }: { motivo: MotivoPro | null; aoFechar: () => void }) {
