@@ -8,6 +8,8 @@ import { create } from 'zustand';
 import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware';
 import { ehExemplo, gerarExemplo } from './exemplo';
 import { hojeISO } from './datas';
+import { ordemDoOrcamento, proximoNumero, totais } from './documentos';
+import { aplicarMovimento, baixasDoDocumento } from './estoque';
 import { normalizarPlaca } from './formatos';
 import { OFICINA_VAZIA, PREFERENCIAS_PADRAO } from './padroes';
 import type { OrdemServico } from './agente/ordem';
@@ -17,14 +19,19 @@ import type {
   Atendimento,
   Cliente,
   Contato,
+  Documento,
   Id,
   ItemCarrinho,
+  ItemEstoque,
+  ItemServico,
   Leitura,
+  MovimentoEstoque,
   Oficina,
   PedidoEnviado,
   Preferencias,
   ResultadoContato,
   ServicoId,
+  TipoDocumento,
   Veiculo
 } from './tipos';
 
@@ -52,6 +59,14 @@ export interface DadosGuardados {
   ordens: Record<Id, OrdemServico>;
   /** Teste e assinatura do Pro neste aparelho. */
   plano: EstadoPlano;
+  /** O que a oficina tem guardado. */
+  estoque: Record<Id, ItemEstoque>;
+  /** Entradas, saídas e contagens do estoque (as mais novas primeiro ao mostrar). */
+  movimentos: Record<Id, MovimentoEstoque>;
+  /** Orçamentos e ordens de serviço. */
+  documentos: Record<Id, Documento>;
+  /** O último número usado de cada tipo. */
+  contadores: Partial<Record<TipoDocumento, number>>;
   resumoMostradoEm: string | null;
   ultimoBackup: string | null;
   /** Quando esta cópia foi gravada (a mais nova vence entre IndexedDB e localStorage). */
@@ -90,6 +105,21 @@ interface Acoes {
   comecarTeste(hoje: string): void;
   ativarPro(ate: string, codigo: string): void;
   contarMontagem(hoje: string): void;
+  salvarItemEstoque(i: Omit<ItemEstoque, 'id' | 'criadoEm' | 'atualizadoEm'> & { id?: Id }): Id;
+  removerItemEstoque(id: Id): void;
+  /** Registra uma entrada, saída ou ajuste e atualiza a quantidade do item. */
+  moverEstoque(m: Omit<MovimentoEstoque, 'id' | 'quando'> & { quando?: string }): Id | null;
+  /** Dá entrada no estoque do que chegou de um pedido da loja. */
+  receberPedido(codigo: string, entradas: { itemId: Id; quantidade: number; custoUnitario: number | null; fornecedor?: string }[]): void;
+  salvarDocumento(d: Omit<Documento, 'id' | 'numero' | 'criadoEm' | 'atualizadoEm'> & { id?: Id; numero?: number }): Id;
+  removerDocumento(id: Id): void;
+  marcarEnviado(id: Id): void;
+  /** O cliente aprovou: o orçamento vira ordem aberta (sem as linhas recusadas). Devolve o id da ordem. */
+  aprovarOrcamento(id: Id, recusadas?: Id[]): Id | null;
+  recusarOrcamento(id: Id): void;
+  /** A ordem ficou pronta: registra o serviço (os avisos saem dele) e tira as peças do estoque. */
+  concluirOrdem(id: Id, ctx: { itens: ItemServico[]; km: number; data: string }): Id | null;
+  cancelarOrdem(id: Id): void;
   marcarDemandaEnviada(): void;
   marcarResumo(data: string): void;
   marcarBackup(): void;
@@ -118,6 +148,10 @@ const VAZIO: DadosGuardados = {
   demandaEnviadaEm: null,
   ordens: {},
   plano: PLANO_INICIAL,
+  estoque: {},
+  movimentos: {},
+  documentos: {},
+  contadores: {},
   resumoMostradoEm: null,
   ultimoBackup: null
 };
@@ -247,7 +281,8 @@ export const useOficina = create<EstadoOficina>()(
           atendimentos: semChaves(get().atendimentos, (a) => carros.has(a.veiculoId)),
           leituras: semChaves(get().leituras, (l) => carros.has(l.veiculoId)),
           contatos: semChaves(get().contatos, (k) => carros.has(k.veiculoId)),
-          ordens: semChaves(get().ordens, (o) => o.veiculoId != null && carros.has(o.veiculoId))
+          ordens: semChaves(get().ordens, (o) => o.veiculoId != null && carros.has(o.veiculoId)),
+          documentos: semChaves(get().documentos, (d) => d.veiculoId != null && carros.has(d.veiculoId))
         });
       },
 
@@ -269,7 +304,8 @@ export const useOficina = create<EstadoOficina>()(
           atendimentos: semChaves(get().atendimentos, (a) => a.veiculoId === id),
           leituras: semChaves(get().leituras, (l) => l.veiculoId === id),
           contatos: semChaves(get().contatos, (k) => k.veiculoId === id),
-          ordens: semChaves(get().ordens, (o) => o.veiculoId === id)
+          ordens: semChaves(get().ordens, (o) => o.veiculoId === id),
+          documentos: semChaves(get().documentos, (d) => d.veiculoId === id)
         });
       },
 
@@ -383,6 +419,161 @@ export const useOficina = create<EstadoOficina>()(
         set({ plano: contarMontagem(get().plano, hoje) });
       },
 
+      salvarItemEstoque(i) {
+        const id = i.id ?? novoId();
+        const anterior = get().estoque[id];
+        const agora = new Date().toISOString();
+        set({
+          estoque: {
+            ...get().estoque,
+            [id]: { ...anterior, ...i, id, nome: i.nome.trim(), marca: i.marca?.trim() || undefined, quantidade: Math.max(0, i.quantidade), minimo: Math.max(0, i.minimo), criadoEm: anterior?.criadoEm ?? agora, atualizadoEm: agora }
+          }
+        });
+        return id;
+      },
+
+      removerItemEstoque(id) {
+        set({ estoque: semChaves(get().estoque, (_i, iid) => iid === id), movimentos: semChaves(get().movimentos, (m) => m.itemId === id) });
+      },
+
+      moverEstoque(m) {
+        const item = get().estoque[m.itemId];
+        if (!item || !Number.isFinite(m.quantidade)) return null;
+        const id = novoId();
+        const mov: MovimentoEstoque = { ...m, id, quando: m.quando ?? new Date().toISOString() };
+        set({ estoque: { ...get().estoque, [item.id]: aplicarMovimento(item, mov) }, movimentos: { ...get().movimentos, [id]: mov } });
+        return id;
+      },
+
+      receberPedido(codigo, entradas) {
+        const quando = new Date().toISOString();
+        const estoque = { ...get().estoque };
+        const movimentos = { ...get().movimentos };
+        for (const e of entradas) {
+          const item = estoque[e.itemId];
+          if (!item || !(e.quantidade > 0)) continue;
+          const id = novoId();
+          const mov: MovimentoEstoque = {
+            id,
+            itemId: item.id,
+            quando,
+            tipo: 'entrada',
+            quantidade: e.quantidade,
+            custoUnitario: e.custoUnitario,
+            fornecedor: e.fornecedor,
+            origem: { tipo: 'pedido', id: codigo, rotulo: `Pedido ${codigo}` }
+          };
+          estoque[item.id] = aplicarMovimento(item, mov);
+          movimentos[id] = mov;
+        }
+        set({ estoque, movimentos, pedidos: get().pedidos.map((p) => (p.codigo === codigo ? { ...p, recebidoEm: quando } : p)) });
+      },
+
+      salvarDocumento(d) {
+        const id = d.id ?? novoId();
+        const s = get();
+        const anterior = s.documentos[id];
+        const agora = new Date().toISOString();
+        const numero = anterior?.numero ?? d.numero ?? proximoNumero(s.contadores, Object.values(s.documentos), d.tipo);
+        const contadores = { ...s.contadores, [d.tipo]: Math.max(s.contadores[d.tipo] ?? 0, numero) };
+        set({ documentos: { ...s.documentos, [id]: { ...anterior, ...d, id, numero, criadoEm: anterior?.criadoEm ?? agora, atualizadoEm: agora } }, contadores });
+        return id;
+      },
+
+      removerDocumento(id) {
+        set({
+          documentos: Object.fromEntries(
+            Object.entries(get().documentos)
+              .filter(([did]) => did !== id)
+              .map(([did, d]) => [did, d.ordemId === id ? { ...d, ordemId: undefined } : d.orcamentoId === id ? { ...d, orcamentoId: undefined } : d])
+          )
+        });
+      },
+
+      marcarEnviado(id) {
+        const d = get().documentos[id];
+        if (!d) return;
+        const agora = new Date().toISOString();
+        const situacao = d.tipo === 'orcamento' && d.situacao === 'rascunho' ? 'enviado' : d.situacao;
+        set({ documentos: { ...get().documentos, [id]: { ...d, situacao, enviadoEm: d.enviadoEm ?? agora, atualizadoEm: agora } } });
+      },
+
+      aprovarOrcamento(id, recusadas = []) {
+        const s = get();
+        const orc = s.documentos[id];
+        if (!orc || orc.tipo !== 'orcamento') return null;
+        if (orc.ordemId && s.documentos[orc.ordemId]) return orc.ordemId;
+        const fora = new Set(recusadas);
+        const aprovado: Documento = { ...orc, linhas: orc.linhas.map((l) => ({ ...l, recusada: fora.has(l.id) })) };
+        if (!aprovado.linhas.some((l) => !l.recusada)) return null;
+        const agora = new Date().toISOString();
+        const ordemId = novoId();
+        const numero = proximoNumero(s.contadores, Object.values(s.documentos), 'ordem');
+        const ordem = ordemDoOrcamento(aprovado, { id: ordemId, numero, agora, hoje: hojeISO(), novoId });
+        set({
+          documentos: { ...s.documentos, [id]: { ...aprovado, situacao: 'aprovado', respondidoEm: agora, ordemId, atualizadoEm: agora }, [ordemId]: ordem },
+          contadores: { ...s.contadores, ordem: numero }
+        });
+        return ordemId;
+      },
+
+      recusarOrcamento(id) {
+        const d = get().documentos[id];
+        if (!d || d.tipo !== 'orcamento') return;
+        const agora = new Date().toISOString();
+        set({ documentos: { ...get().documentos, [id]: { ...d, situacao: 'recusado', respondidoEm: agora, atualizadoEm: agora } } });
+      },
+
+      concluirOrdem(id, ctx) {
+        const s = get();
+        const d = s.documentos[id];
+        if (!d || d.tipo !== 'ordem' || d.situacao === 'concluida' || !d.veiculoId || !s.veiculos[d.veiculoId]) return null;
+        const agora = new Date().toISOString();
+        const atendimentoId = novoId();
+        const total = totais(d);
+        const atendimentos = ctx.itens.length
+          ? {
+              ...s.atendimentos,
+              [atendimentoId]: {
+                id: atendimentoId,
+                veiculoId: d.veiculoId,
+                data: ctx.data,
+                km: ctx.km,
+                itens: ctx.itens,
+                valor: total.total > 0 ? total.total : null,
+                observacao: [d.diagnostico, d.observacao].filter(Boolean).join(' ').trim() || undefined,
+                criadoEm: agora
+              }
+            }
+          : s.atendimentos;
+        const estoque = { ...s.estoque };
+        const movimentos = { ...s.movimentos };
+        for (const [itemId, quantidade] of baixasDoDocumento(d)) {
+          const item = estoque[itemId];
+          if (!item) continue;
+          const mid = novoId();
+          const mov: MovimentoEstoque = { id: mid, itemId, quando: agora, tipo: 'saida', quantidade: -quantidade, origem: { tipo: 'ordem', id, rotulo: `OS nº ${d.numero}` } };
+          estoque[itemId] = aplicarMovimento(item, mov);
+          movimentos[mid] = mov;
+        }
+        set({
+          atendimentos,
+          estoque,
+          movimentos,
+          documentos: {
+            ...s.documentos,
+            [id]: { ...d, situacao: 'concluida', concluidoEm: agora, km: d.km ?? ctx.km, atendimentoId: ctx.itens.length ? atendimentoId : undefined, atualizadoEm: agora }
+          }
+        });
+        return ctx.itens.length ? atendimentoId : null;
+      },
+
+      cancelarOrdem(id) {
+        const d = get().documentos[id];
+        if (!d || d.tipo !== 'ordem' || d.situacao === 'concluida') return;
+        set({ documentos: { ...get().documentos, [id]: { ...d, situacao: 'cancelada', atualizadoEm: new Date().toISOString() } } });
+      },
+
       marcarDemandaEnviada() {
         set({ demandaEnviadaEm: new Date().toISOString() });
       },
@@ -404,7 +595,11 @@ export const useOficina = create<EstadoOficina>()(
           preferencias: { ...PREFERENCIAS_PADRAO, ...dados.preferencias },
           plano: juntarPlanos(get().plano, dados.plano),
           aparelhoId: get().aparelhoId ?? dados.aparelhoId ?? null,
-          carrinho: get().carrinho
+          carrinho: get().carrinho,
+          estoque: dados.estoque ?? {},
+          movimentos: dados.movimentos ?? {},
+          documentos: dados.documentos ?? {},
+          contadores: dados.contadores ?? {}
         });
       },
 
@@ -421,7 +616,12 @@ export const useOficina = create<EstadoOficina>()(
           veiculos: semChaves(s.veiculos, (_v, id) => ehExemplo(id)),
           atendimentos: semChaves(s.atendimentos, (a, id) => ehExemplo(id) || ehExemplo(a.veiculoId)),
           leituras: semChaves(s.leituras, (l, id) => ehExemplo(id) || ehExemplo(l.veiculoId)),
-          contatos: semChaves(s.contatos, (k, id) => ehExemplo(id) || ehExemplo(k.veiculoId))
+          contatos: semChaves(s.contatos, (k, id) => ehExemplo(id) || ehExemplo(k.veiculoId)),
+          estoque: semChaves(s.estoque, (_i, id) => ehExemplo(id)),
+          movimentos: semChaves(s.movimentos, (m, id) => ehExemplo(id) || ehExemplo(m.itemId)),
+          documentos: semChaves(s.documentos, (d, id) => ehExemplo(id) || (d.veiculoId != null && ehExemplo(d.veiculoId))),
+          // os números voltam para o que a oficina usou de verdade
+          contadores: contadoresDos(Object.values(semChaves(s.documentos, (d, id) => ehExemplo(id) || (d.veiculoId != null && ehExemplo(d.veiculoId)))))
         });
       },
 
@@ -451,6 +651,10 @@ export const useOficina = create<EstadoOficina>()(
         demandaEnviadaEm: s.demandaEnviadaEm,
         ordens: s.ordens,
         plano: s.plano,
+        estoque: s.estoque,
+        movimentos: s.movimentos,
+        documentos: s.documentos,
+        contadores: s.contadores,
         resumoMostradoEm: s.resumoMostradoEm,
         ultimoBackup: s.ultimoBackup,
         salvoEm: Date.now()
@@ -462,7 +666,11 @@ export const useOficina = create<EstadoOficina>()(
           ...g,
           oficina: { ...OFICINA_VAZIA, ...g.oficina },
           preferencias: { ...PREFERENCIAS_PADRAO, ...g.preferencias },
-          plano: { ...PLANO_INICIAL, ...g.plano }
+          plano: { ...PLANO_INICIAL, ...g.plano },
+          estoque: g.estoque ?? {},
+          movimentos: g.movimentos ?? {},
+          documentos: g.documentos ?? {},
+          contadores: g.contadores ?? {}
         };
       }
     }
@@ -485,8 +693,20 @@ function mesclar(atual: DadosGuardados, ex: ReturnType<typeof gerarExemplo>) {
     veiculos: { ...atual.veiculos, ...ex.veiculos },
     atendimentos: { ...atual.atendimentos, ...ex.atendimentos },
     leituras: { ...atual.leituras, ...ex.leituras },
-    contatos: { ...atual.contatos, ...ex.contatos }
+    contatos: { ...atual.contatos, ...ex.contatos },
+    estoque: { ...atual.estoque, ...ex.estoque },
+    documentos: { ...atual.documentos, ...ex.documentos },
+    contadores: {
+      orcamento: Math.max(atual.contadores.orcamento ?? 0, ...Object.values(ex.documentos).filter((d) => d.tipo === 'orcamento').map((d) => d.numero)),
+      ordem: Math.max(atual.contadores.ordem ?? 0, ...Object.values(ex.documentos).filter((d) => d.tipo === 'ordem').map((d) => d.numero))
+    }
   };
+}
+
+function contadoresDos(documentos: Documento[]): Partial<Record<TipoDocumento, number>> {
+  const r: Partial<Record<TipoDocumento, number>> = {};
+  for (const d of documentos) r[d.tipo] = Math.max(r[d.tipo] ?? 0, d.numero);
+  return r;
 }
 
 /** Os dados como arquivo de backup. */
@@ -506,6 +726,10 @@ export function dadosParaBackup(s: DadosGuardados) {
     produtosProprios: s.produtosProprios,
     ordens: s.ordens,
     plano: s.plano,
+    estoque: s.estoque,
+    movimentos: s.movimentos,
+    documentos: s.documentos,
+    contadores: s.contadores,
     exemplo: s.exemplo
   };
 }

@@ -135,6 +135,8 @@ export interface LinhaDemanda {
   recomendacao: Recomendacao | null;
   /** Óleo sem cadastro: não dá para recomendar. */
   semEspecificacao?: boolean;
+  /** O que o manual dos carros desta linha pede (só no óleo). */
+  exigido?: EspecOleo;
 }
 
 /** O produto da categoria que sai mais barato para vários carros juntos (promoção pela soma). */
@@ -157,7 +159,7 @@ export function melhorParaVarios(servicoId: ServicoId, carros: number, catalogo:
  * (e aproveitar as promoções por quantidade). O óleo é separado pela especificação.
  */
 export function calcularDemanda(carros: { veiculo: Pick<Veiculo, 'oleo'>; itens: ItemAviso[] }[], catalogo: Catalogo, hoje: string, dias = 30): LinhaDemanda[] {
-  const linhas = new Map<string, LinhaDemanda & { exigido?: EspecOleo }>();
+  const linhas = new Map<string, LinhaDemanda>();
   for (const { veiculo, itens } of carros) {
     for (const item of itens) {
       if (!TROCA_PREVISTA.includes(item.servico)) continue;
@@ -207,8 +209,7 @@ export function calcularDemanda(carros: { veiculo: Pick<Veiculo, 'oleo'>; itens:
           ? recomendarOleo(linha.exigido, Math.ceil(linha.volume * 100) / 100, catalogo, hoje)[0] ?? null
           : null
         : melhorParaVarios(linha.servico, linha.carros, catalogo, hoje);
-    const { exigido: _e, ...resto } = linha;
-    resultado.push({ ...resto, volume: Math.round(linha.volume * 100) / 100, recomendacao });
+    resultado.push({ ...linha, volume: Math.round(linha.volume * 100) / 100, recomendacao });
   }
   return resultado.sort((a, b) => b.carros - a.carros || a.titulo.localeCompare(b.titulo, 'pt-BR'));
 }

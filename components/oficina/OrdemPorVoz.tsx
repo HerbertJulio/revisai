@@ -21,6 +21,7 @@ import { juntarRelato, MAX_RELATO, SEM_FALA } from '@/lib/agente/relato';
 import { dataLocal, formatarData } from '@/lib/datas';
 import { formatarPlaca, lerNumero, normalizarPlaca } from '@/lib/formatos';
 import { useHoje } from '@/lib/ganchos';
+import { servico as servicoInfo } from '@/lib/manutencao';
 import { apagarMidia, guardarMidia } from '@/lib/midia';
 import { PRO } from '@/lib/plano';
 import { useOficina } from '@/lib/store';
@@ -527,7 +528,7 @@ export function OrdemPorVoz() {
     const midias: MidiaDaOrdem[] = [];
     for (const c of clipes) if (await guardarMidia(c.id, c.blob)) midias.push({ id: c.id, tipo: 'audio', mime: c.blob.type });
     for (const f of fotos) if (await guardarMidia(f.id, f.arquivo)) midias.push({ id: f.id, tipo: 'foto', mime: f.arquivo.type, legenda: rev.legendas[f.id] || undefined });
-    salvarOrdem({
+    const vozId = salvarOrdem({
       origem: doWhatsApp ? 'whatsapp' : 'app',
       veiculoId: alvo,
       atendimentoId,
@@ -544,6 +545,38 @@ export function OrdemPorVoz() {
       midias,
       modelo: ia.modelo
     });
+    // a ordem por voz também entra na lista de ordens de serviço, já concluída
+    if (rev.itens.length) {
+      const agora = new Date().toISOString();
+      useOficina.getState().salvarDocumento({
+        tipo: 'ordem',
+        situacao: 'concluida',
+        veiculoId: alvo,
+        km: km ?? null,
+        data: hoje,
+        linhas: rev.itens.map((i, n) => (
+          {
+            id: `${vozId}-${n}`,
+            tipo: i.produto.trim() ? ('peca' as const) : ('servico' as const),
+            servico: i.servico,
+            descricao: i.produto.trim().slice(0, 160) || servicoInfo(i.servico).nome,
+            quantidade: 1,
+            unidade: 'un' as const,
+            valorUnitario: null,
+            produto: i.produto.trim() ? { nome: i.produto.trim().slice(0, 120) } : null,
+            intervaloKm: lerNumero(i.km) || null,
+            intervaloMeses: lerNumero(i.meses) || null
+          }
+        )),
+        desconto: null,
+        diagnostico: rev.diagnostico.trim().slice(0, 800) || undefined,
+        recomendacoes: rev.recomendacoes.filter((r) => r.texto.trim()),
+        relato: relato.trim() || undefined,
+        atendimentoId: atendimentoId ?? undefined,
+        vozId,
+        concluidoEm: agora
+      });
+    }
     if (doWhatsApp) {
       if (aparelhoId) void encerrarRascunhoDoWhatsApp(aparelhoId, doWhatsApp, 'confirmada').catch(() => {});
     } else await encerrarSessao(sessaoId.current);
@@ -665,7 +698,7 @@ export function OrdemPorVoz() {
               setTrabalho(null);
               setEscrevendo(true);
             }}
-            linkManual={veiculoId ? `/oficina/registrar?carro=${veiculoId}` : '/oficina/registrar'}
+            linkManual={veiculoId ? `/oficina/nova?tipo=ordem&carro=${veiculoId}` : '/oficina/nova?tipo=ordem'}
           />
         ) : escrevendo ? (
           <div className="flex w-full flex-col gap-3">

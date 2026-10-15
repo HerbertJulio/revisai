@@ -102,6 +102,12 @@ export interface Preferencias {
   tema: 'auto' | 'claro' | 'escuro';
   /** Mandar a previsão de compras (sem dados dos clientes) para os fornecedores da região. */
   compartilharDemanda: boolean;
+  /** Quanto a oficina põe em cima do custo da peça no orçamento (%). */
+  margemPecas: number;
+  /** Validade padrão do orçamento, em dias (o Código de Defesa do Consumidor fala em 10). */
+  validadeOrcamento: number;
+  /** O passo a passo fala as perguntas em voz alta. */
+  vozGuia: boolean;
 }
 
 export interface Cliente {
@@ -153,6 +159,8 @@ export interface ProdutoUsado {
   referenciaId?: number;
   /** Produto cadastrado pela própria oficina. */
   proprioId?: string;
+  /** Saiu do estoque da oficina. */
+  estoqueId?: string;
 }
 
 export interface ItemServico {
@@ -195,9 +203,150 @@ export interface ItemCarrinho {
   quantidade: number;
 }
 
+export interface ItemPedidoEnviado {
+  produtoId: number;
+  nome: string;
+  quantidade: number;
+  precoUnitario: number;
+  fornecedorId?: number;
+  fornecedor?: string;
+  /** Chave para achar o mesmo produto em outras lojas (lib/precos). */
+  chave?: string;
+  /** Preço por litro (óleo) ou por unidade, para comparar embalagens diferentes. */
+  precoComparavel?: number;
+}
+
 export interface PedidoEnviado {
   codigo: string;
   quando: string;
-  itens: { produtoId: number; nome: string; quantidade: number; precoUnitario: number }[];
+  itens: ItemPedidoEnviado[];
   total: number;
+  /** Já deu entrada no estoque. */
+  recebidoEm?: string;
+}
+
+// ---------------------------------------------------------------- estoque
+
+/** 'L' para óleo e fluidos contados em litros; 'un' para peças. */
+export type UnidadeEstoque = 'un' | 'L';
+
+/** Peça ou fluido que a oficina tem guardado. */
+export interface ItemEstoque {
+  id: Id;
+  nome: string;
+  marca?: string;
+  categoria: Categoria;
+  especificacao?: EspecProduto;
+  unidade: UnidadeEstoque;
+  quantidade: number;
+  /** Abaixo disso, o app avisa para comprar. */
+  minimo: number;
+  /** Quanto a oficina pagou por unidade (ou litro) na última entrada. */
+  custo: number | null;
+  /** Quanto cobra do cliente por unidade (ou litro). */
+  preco: number | null;
+  /** Produto da loja do Revisaí para comprar de novo (dá a foto e o preço). */
+  produtoLojaId?: number;
+  referenciaId?: number;
+  proprioId?: Id;
+  imagemUrl?: string | null;
+  /** Código de barras ou código do fabricante. */
+  codigo?: string;
+  criadoEm: string;
+  atualizadoEm: string;
+}
+
+export type TipoMovimento = 'entrada' | 'saida' | 'ajuste';
+
+export interface MovimentoEstoque {
+  id: Id;
+  itemId: Id;
+  quando: string;
+  tipo: TipoMovimento;
+  /** Positivo na entrada, negativo na saída; no ajuste, a diferença para a contagem. */
+  quantidade: number;
+  /** Na entrada: quanto pagou por unidade (ou litro). */
+  custoUnitario?: number | null;
+  /** De quem comprou (na entrada). */
+  fornecedor?: string;
+  origem?: { tipo: 'ordem' | 'pedido' | 'manual' | 'contagem'; id?: string; rotulo?: string };
+  observacao?: string;
+}
+
+// ---------------------------------------------------------------- orçamentos e ordens de serviço
+
+export type TipoDocumento = 'orcamento' | 'ordem';
+
+/** Frio: o cliente não paga pela vistoria. Pago: a vistoria é cobrada (e pode ser abatida). */
+export type ModalidadeOrcamento = 'frio' | 'pago';
+
+/**
+ * Orçamento: rascunho, enviado, aprovado ou recusado (o vencido sai da data).
+ * Ordem de serviço: aberta, concluída ou cancelada.
+ */
+export type SituacaoDocumento = 'rascunho' | 'enviado' | 'aprovado' | 'recusado' | 'aberta' | 'concluida' | 'cancelada';
+
+export type TipoLinha = 'peca' | 'servico' | 'outro';
+export type UnidadeLinha = 'un' | 'L' | 'h';
+
+export interface LinhaDocumento {
+  id: Id;
+  tipo: TipoLinha;
+  /** Serviço de manutenção a que a linha pertence (é o que vira aviso). */
+  servico?: ServicoId;
+  descricao: string;
+  quantidade: number;
+  unidade: UnidadeLinha;
+  /** Preço por unidade; null quando ainda não tem preço. */
+  valorUnitario: number | null;
+  /** A peça sai deste item do estoque. */
+  estoqueId?: Id;
+  /** O produto, para o aviso da próxima troca. */
+  produto?: ProdutoUsado | null;
+  intervaloKm?: number | null;
+  intervaloMeses?: number | null;
+  /** O cliente não aprovou este item. */
+  recusada?: boolean;
+}
+
+export type UrgenciaRecomendacao = 'agora' | 'proxima_revisao' | 'observar';
+
+export interface Documento {
+  id: Id;
+  /** Número sequencial da oficina (orçamentos e ordens contam separado). */
+  numero: number;
+  tipo: TipoDocumento;
+  situacao: SituacaoDocumento;
+  veiculoId: Id | null;
+  /** null quando o mecânico não sabe a quilometragem. */
+  km: number | null;
+  data: string;
+  linhas: LinhaDocumento[];
+  desconto: number | null;
+  modalidade?: ModalidadeOrcamento;
+  /** Orçamento pago: quanto custa a vistoria e se ela sai do total quando o cliente aprova. */
+  vistoria?: { valor: number; abater: boolean } | null;
+  validadeDias?: number;
+  /** "2 dias úteis". */
+  prazo?: string;
+  /** "Pix ou cartão em até 3 vezes". */
+  pagamento?: string;
+  diagnostico?: string;
+  observacao?: string;
+  recomendacoes?: { texto: string; urgencia: UrgenciaRecomendacao }[];
+  /** O que o mecânico falou, já em texto. */
+  relato?: string;
+  enviadoEm?: string;
+  respondidoEm?: string;
+  concluidoEm?: string;
+  /** A ordem veio deste orçamento. */
+  orcamentoId?: Id;
+  /** O orçamento virou esta ordem. */
+  ordemId?: Id;
+  /** A ordem concluída registrou este serviço (é o que gera os avisos). */
+  atendimentoId?: Id;
+  /** A ordem por voz (áudio e fotos) de onde veio. */
+  vozId?: Id;
+  criadoEm: string;
+  atualizadoEm: string;
 }

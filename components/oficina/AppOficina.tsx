@@ -1,6 +1,6 @@
 'use client';
 
-import { Bell, Mic, Plus, Settings, Store, Users } from 'lucide-react';
+import { Bell, ClipboardList, Mic, Package, Plus, Settings, Store, Users } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, type ReactNode } from 'react';
@@ -15,12 +15,14 @@ import { Inicio } from './Inicio';
 import { LinhaDoPlano, ProvedorDoPro } from './plano';
 
 const ITENS = [
-  { href: '/oficina', rotulo: 'Avisos', Icone: Bell },
-  { href: '/oficina/clientes', rotulo: 'Clientes', Icone: Users },
-  { href: '/oficina/registrar', rotulo: 'Registrar', Icone: Plus, destaque: true },
-  { href: '/oficina/ordem', rotulo: 'Ordem por voz', Icone: Mic, soNaLateral: true },
-  { href: '/oficina/loja', rotulo: 'Loja', Icone: Store },
-  { href: '/oficina/ajustes', rotulo: 'Ajustes', Icone: Settings }
+  { href: '/oficina', rotulo: 'Avisos', lateral: 'Avisos', Icone: Bell },
+  { href: '/oficina/ordens', rotulo: 'Ordens', lateral: 'Orçamentos e OS', Icone: ClipboardList },
+  { href: '/oficina/nova', rotulo: 'Nova', lateral: 'Nova', Icone: Plus, destaque: true },
+  { href: '/oficina/estoque', rotulo: 'Estoque', lateral: 'Estoque', Icone: Package },
+  { href: '/oficina/loja', rotulo: 'Loja', lateral: 'Loja', Icone: Store },
+  { href: '/oficina/clientes', rotulo: 'Clientes', lateral: 'Clientes', Icone: Users, soNaLateral: true },
+  { href: '/oficina/ordem', rotulo: 'Ordem por voz', lateral: 'Ordem por voz', Icone: Mic, soNaLateral: true },
+  { href: '/oficina/ajustes', rotulo: 'Ajustes', lateral: 'Ajustes', Icone: Settings, soNaLateral: true }
 ] as const;
 
 export function AppOficina({ children }: { children: ReactNode }) {
@@ -51,13 +53,16 @@ export function AppOficina({ children }: { children: ReactNode }) {
 }
 
 function ativo(caminho: string, href: string) {
-  return href === '/oficina' ? caminho === '/oficina' : caminho.startsWith(href);
+  if (href === '/oficina') return caminho === '/oficina';
+  // /oficina/ordem (voz) e /oficina/ordens são telas diferentes
+  return caminho === href || caminho.startsWith(`${href}/`);
 }
 
 function Moldura({ children }: { children: ReactNode }) {
   const caminho = usePathname();
   const nomeOficina = useOficina((s) => s.oficina.nome);
   const carrinho = useOficina((s) => s.carrinho.reduce((n, c) => n + c.quantidade, 0));
+  const ordensAbertas = useOficina((s) => Object.values(s.documentos).filter((d) => (d.tipo === 'ordem' && d.situacao === 'aberta') || (d.tipo === 'orcamento' && d.situacao === 'enviado')).length);
   const { resumo, hoje } = useGrupos();
   const paraAvisar = resumo.avisar;
 
@@ -77,8 +82,20 @@ function Moldura({ children }: { children: ReactNode }) {
           <Logo />
         </Link>
         <nav className="mt-8 flex flex-col gap-1" aria-label="Seções">
-          {ITENS.map(({ href, rotulo, Icone }) => {
+          {ITENS.map(({ href, lateral, Icone, ...resto }) => {
             const sel = ativo(caminho, href);
+            if ('destaque' in resto)
+              return (
+                <Link key={href} href={href} aria-current={sel ? 'page' : undefined} className="my-2 flex items-center gap-3 rounded-[12px] bg-oleo px-3 py-2.5 text-[#1b1f22] shadow-etiqueta hover:brightness-[0.97]">
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-[#1b1f22]/10">
+                    <Icone size={20} aria-hidden="true" />
+                  </span>
+                  <span className="flex flex-col leading-tight">
+                    <span className="font-bold">{lateral}</span>
+                    <span className="text-[13px] font-semibold opacity-75">OS ou orçamento</span>
+                  </span>
+                </Link>
+              );
             return (
               <Link
                 key={href}
@@ -87,8 +104,9 @@ function Moldura({ children }: { children: ReactNode }) {
                 className={`flex h-11 items-center gap-3 rounded-[10px] px-3 font-semibold transition-colors ${sel ? 'bg-tinta text-papel' : 'text-tinta-2 hover:bg-papel-2 hover:text-tinta'}`}
               >
                 <Icone size={19} aria-hidden="true" />
-                <span className="flex-1">{rotulo === 'Registrar' ? 'Registrar serviço' : rotulo}</span>
+                <span className="flex-1">{lateral}</span>
                 {href === '/oficina' && paraAvisar > 0 ? <Contador n={paraAvisar} invertido={sel} /> : null}
+                {href === '/oficina/ordens' && ordensAbertas > 0 ? <Contador n={ordensAbertas} invertido={sel} neutro /> : null}
                 {href === '/oficina/loja' && carrinho > 0 ? <Contador n={carrinho} invertido={sel} neutro /> : null}
               </Link>
             );
@@ -105,13 +123,19 @@ function Moldura({ children }: { children: ReactNode }) {
         <Link href="/oficina" aria-label="Revisaí, avisos">
           <Logo tamanho={26} />
         </Link>
-        <div className="flex min-w-0 items-center gap-2">
+        <div className="flex min-w-0 items-center gap-1.5">
           <span className="truncate text-[14px] font-semibold text-tinta-2">{nomeOficina}</span>
-          {caminho.startsWith('/oficina/ordem') ? null : (
+          {caminho.startsWith('/oficina/ordem') && !caminho.startsWith('/oficina/ordens') ? null : (
             <Link href="/oficina/ordem" aria-label="Ordem por voz" className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-papel-2 text-tinta hover:bg-linha">
               <Mic size={19} aria-hidden="true" />
             </Link>
           )}
+          <Link href="/oficina/clientes" aria-label="Clientes" aria-current={caminho.startsWith('/oficina/clientes') ? 'page' : undefined} className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-tinta-2 hover:bg-papel-2 aria-[current=page]:bg-tinta aria-[current=page]:text-papel">
+            <Users size={19} aria-hidden="true" />
+          </Link>
+          <Link href="/oficina/ajustes" aria-label="Ajustes" aria-current={caminho.startsWith('/oficina/ajustes') ? 'page' : undefined} className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-tinta-2 hover:bg-papel-2 aria-[current=page]:bg-tinta aria-[current=page]:text-papel">
+            <Settings size={19} aria-hidden="true" />
+          </Link>
         </div>
       </header>
 
@@ -149,6 +173,7 @@ function Moldura({ children }: { children: ReactNode }) {
                 <span className="relative">
                   <Icone size={22} aria-hidden="true" strokeWidth={sel ? 2.4 : 2} />
                   {href === '/oficina' && paraAvisar > 0 ? <Contador n={paraAvisar} flutuante /> : null}
+                  {href === '/oficina/ordens' && ordensAbertas > 0 ? <Contador n={ordensAbertas} flutuante neutro /> : null}
                   {href === '/oficina/loja' && carrinho > 0 ? <Contador n={carrinho} flutuante neutro /> : null}
                 </span>
               )}

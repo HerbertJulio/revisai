@@ -8,6 +8,7 @@ import { enviarPedido } from '@/app/acoes';
 import { Folha } from '@/components/Folha';
 import { Botao, Campo, classeArea, classeEntrada } from '@/components/ui';
 import { precoNaQuantidade } from '@/lib/catalogo';
+import { chaveDoProduto, precoComparavel } from '@/lib/precos';
 import { formatarMoeda, formatarTelefone, normalizarTelefone } from '@/lib/formatos';
 import { useHoje } from '@/lib/ganchos';
 import { useOficina } from '@/lib/store';
@@ -66,7 +67,16 @@ export function Carrinho({ aberto, aoFechar }: { aberto: boolean; aoFechar: () =
       registrarPedido({
         codigo: r.codigo,
         quando: new Date().toISOString(),
-        itens: linhas.map((l) => ({ produtoId: l.p.id, nome: l.p.nome, quantidade: l.quantidade, precoUnitario: l.preco })),
+        itens: linhas.map((l) => ({
+          produtoId: l.p.id,
+          nome: l.p.nome,
+          quantidade: l.quantidade,
+          precoUnitario: l.preco,
+          fornecedorId: l.p.fornecedorId,
+          fornecedor: catalogo.fornecedores.find((f) => f.id === l.p.fornecedorId)?.nome,
+          chave: chaveDoProduto(l.p),
+          precoComparavel: precoComparavel(l.p, l.preco)
+        })),
         total: r.total ?? Math.round(total * 100) / 100
       });
       setObs('');

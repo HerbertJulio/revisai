@@ -69,8 +69,8 @@ export function PainelAvisos() {
           <p className="text-[15px] text-tinta-3 first-letter:uppercase">{dataPorExtenso(hoje)}</p>
           <h1 className="largo mt-1 text-[30px] sm:text-[34px]">Avisos</h1>
         </div>
-        <Link href="/oficina/registrar" className={classeBotao('primario', 'normal', 'max-lg:hidden')}>
-          <Plus size={18} /> Registrar serviço
+        <Link href="/oficina/nova" className={classeBotao('primario', 'normal', 'max-lg:hidden')}>
+          <Plus size={18} /> Nova OS ou orçamento
         </Link>
       </header>
 
@@ -90,8 +90,8 @@ export function PainelAvisos() {
         <Vazio
           titulo="Registre o primeiro serviço"
           acao={
-            <Link href="/oficina/registrar" className={classeBotao('primario')}>
-              <Plus size={18} /> Registrar serviço
+            <Link href="/oficina/nova?tipo=ordem" className={classeBotao('primario')}>
+              <Plus size={18} /> Fazer a primeira OS
             </Link>
           }
         >
@@ -281,7 +281,7 @@ function CartaoGrupo({ grupo, hoje, aoContatar }: { grupo: GrupoAviso; hoje: str
     return null;
   }, [itens, veiculo, catalogo, hoje]);
 
-  const registrar = `/oficina/registrar?carro=${veiculo.id}&servicos=${itens.map((i) => i.servico).join(',')}`;
+  const registrar = `/oficina/nova?tipo=ordem&carro=${veiculo.id}&servicos=${itens.map((i) => i.servico).join(',')}`;
   const carimbo =
     etapa === 'aguardando' && ultimo
       ? { texto: 'Avisado', data: formatarDataCurta(dataLocal(ultimo.quando)) }

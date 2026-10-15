@@ -10,6 +10,7 @@ import { descontoDeVitrine, precoDeVitrine } from '@/lib/vitrine';
 import { useCatalogo } from '../catalogo';
 import { FotoProduto } from '../FotoProduto';
 import { BotaoPor, especificacoes, legendaDoPreco, minuscula, nomeComMarca, quantidadeInicial, SeloDestaque, SeloPatrocinado } from './comum';
+import { SeloPrecoPago } from './precos';
 
 interface PropsProduto {
   produto: Produto;
@@ -89,6 +90,7 @@ export function CartaoGrade({ produto: p, fornecedor, uf, hoje, aoPor, aoAbrir }
             {v.cheio ? <p className="num text-[12.5px] text-tinta-3 line-through">{formatarMoeda(v.cheio)}</p> : null}
             <p className="largo num text-[18px] leading-none font-extrabold sm:text-[20px]">{formatarMoeda(v.preco)}</p>
             <p className="mt-1 text-[12px] text-tinta-3">{v.legenda}</p>
+            <SeloPrecoPago produto={p} preco={v.preco} />
           </div>
           <BotaoPor produto={p} quantidade={v.quantidade} aoPor={aoPor} pequeno />
         </div>
@@ -132,6 +134,7 @@ export function LinhaLista({ produto: p, fornecedor, uf, hoje, aoPor, aoAbrir }:
           {v.cheio ? <p className="num text-[12px] text-tinta-3 line-through">{formatarMoeda(v.cheio)}</p> : null}
           <p className="largo num text-[17px] leading-none font-extrabold sm:text-[19px]">{formatarMoeda(v.preco)}</p>
           <p className="mt-0.5 hidden text-[12px] text-tinta-3 sm:block">{v.legenda}</p>
+          <SeloPrecoPago produto={p} preco={v.preco} />
         </div>
         <div className="flex sm:w-[96px] sm:justify-end">
           <BotaoPor produto={p} quantidade={v.quantidade} aoPor={aoPor} pequeno />

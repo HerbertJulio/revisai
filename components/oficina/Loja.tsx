@@ -1,19 +1,20 @@
 'use client';
 
-import { PackageSearch, Search, SlidersHorizontal, ShoppingCart, Truck, X } from 'lucide-react';
+import { Package, PackageCheck, PackageSearch, Search, SlidersHorizontal, ShoppingCart, Truck, X } from 'lucide-react';
 import Link from 'next/link';
 import { Fragment, useMemo, useRef, useState } from 'react';
 import { TrocaExibicao, useExibicao, type Exibicao } from '@/components/exibicao';
 import { Folha } from '@/components/Folha';
 import { IconeServico } from '@/components/icones';
 import { useToast } from '@/components/Toasts';
-import { Botao, Chip, Secao, Vazio } from '@/components/ui';
+import { Botao, Chip, Secao, Vazio, classeBotao } from '@/components/ui';
 import { itensParaComprar } from '@/lib/avisos';
 import { desconto, ordenarVitrine, patrocinado, precoNaQuantidade, quantidadeComUnidade, type Produto } from '@/lib/catalogo';
 import { dataLocal, formatarData } from '@/lib/datas';
 import { formatarMoeda, formatarNumero } from '@/lib/formatos';
 import { useDadosAvisos, useHoje } from '@/lib/ganchos';
-import { calcularDemanda, type LinhaDemanda } from '@/lib/recomendacao';
+import { compraSugerida, preverEstoque, textoQuantidade } from '@/lib/estoque';
+import { calcularDemanda, type LinhaDemanda, type Recomendacao } from '@/lib/recomendacao';
 import { useOficina } from '@/lib/store';
 import {
   calcularFacetas,
@@ -36,6 +37,7 @@ import { BotaoPor, nomeComMarca, SeloPatrocinado } from './loja/comum';
 import { DetalheProduto } from './loja/Detalhe';
 import { PainelFiltros } from './loja/Filtros';
 import { CartaoGrade, CartaoLojaDestaque, LinhaLista } from './loja/Produtos';
+import { ProvedorDePrecos } from './loja/precos';
 import { Vitrine } from './loja/Vitrine';
 
 const POR_PAGINA = 24;
@@ -45,6 +47,14 @@ const DEMANDA_VISIVEL = 4;
 const CHAVE_EXIBICAO = 'revisai:loja:exibicao';
 
 export function Loja() {
+  return (
+    <ProvedorDePrecos>
+      <ConteudoDaLoja />
+    </ProvedorDePrecos>
+  );
+}
+
+function ConteudoDaLoja() {
   const { catalogo, carregando, semConexao } = useCatalogo();
   const hoje = useHoje();
   const uf = useOficina((s) => s.oficina.uf);
@@ -101,10 +111,15 @@ export function Loja() {
           <h1 className="largo text-[30px] sm:text-[34px]">Loja</h1>
           <p className="mt-1 max-w-[60ch] text-tinta-2">Peças e óleo para os serviços que estão vencendo, com o preço das promoções dos fornecedores.</p>
         </div>
-        <Botao variante={itensCarrinho ? 'escuro' : 'secundario'} onClick={() => setAberto(true)}>
-          <ShoppingCart size={18} />
-          {itensCarrinho ? `Pedido de ${formatarMoeda(totalCarrinho)}` : 'Pedido vazio'}
-        </Botao>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/oficina/estoque" className={classeBotao('secundario')}>
+            <Package size={18} aria-hidden="true" /> Estoque
+          </Link>
+          <Botao variante={itensCarrinho ? 'escuro' : 'secundario'} onClick={() => setAberto(true)}>
+            <ShoppingCart size={18} />
+            {itensCarrinho ? `Pedido de ${formatarMoeda(totalCarrinho)}` : 'Pedido vazio'}
+          </Botao>
+        </div>
       </header>
 
       {demonstracao ? (
@@ -254,6 +269,13 @@ export function Loja() {
                   {p.itens.length} {p.itens.length === 1 ? 'item' : 'itens'}
                 </span>
                 <span className="num ml-auto font-semibold">{formatarMoeda(p.total)}</span>
+                {p.recebidoEm ? (
+                  <Chip tom="ok">No estoque</Chip>
+                ) : (
+                  <Link href="/oficina/estoque" className="text-[13.5px] font-semibold text-caneta hover:underline">
+                    Chegou? Dar entrada
+                  </Link>
+                )}
               </li>
             ))}
           </ul>
@@ -357,21 +379,36 @@ function ChipCategoria({ ativo, aoClicar, children }: { ativo: boolean; aoClicar
   );
 }
 
-/** O que os carros dos clientes vão precisar nos próximos 30 dias, somado, com o produto certo. */
+/**
+ * O que os carros dos clientes vão precisar nos próximos 30 dias (e as ordens em aberto), contra o
+ * que tem no estoque: a sugestão de compra é só do que falta, com a promoção que vale.
+ */
 function ParaOsCarros({ aoPor, aoAbrir }: { aoPor: (p: Produto, q: number) => void; aoAbrir: (p: Produto) => void }) {
   const { catalogo } = useCatalogo();
   const dados = useDadosAvisos();
   const hoje = useHoje();
   const uf = useOficina((s) => s.oficina.uf);
+  const estoque = useOficina((s) => s.estoque);
+  const documentos = useOficina((s) => s.documentos);
   const [todas, setTodas] = useState(false);
   const demanda = useMemo(() => calcularDemanda(itensParaComprar(dados, hoje, 30), catalogo, hoje, 30), [dados, catalogo, hoje]);
+  const previsao = useMemo(() => preverEstoque(demanda, Object.values(documentos), Object.values(estoque), hoje), [demanda, documentos, estoque, hoje]);
+  const temEstoque = Object.keys(estoque).length > 0;
   const fornecedores = useMemo(() => new Map(catalogo.fornecedores.map((f) => [f.id, f])), [catalogo]);
-  const comProduto = demanda.filter((l) => l.recomendacao || l.semEspecificacao);
-  const semProduto = demanda.filter((l) => !l.recomendacao && !l.semEspecificacao);
-  const visiveis = todas ? comProduto : comProduto.slice(0, DEMANDA_VISIVEL);
+  const linhas = useMemo(
+    () =>
+      previsao
+        .filter((l) => !l.semEspecificacao)
+        .map((l) => ({ l, r: compraSugerida(l, estoque, catalogo, hoje) }))
+        .filter((x) => x.r || x.l.faltam <= 0),
+    [previsao, estoque, catalogo, hoje]
+  );
+  const semOleo = previsao.filter((l) => l.semEspecificacao);
+  const semProduto = demanda.filter((l) => !l.recomendacao && !l.semEspecificacao && !linhas.some((x) => x.l.chave === l.chave));
+  const visiveis = todas ? linhas : linhas.slice(0, DEMANDA_VISIVEL);
 
   /** Um produto patrocinado da mesma categoria, para mostrar ao lado da sugestão mais barata. */
-  function patrocinadoParecido(r: NonNullable<LinhaDemanda['recomendacao']>): Produto | undefined {
+  function patrocinadoParecido(r: Recomendacao): Produto | undefined {
     const viscosidade = r.produto.especificacao.viscosidade;
     return catalogo.produtos.find(
       (p) =>
@@ -383,14 +420,22 @@ function ParaOsCarros({ aoPor, aoAbrir }: { aoPor: (p: Produto, q: number) => vo
   }
 
   return (
-    <Secao titulo="Para os próximos 30 dias" descricao="O que os carros dos seus clientes vão precisar, somado. Comprando junto, entra na promoção por quantidade.">
-      {demanda.length === 0 ? (
+    <Secao
+      titulo="Para os próximos 30 dias"
+      descricao={temEstoque ? 'O que os carros dos seus clientes e as ordens em aberto vão usar, menos o que já tem no estoque.' : 'O que os carros dos seus clientes vão precisar, somado. Comprando junto, entra na promoção por quantidade.'}
+      acao={
+        <Link href="/oficina/estoque" className="shrink-0 text-[14.5px] font-semibold text-caneta hover:underline">
+          {temEstoque ? 'Ver o estoque' : 'Cadastrar o estoque'}
+        </Link>
+      }
+    >
+      {previsao.length === 0 ? (
         <Vazio titulo="Nenhuma troca prevista para os próximos 30 dias">Quando os avisos chegarem perto, a soma do que comprar aparece aqui.</Vazio>
       ) : (
         <ul className="divide-y divide-linha overflow-hidden rounded-2xl bg-papel ring-1 ring-linha">
-          {visiveis.map((l) => {
-            const r = l.recomendacao;
+          {visiveis.map(({ l, r }) => {
             const alternativa = r ? patrocinadoParecido(r) : undefined;
+            const cobre = l.faltam <= 0;
             return (
               <li key={l.chave} className="flex flex-col gap-3 px-4 py-4 sm:px-5">
                 <div className="flex items-start gap-x-4 sm:items-center">
@@ -399,24 +444,30 @@ function ParaOsCarros({ aoPor, aoAbrir }: { aoPor: (p: Produto, q: number) => vo
                       <FotoProduto produto={r.produto} tamanhos="56px" className="h-14 w-14" />
                     </button>
                   ) : (
-                    <span className="grid h-14 w-14 shrink-0 place-items-center rounded-xl bg-papel-2 text-tinta-2">
-                      <IconeServico servico={l.servico} />
+                    <span className="grid h-14 w-14 shrink-0 place-items-center rounded-xl bg-ok-claro text-ok">
+                      <PackageCheck size={22} aria-hidden="true" />
                     </span>
                   )}
                   <div className="min-w-0 flex-1">
                     <p className="font-bold">{l.titulo}</p>
                     <p className="text-[14px] text-tinta-2">
-                      {l.carros} {l.carros === 1 ? 'carro' : 'carros'}
-                      {l.unidadeVolume === 'L' ? `, uns ${formatarNumero(l.volume, 2)} litros` : ''}
+                      {[l.carros ? `${l.carros} ${l.carros === 1 ? 'carro' : 'carros'}` : '', l.ordens ? `${l.ordens} em aberto` : ''].filter(Boolean).join(' e ')}, precisa de {textoQuantidade(l.precisa, l.unidade)}
+                      {temEstoque ? (
+                        <>
+                          , tem {textoQuantidade(l.tem, l.unidade)}
+                          {cobre ? '' : ', '}
+                          {cobre ? null : <strong className="text-atraso">faltam {textoQuantidade(l.faltam, l.unidade)}</strong>}
+                        </>
+                      ) : null}
                     </p>
                     {r ? (
                       <p className="mt-1 text-[14px]">
-                        {quantidadeComUnidade(r.produto, r.quantidade)} de <span className="font-semibold">{nomeComMarca(r.produto)}</span> por{' '}
-                        <strong className="num">{formatarMoeda(r.total)}</strong>
+                        {quantidadeComUnidade(r.produto, r.quantidade)} de <span className="font-semibold">{nomeComMarca(r.produto)}</span>
+                        {fornecedores.get(r.produto.fornecedorId) ? <span className="text-tinta-3">, {fornecedores.get(r.produto.fornecedorId)?.nome}</span> : null} por <strong className="num">{formatarMoeda(r.total)}</strong>
                         {r.promocao ? <Chip tom="oleo" className="ml-2 align-middle">-{desconto(r.produto.preco, r.promocao.precoPromocional)}%</Chip> : null}
                       </p>
                     ) : (
-                      <p className="mt-1 text-[14px] text-tinta-3">Cadastre o óleo do manual desses carros para o app escolher o produto.</p>
+                      <p className="mt-1 text-[14px] font-semibold text-ok">O estoque cobre.</p>
                     )}
                     {r ? (
                       <div className="mt-2.5 sm:hidden">
@@ -447,11 +498,21 @@ function ParaOsCarros({ aoPor, aoAbrir }: { aoPor: (p: Produto, q: number) => vo
               </li>
             );
           })}
-          {comProduto.length > DEMANDA_VISIVEL ? (
+          {linhas.length > DEMANDA_VISIVEL ? (
             <li>
               <button type="button" onClick={() => setTodas(!todas)} className="w-full px-4 py-3 text-left text-[14.5px] font-semibold text-caneta hover:bg-papel-2 sm:px-5">
-                {todas ? 'Mostrar menos' : `Mostrar as outras ${comProduto.length - DEMANDA_VISIVEL}`}
+                {todas ? 'Mostrar menos' : `Mostrar as outras ${linhas.length - DEMANDA_VISIVEL}`}
               </button>
+            </li>
+          ) : null}
+          {semOleo.length ? (
+            <li className="flex items-start gap-4 px-4 py-3.5 text-[14px] sm:px-5">
+              <span className="grid h-10 w-14 shrink-0 place-items-center text-tinta-3">
+                <IconeServico servico="troca_oleo" />
+              </span>
+              <p className="min-w-0 flex-1 text-tinta-2">
+                {semOleo.reduce((n, l) => n + l.carros, 0)} {semOleo.reduce((n, l) => n + l.carros, 0) === 1 ? 'carro' : 'carros'} sem o óleo do manual cadastrado. Cadastre na página do carro para o app escolher o produto.
+              </p>
             </li>
           ) : null}
           <SemProdutoNaLoja linhas={semProduto} />

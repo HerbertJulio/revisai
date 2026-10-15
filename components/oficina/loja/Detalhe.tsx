@@ -17,13 +17,15 @@ import { useCatalogo } from '../catalogo';
 import { FotoProduto } from '../FotoProduto';
 import { useReferencias } from '../referencias';
 import { especificacoes, minuscula, nomeComMarca, Passo, SeloDestaque, SeloPatrocinado } from './comum';
+import { ComparaPreco } from './precos';
 
 export function DetalheProduto({
   produto: p,
   aoFechar,
   aoPor,
   aoAbrir,
-  uf
+  uf,
+  acaoPreco
 }: {
   produto: Produto | null;
   aoFechar: () => void;
@@ -31,6 +33,8 @@ export function DetalheProduto({
   /** Troca a ficha por outro produto (as outras opções no fim da ficha). */
   aoAbrir: (p: Produto) => void;
   uf: string;
+  /** O botão de pedir preço menor às lojas, embaixo da comparação. */
+  acaoPreco?: (p: Produto, quantidade: number) => React.ReactNode;
 }) {
   const { catalogo } = useCatalogo();
   const { referencias } = useReferencias();
@@ -147,6 +151,8 @@ export function DetalheProduto({
             </ul>
           </div>
         ) : null}
+
+        <ComparaPreco produto={p} quantidade={qtd} hoje={hoje} aoAbrir={aoAbrir} acao={acaoPreco?.(p, qtd)} />
 
         {prazo ? (
           <div className="rounded-xl bg-papel-2 px-4 py-3 text-[14px]">

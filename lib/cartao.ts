@@ -5,7 +5,7 @@ import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from
 import { z } from 'zod';
 import type { ItemAviso } from './avisos';
 import { servicoExiste } from './manutencao';
-import { normalizarTelefone } from './formatos';
+import { normalizarTelefone, primeiroNome } from './formatos';
 import type { Cliente, Oficina, ServicoId, Veiculo } from './tipos';
 
 const esquema = z.object({
@@ -45,7 +45,7 @@ export function montarCartao(oficina: Oficina, cliente: Cliente | undefined, vei
       c: corta(local, 80) || undefined,
       e: corta(oficina.endereco, 160) || undefined
     },
-    c: corta((cliente?.nome ?? '').trim().split(/\s+/)[0], 60),
+    c: corta(primeiroNome(cliente?.nome ?? ''), 60),
     car: { m: corta([veiculo.marca, veiculo.modelo].filter(Boolean).join(' '), 80) || 'Carro', p: corta(veiculo.placa, 8), a: ano },
     i: itens.slice(0, 30).map((item) => ({
       s: item.servico,

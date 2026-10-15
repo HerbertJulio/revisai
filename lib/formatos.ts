@@ -70,8 +70,13 @@ export function lerNumero(texto: string | number | null | undefined): number | n
   return Number.isFinite(n) ? n : null;
 }
 
+/** O nome que o passo a passo usa quando o mecânico não sabe quem é o dono. */
+export const SEM_NOME = 'Cliente sem nome';
+
 export function primeiroNome(nome: string): string {
-  return (nome ?? '').trim().split(/\s+/)[0] ?? '';
+  const n = (nome ?? '').trim();
+  if (!n || n === SEM_NOME) return '';
+  return n.split(/\s+/)[0] ?? '';
 }
 
 export function plural(n: number, um: string, varios: string): string {

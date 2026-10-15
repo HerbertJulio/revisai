@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, Copy, Gauge, MessageCircle, Mic, Pencil, Plus, Printer, Send, Trash2 } from 'lucide-react';
+import { ArrowLeft, Copy, FileText, Gauge, MessageCircle, Mic, Pencil, Plus, Printer, Send, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMemo, useState } from 'react';
@@ -22,6 +22,7 @@ import { useOficina } from '@/lib/store';
 import type { ResultadoContato } from '@/lib/tipos';
 import { linkWhatsApp } from '@/lib/whatsapp';
 import { useCartaoDoCarro } from './acoes';
+import { DocumentosDoCarro } from './Ordens';
 import { OrdensDoCarro } from './OrdensDoCarro';
 import { SaudeDoCarro } from './SaudeDoCarro';
 import {
@@ -98,7 +99,7 @@ export function Carro() {
 
   const { itens, rodagem, kmHoje } = calculo;
   const devidos = itens.filter((i) => i.situacao !== 'futuro');
-  const registrar = `/oficina/registrar?carro=${veiculo.id}${devidos.length ? `&servicos=${devidos.map((i) => i.servico).join(',')}` : ''}`;
+  const registrar = `/oficina/nova?tipo=ordem&carro=${veiculo.id}${devidos.length ? `&servicos=${devidos.map((i) => i.servico).join(',')}` : ''}`;
   const zap = cliente ? linkWhatsApp(cliente.telefone, `Oi, ${cliente.nome.split(' ')[0]}!`) : null;
   // contatos agrupados por momento (um aviso cobre vários itens)
   const contatosPorMomento = [...new Map(contatos.map((c) => [`${c.quando}|${c.resultado}`, c])).values()];
@@ -134,7 +135,10 @@ export function Carro() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Link href={registrar} className={classeBotao('primario')}>
-            <Plus size={18} /> Registrar serviço
+            <Plus size={18} /> Nova OS
+          </Link>
+          <Link href={`/oficina/nova?tipo=orcamento&carro=${veiculo.id}`} className={classeBotao('secundario')}>
+            <FileText size={17} /> Orçamento
           </Link>
           {zap ? (
             <a href={zap} target="_blank" rel="noopener noreferrer" className={classeBotao('secundario')}>
@@ -175,13 +179,15 @@ export function Carro() {
 
       <Secao titulo="Saúde do carro" descricao={itens.length ? 'Quanto resta de cada item até a próxima troca, pela data ou pela quilometragem, o que vier primeiro.' : undefined}>
         {itens.length === 0 && recomendacoes.length === 0 ? (
-          <Vazio titulo="Nenhum serviço registrado neste carro" acao={<Link href={registrar} className={classeBotao('primario')}>Registrar o primeiro</Link>} />
+          <Vazio titulo="Nenhum serviço registrado neste carro" acao={<Link href={registrar} className={classeBotao('primario')}>Fazer a primeira OS</Link>} />
         ) : (
           <SaudeDoCarro itens={itens} hoje={hoje} recomendacoes={recomendacoes} />
         )}
       </Secao>
 
-      <Secao titulo="Ordens de serviço" descricao="Montadas pela IA a partir dos áudios e fotos, conferidas por você.">
+      <DocumentosDoCarro veiculoId={veiculo.id} />
+
+      <Secao titulo="Ordens por voz" descricao="Os áudios e as fotos das ordens que a IA montou, conferidas por você.">
         <OrdensDoCarro veiculoId={veiculo.id} telefone={cliente?.telefone ?? null} />
       </Secao>
 

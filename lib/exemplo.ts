@@ -5,7 +5,8 @@
 import { CATALOGO_EXEMPLO } from './catalogo-demo';
 import { somarDias, somarMeses } from './datas';
 import { REFERENCIAS_OLEO } from './oleos';
-import type { Atendimento, Cliente, Contato, ItemServico, Leitura, ProdutoUsado, ServicoId, Veiculo } from './tipos';
+import { itemDoProduto } from './estoque';
+import type { Atendimento, Cliente, Contato, Documento, ItemEstoque, ItemServico, Leitura, ProdutoUsado, ServicoId, Veiculo } from './tipos';
 
 export const PREFIXO_EXEMPLO = 'ex-';
 
@@ -101,13 +102,74 @@ export function gerarExemplo(hoje: string, agora: Date = new Date()) {
     )
   ];
 
+  // estoque: o óleo 5W-30 e o filtro abaixo do mínimo, as pastilhas zeradas
+  const doCatalogo = (id: string, produtoId: number, quantidade: number, minimo: number, preco: number | null = null): ItemEstoque => {
+    const p = CATALOGO_EXEMPLO.produtos.find((x) => x.id === produtoId)!;
+    return { ...itemDoProduto(p), id, quantidade, minimo, preco, criadoEm, atualizadoEm: criadoEm };
+  };
+  const estoque: ItemEstoque[] = [
+    doCatalogo('ex-e1', 105, 6, 10, 59.9),
+    doCatalogo('ex-e2', 102, 14, 8, 69.9),
+    doCatalogo('ex-e3', 201, 3, 5, 45),
+    doCatalogo('ex-e4', 203, 2, 2),
+    doCatalogo('ex-e5', 301, 0, 1),
+    doCatalogo('ex-e6', 303, 4, 2)
+  ];
+
+  const ontem = somarDias(hoje, -1);
+  const documentos: Documento[] = [
+    {
+      id: 'ex-d1',
+      numero: 1,
+      tipo: 'orcamento',
+      situacao: 'enviado',
+      veiculoId: 'ex-v7',
+      km: 134800,
+      data: ontem,
+      modalidade: 'pago',
+      vistoria: { valor: 80, abater: true },
+      validadeDias: 10,
+      enviadoEm: `${ontem}T15:10:00.000Z`,
+      linhas: [
+        { id: 'ex-d1-1', tipo: 'peca', servico: 'pastilhas', descricao: 'Pastilhas de freio dianteiras', quantidade: 1, unidade: 'un', valorUnitario: 189.9, estoqueId: 'ex-e5', produto: produto(301) },
+        { id: 'ex-d1-2', tipo: 'peca', servico: 'discos', descricao: 'Discos de freio dianteiros ventilados (par)', quantidade: 1, unidade: 'un', valorUnitario: 429.9, produto: produto(302) },
+        { id: 'ex-d1-3', tipo: 'peca', servico: 'fluido_freio', descricao: 'Fluido de freio DOT 4 (500 ml)', quantidade: 2, unidade: 'un', valorUnitario: 45, estoqueId: 'ex-e6', produto: produto(303) },
+        { id: 'ex-d1-4', tipo: 'servico', servico: 'pastilhas', descricao: 'Mão de obra dos freios', quantidade: 1, unidade: 'un', valorUnitario: 180 }
+      ],
+      desconto: null,
+      diagnostico: 'Pastilhas no fim e discos com sulco. Fluido escuro, com umidade acima do recomendado.',
+      prazo: '1 dia útil',
+      criadoEm: `${ontem}T14:40:00.000Z`,
+      atualizadoEm: `${ontem}T15:10:00.000Z`
+    },
+    {
+      id: 'ex-d2',
+      numero: 1,
+      tipo: 'ordem',
+      situacao: 'aberta',
+      veiculoId: 'ex-v8',
+      km: 47200,
+      data: hoje,
+      linhas: [
+        { id: 'ex-d2-1', tipo: 'peca', servico: 'troca_oleo', descricao: 'Óleo 0W-20 sintético API SP dexos1 Gen 3', quantidade: 4, unidade: 'L', valorUnitario: 69.9, estoqueId: 'ex-e2', produto: produto(102) },
+        { id: 'ex-d2-2', tipo: 'peca', servico: 'filtro_oleo', descricao: 'Filtro de óleo blindado', quantidade: 1, unidade: 'un', valorUnitario: 45, estoqueId: 'ex-e3', produto: produto(201) },
+        { id: 'ex-d2-3', tipo: 'servico', servico: 'troca_oleo', descricao: 'Mão de obra da troca de óleo', quantidade: 1, unidade: 'un', valorUnitario: 60 }
+      ],
+      desconto: null,
+      criadoEm: `${hoje}T09:00:00.000Z`,
+      atualizadoEm: `${hoje}T09:00:00.000Z`
+    }
+  ];
+
   const porId = <T extends { id: string }>(lista: T[]) => Object.fromEntries(lista.map((x) => [x.id, x])) as Record<string, T>;
   return {
     clientes: porId(clientes),
     veiculos: porId(veiculos),
     atendimentos: porId(atendimentos),
     leituras: porId(leituras),
-    contatos: porId(contatos)
+    contatos: porId(contatos),
+    estoque: porId(estoque),
+    documentos: porId(documentos)
   };
 }
 

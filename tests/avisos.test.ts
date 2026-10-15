@@ -10,7 +10,10 @@ const prefs: Preferencias = {
   mensagem: '',
   intervalos: {},
   tema: 'auto',
-  compartilharDemanda: false
+  compartilharDemanda: false,
+  margemPecas: 30,
+  validadeOrcamento: 10,
+  vozGuia: true
 };
 
 function dados(atendimentos: Atendimento[], contatos: Contato[] = []): DadosOficina {
