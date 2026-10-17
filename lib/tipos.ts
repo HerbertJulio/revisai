@@ -298,7 +298,8 @@ export interface MovimentoEstoque {
   custoUnitario?: number | null;
   /** De quem comprou (na entrada). */
   fornecedor?: string;
-  origem?: { tipo: 'ordem' | 'pedido' | 'manual' | 'contagem'; id?: string; rotulo?: string };
+  /** Na entrada pela nota de compra (tipo 'nota'), o id é a chave de acesso da NF-e. */
+  origem?: { tipo: 'ordem' | 'pedido' | 'manual' | 'contagem' | 'nota'; id?: string; rotulo?: string };
   observacao?: string;
 }
 
