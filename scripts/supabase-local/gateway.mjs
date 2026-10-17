@@ -218,7 +218,7 @@ const TEMPLATE = `<h2>Seu código do Revisaí</h2><p>Código: <strong>{{ .Token 
 const servidor = http.createServer(async (req, res) => {
   const url = req.url ?? '/';
   res.setHeader('access-control-allow-origin', req.headers.origin ?? '*');
-  res.setHeader('access-control-allow-headers', 'authorization, apikey, content-type, x-client-info, x-upsert, prefer, range, accept-profile, content-profile, x-revisai-sistema, x-revisai-equipe');
+  res.setHeader('access-control-allow-headers', 'authorization, apikey, content-type, x-client-info, x-upsert, prefer, range, accept-profile, content-profile, x-revisai-sistema, x-revisai-equipe, x-supabase-api-version');
   res.setHeader('access-control-allow-methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   res.setHeader('access-control-expose-headers', 'content-range, x-total-count');
   if (req.method === 'OPTIONS') {
