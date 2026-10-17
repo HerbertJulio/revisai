@@ -316,7 +316,7 @@ export function FolhaNovoAlerta({
                     Comprar mais alertas
                   </Botao>
                 ) : (
-                  <Link href="/planos#assinar" className={classeBotao('escuro', 'pequeno')}>
+                  <Link href="/oficina/assinatura" className={classeBotao('escuro', 'pequeno')}>
                     Quero o Pro
                   </Link>
                 )
