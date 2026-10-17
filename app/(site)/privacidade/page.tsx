@@ -17,7 +17,7 @@ const link = 'font-semibold text-caneta underline';
 
 const OPERADORES = [
   { nome: 'Supabase', faz: 'banco de dados, login e arquivos', onde: 'servidores em São Paulo (Brasil); empresa nos Estados Unidos' },
-  { nome: 'Vercel', faz: 'hospedagem do site e do app', onde: 'Estados Unidos e rede mundial de servidores' },
+  { nome: 'Vercel', faz: 'hospedagem do site e do app', onde: 'servidores do app em São Paulo (Brasil) e rede mundial de entrega; empresa nos Estados Unidos' },
   { nome: 'Google (Gemini)', faz: 'inteligência artificial da ordem por voz e do agente no WhatsApp', onde: 'Estados Unidos e outros países' },
   { nome: 'Meta (WhatsApp Business)', faz: 'agente no WhatsApp e avisos pelo WhatsApp', onde: 'Estados Unidos e outros países' },
   { nome: 'Resend', faz: 'envio dos e-mails de aviso', onde: 'Estados Unidos' },

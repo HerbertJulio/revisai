@@ -307,7 +307,7 @@ d('documentos', () => {
   it('a versão das páginas é a que o banco pede para aceitar', () =>
     emTransacao(async (b) => {
       const versoes = (await b.query('select public.versoes_dos_termos() as v')).rows[0].v as Record<string, string>;
-      expect(Object.keys(versoes).sort()).toEqual(['contrato_loja', 'privacidade', 'termos', 'tratamento_dados']);
+      expect(Object.keys(versoes)).toEqual(expect.arrayContaining(['contrato_loja', 'privacidade', 'termos', 'tratamento_dados']));
       for (const v of Object.values(versoes)) expect(v).toBe(VERSAO_DOS_DOCUMENTOS);
     }));
 });

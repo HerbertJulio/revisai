@@ -16,7 +16,7 @@ const link = 'font-semibold text-caneta underline';
 
 const SUBOPERADORES = [
   'Supabase: banco de dados, login e arquivos (servidores em São Paulo; empresa nos Estados Unidos);',
-  'Vercel: hospedagem do app (Estados Unidos e rede mundial de servidores);',
+  'Vercel: hospedagem do app (servidores do app em São Paulo e rede mundial de entrega; empresa nos Estados Unidos);',
   'Google (Gemini): transcrição e organização da ordem de serviço por voz e do agente no WhatsApp (Estados Unidos e outros países);',
   'Meta (WhatsApp Business): agente no WhatsApp, quando a oficina usa (Estados Unidos e outros países);',
   'Resend: e-mails de aviso às pessoas da oficina, que podem citar o nome do cliente (Estados Unidos);',
