@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { BarChart3, BellRing, Check, Rocket, Truck } from 'lucide-react';
 import { FormInteresse } from '@/components/site/FormInteresse';
+import { chaveDoSiteCaptcha } from '@/lib/captcha';
 import { formatarMoeda } from '@/lib/formatos';
 import { DIAS_IMPULSO, PLANOS_FORNECEDOR, PRECO_IMPULSO, type PlanoFornecedor } from '@/lib/planos-fornecedor';
 
@@ -99,6 +100,7 @@ export default function Fornecedores() {
         </div>
         <div className="rounded-[22px] bg-papel p-6 ring-1 ring-linha sm:p-8">
           <FormInteresse
+            captcha={chaveDoSiteCaptcha()}
             tipo="fornecedor"
             origem="fornecedores"
             comEmpresa

@@ -9,11 +9,12 @@ import { after } from 'next/server';
 import { z } from 'zod';
 import { itensFechados, type ItemFechado } from '@/lib/alertas';
 import { CATEGORIAS } from '@/lib/catalogo';
+import { captchaValido } from '@/lib/captcha';
 import { codigoPedido } from '@/lib/codigo-pedido';
 import { acessoDaOficina } from '@/lib/conta';
 import { mensagemDoBanco } from '@/lib/conta-dados';
 import { normalizarTelefone } from '@/lib/formatos';
-import { permitido } from '@/lib/limite';
+import { ipDaRequisicao, permitido } from '@/lib/limite';
 import { avisarLojasDoPedido } from '@/lib/loja/avisos';
 import { esquemaContatoDoPedido, mensagemDoPedido } from '@/lib/marketplace-dados';
 import { clienteSistema } from '@/lib/supabase-servidor';
@@ -114,7 +115,9 @@ const esquemaInteresse = z.object({
   origem: z.string().trim().max(60).optional().default(''),
   consentimento: z.literal(true, { error: 'Marque que concorda em receber o contato.' }),
   // campo escondido: gente não preenche, robô sim
-  site: z.string().max(0).optional().default('')
+  site: z.string().max(0).optional().default(''),
+  // o token da verificação de pessoa (só conta quando ela está ligada)
+  captcha: z.string().max(4096).optional().default('')
 });
 
 export async function registrarInteresse(entrada: unknown): Promise<Resposta> {
@@ -127,6 +130,7 @@ export async function registrarInteresse(entrada: unknown): Promise<Resposta> {
   if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { ok: false, erro: 'Confira o e-mail.' };
   if (!whatsapp && !email) return { ok: false, erro: 'Deixe um WhatsApp ou um e-mail para a gente falar com você.' };
   if (!(await permitido('interesse', 6, 10))) return { ok: false, erro: 'Recebemos vários envios seguidos. Espere alguns minutos.' };
+  if (!(await captchaValido(d.captcha, await ipDaRequisicao()))) return { ok: false, erro: 'Não conseguimos confirmar que é uma pessoa. Recarregue a página e tente de novo.' };
 
   // o banco só aceita o cadastro pelo servidor (com o limite por IP acima)
   const sb = clienteSistema();

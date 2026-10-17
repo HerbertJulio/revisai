@@ -3,6 +3,7 @@
 import { Check } from 'lucide-react';
 import { useState, useTransition } from 'react';
 import { registrarInteresse } from '@/app/acoes';
+import { Captcha } from '@/components/conta/Captcha';
 import { Botao, Campo, classeArea, classeEntrada } from '@/components/ui';
 import { UFS } from '@/lib/padroes';
 
@@ -21,7 +22,8 @@ export function FormInteresse({
   botao = 'Enviar',
   sucesso = 'Recebemos o seu contato. A gente fala com você em breve.',
   consentimento = 'Concordo em receber contato do Revisaí pelo WhatsApp ou e-mail sobre este assunto.',
-  extra
+  extra,
+  captcha
 }: {
   tipo: Tipo;
   origem: string;
@@ -36,10 +38,14 @@ export function FormInteresse({
   consentimento?: string;
   /** Texto que vai junto da mensagem (ex.: a data calculada da próxima troca). */
   extra?: string;
+  /** A chave do site da verificação de pessoa, quando ligada. */
+  captcha?: string | null;
 }) {
   const [enviando, iniciar] = useTransition();
   const [erro, setErro] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
+  const [token, setToken] = useState<string | null>(null);
+  const [rodada, setRodada] = useState(0);
 
   if (ok) {
     return (
@@ -57,6 +63,10 @@ export function FormInteresse({
         e.preventDefault();
         const f = new FormData(e.currentTarget);
         const v = (k: string) => String(f.get(k) ?? '');
+        if (captcha && !token) {
+          setErro('Espere a verificação de segurança terminar e tente de novo.');
+          return;
+        }
         setErro(null);
         iniciar(async () => {
           let r: Awaited<ReturnType<typeof registrarInteresse>>;
@@ -73,11 +83,17 @@ export function FormInteresse({
             uf: v('uf'),
             mensagem: [v('mensagem'), extra].filter(Boolean).join('\n'),
             consentimento: f.get('consentimento') === 'on',
-            site: v('site')
+            site: v('site'),
+            captcha: token ?? ''
             });
           } catch {
             setErro('Não deu para enviar agora. Confira a internet e tente de novo.');
             return;
+          } finally {
+            if (captcha) {
+              setToken(null);
+              setRodada((n) => n + 1);
+            }
           }
           if (r.ok) setOk(true);
           else setErro(r.erro);
@@ -129,6 +145,11 @@ export function FormInteresse({
           {consentimento} Veja a <a href="/privacidade" className="font-semibold text-caneta hover:underline">política de privacidade</a>.
         </span>
       </label>
+      {captcha ? (
+        <div className="sm:col-span-2">
+          <Captcha chave={captcha} aoResolver={setToken} rodada={rodada} />
+        </div>
+      ) : null}
       {erro ? (
         <p className="rounded-lg bg-atraso-claro px-3 py-2 text-[14px] text-atraso sm:col-span-2" role="alert">
           {erro}

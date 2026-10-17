@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Check } from 'lucide-react';
 import Link from 'next/link';
 import { FormInteresse } from '@/components/site/FormInteresse';
+import { chaveDoSiteCaptcha } from '@/lib/captcha';
 import { classeBotao } from '@/components/ui';
 import { formatarMoeda } from '@/lib/formatos';
 import { ALERTAS } from '@/lib/alertas-dados';
@@ -133,6 +134,7 @@ export default function Planos() {
         </div>
         <div className="self-start rounded-[22px] bg-papel p-6 ring-1 ring-linha sm:p-8">
           <FormInteresse
+            captcha={chaveDoSiteCaptcha()}
             tipo="oficina"
             origem="planos"
             plano="plus"

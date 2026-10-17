@@ -6,6 +6,7 @@
 import { CalendarCheck, MapPin } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useMemo, useState, useTransition } from 'react';
+import { Captcha } from '@/components/conta/Captcha';
 import { Botao, Campo, classeArea, classeEntrada } from '@/components/ui';
 import { diasEntre, formatarDataCurta } from '@/lib/datas';
 import { DIAS_CURTOS, diaDaSemana, horaCurta, NOMES_DIAS } from '@/lib/horarios';
@@ -19,7 +20,7 @@ function nomeDoDia(data: string, hoje: string): string {
   return DIAS_CURTOS[diaDaSemana(data)];
 }
 
-export function AgendarCliente({ slug, agenda, inicial }: { slug: string; agenda: AgendaPublica; inicial: DiaLivre[] }) {
+export function AgendarCliente({ slug, agenda, inicial, captcha }: { slug: string; agenda: AgendaPublica; inicial: DiaLivre[]; captcha?: string | null }) {
   const [livres, setLivres] = useState<DiaLivre[]>(inicial);
   const [dia, setDia] = useState<string | null>(inicial[0]?.data ?? null);
   const [hora, setHora] = useState<string | null>(null);
@@ -29,6 +30,8 @@ export function AgendarCliente({ slug, agenda, inicial }: { slug: string; agenda
   const [servico, setServico] = useState(agenda.config.servicos.length === 1 ? agenda.config.servicos[0] : '');
   const [observacao, setObservacao] = useState('');
   const [consentimento, setConsentimento] = useState(false);
+  const [token, setToken] = useState<string | null>(null);
+  const [rodada, setRodada] = useState(0);
   const [erro, setErro] = useState<string | null>(null);
   const [enviado, setEnviado] = useState<{ data: string; hora: string } | null>(null);
   const [enviando, iniciar] = useTransition();
@@ -58,9 +61,14 @@ export function AgendarCliente({ slug, agenda, inicial }: { slug: string; agenda
     if (telefone.replace(/\D/g, '').length < 10) return setErro('Escreva o seu WhatsApp, com DDD.');
     if (!servico.trim()) return setErro('Escolha o serviço.');
     if (!consentimento) return setErro('Marque que concorda em enviar seus dados para a oficina.');
+    if (captcha && !token) return setErro('Espere a verificação de segurança terminar e tente de novo.');
     setErro(null);
     iniciar(async () => {
-      const r = await pedirHorario(slug, { data: dia, hora, nome, telefone, placa, servico, observacao, consentimento });
+      const r = await pedirHorario(slug, { data: dia, hora, nome, telefone, placa, servico, observacao, consentimento, captcha: token ?? '' });
+      if (captcha) {
+        setToken(null);
+        setRodada((n) => n + 1);
+      }
       if (r.ok) {
         setEnviado({ data: r.data, hora: r.hora });
         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -195,6 +203,8 @@ export function AgendarCliente({ slug, agenda, inicial }: { slug: string; agenda
               </span>
             </label>
           </section>
+
+          {captcha ? <Captcha chave={captcha} aoResolver={setToken} rodada={rodada} /> : null}
 
           {erro ? (
             <p className="rounded-xl bg-atraso-claro px-4 py-3 text-[15px] text-atraso" role="alert">

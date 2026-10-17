@@ -12,7 +12,7 @@ import { gerarIcs } from '@/lib/ics';
 import { FormInteresse } from './FormInteresse';
 
 /** Calculadora da próxima troca de óleo para quem tem carro. */
-export function Calculadora() {
+export function Calculadora({ captcha }: { captcha?: string | null }) {
   const [hoje, setHoje] = useState('2026-10-13');
   const [data, setData] = useState('');
   const [kmTroca, setKmTroca] = useState('');
@@ -113,6 +113,7 @@ export function Calculadora() {
           <h2 className="text-[21px]">Quer que a gente lembre você?</h2>
           <p className="mt-1 mb-5 text-tinta-2">Mandamos um aviso perto da data e indicamos oficinas parceiras quando elas estiverem na sua região.</p>
           <FormInteresse
+            captcha={captcha}
             tipo="motorista"
             origem="motorista"
             mensagem="Carro"

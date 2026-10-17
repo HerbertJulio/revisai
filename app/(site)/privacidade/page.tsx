@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { dadosDaEmpresa } from '@/lib/avisos/empresa';
 import { FormInteresse } from '@/components/site/FormInteresse';
+import { chaveDoSiteCaptcha } from '@/lib/captcha';
 import { Documento, Lista, Secao, Tratamento } from '../termos/documento';
 
 // Política de privacidade do Revisaí. Revisado por advogado: pendente.
@@ -294,7 +295,7 @@ export default function Privacidade() {
       <section className="rounded-[22px] bg-papel p-6 ring-1 ring-linha sm:p-8">
         <h2 className="text-[21px]">Fale com o encarregado</h2>
         <p className="mt-1 mb-5 text-tinta-2">Pedidos sobre os seus dados ou qualquer dúvida sobre privacidade.</p>
-        <FormInteresse tipo="contato" origem="privacidade" comCidade={false} mensagem="O que você precisa" botao="Enviar" consentimento="Concordo em receber a resposta pelo WhatsApp ou e-mail." />
+        <FormInteresse captcha={chaveDoSiteCaptcha()} tipo="contato" origem="privacidade" comCidade={false} mensagem="O que você precisa" botao="Enviar" consentimento="Concordo em receber a resposta pelo WhatsApp ou e-mail." />
       </section>
     </Documento>
   );

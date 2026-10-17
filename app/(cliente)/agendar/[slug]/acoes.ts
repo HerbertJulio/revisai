@@ -4,6 +4,7 @@
 // horário livre, a antecedência, as vagas, o consentimento e os limites por IP e por oficina.
 
 import { z } from 'zod';
+import { captchaValido } from '@/lib/captcha';
 import { normalizarPlaca, normalizarTelefone, placaValida } from '@/lib/formatos';
 import { permitido } from '@/lib/limite';
 import { ipDoPedido } from '@/lib/supabase-servidor';
@@ -17,7 +18,9 @@ const esquema = z.object({
   placa: z.string().max(10),
   servico: z.string().trim().max(80),
   observacao: z.string().trim().max(300),
-  consentimento: z.boolean()
+  consentimento: z.boolean(),
+  // o token da verificação de pessoa (só conta quando ela está ligada)
+  captcha: z.string().max(4096).optional().default('')
 });
 
 export async function pedirHorario(slug: string, entrada: unknown): Promise<ResultadoDoPedido & { horarios?: DiaLivre[] }> {
@@ -33,7 +36,9 @@ export async function pedirHorario(slug: string, entrada: unknown): Promise<Resu
   if (placa && !placaValida(placa)) return { ok: false, erro: 'Confira a placa (ABC1D23 ou ABC-1234), ou deixe em branco.' };
   if (!d.servico) return { ok: false, erro: 'Escolha o serviço.' };
   if (!(await permitido(`agendar-${slug}`, 12, 60))) return { ok: false, erro: 'Muitas tentativas seguidas. Espere um pouco e tente de novo.' };
-  const res = await enviarPedido(slug, { ...d, telefone, placa }, await ipDoPedido());
+  const ip = await ipDoPedido();
+  if (!(await captchaValido(d.captcha, ip))) return { ok: false, erro: 'Não conseguimos confirmar que é uma pessoa. Recarregue a página e tente de novo.' };
+  const res = await enviarPedido(slug, { ...d, telefone, placa }, ip);
   if (!res.ok && res.ocupado) return { ...res, horarios: (await buscarLivres(slug)) ?? undefined };
   return res;
 }

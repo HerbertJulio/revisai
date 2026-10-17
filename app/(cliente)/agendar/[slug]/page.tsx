@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { chaveDoSiteCaptcha } from '@/lib/captcha';
 import { AgendarCliente } from './AgendarCliente';
 import { buscarLivres, verAgenda } from './dados';
 
@@ -23,7 +24,7 @@ export default async function PaginaAgendar({ params }: { params: Promise<{ slug
   return (
     <div className="mx-auto max-w-lg px-4 pt-6 sm:pt-10">
       {agenda ? (
-        <AgendarCliente slug={slug} agenda={agenda} inicial={livres ?? []} />
+        <AgendarCliente slug={slug} agenda={agenda} inicial={livres ?? []} captcha={chaveDoSiteCaptcha()} />
       ) : (
         <div className="flex flex-col gap-3">
           <h1 className="largo text-[28px] leading-tight">Este link de agendamento não está ligado</h1>
