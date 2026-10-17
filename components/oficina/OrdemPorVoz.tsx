@@ -23,7 +23,7 @@ import { formatarPlaca, lerNumero, normalizarPlaca } from '@/lib/formatos';
 import { useHoje } from '@/lib/ganchos';
 import { servico as servicoInfo } from '@/lib/manutencao';
 import { apagarMidia, guardarMidia } from '@/lib/midia';
-import { PRO } from '@/lib/plano';
+import { mensagemDaCota } from '@/lib/plano';
 import { useOficina } from '@/lib/store';
 import { CLIENTE_VAZIO, VEICULO_VAZIO, clienteDoRascunho, errosCliente, errosVeiculo, veiculoDoRascunho } from './formularios';
 import { Andamento, TrechoDoRelato, type Passo } from './ordem/Andamento';
@@ -35,7 +35,7 @@ import { Pronto } from './ordem/Pronto';
 import { CartaoDoRelato } from './ordem/Relato';
 import { TelaDeRevisao, prazoSugerido, type Revisao } from './ordem/Revisao';
 import { abrirMidias, encerrarSessao, esquecerSessao, lerSessao, salvarSessao, type FotoLocal, type Preenchido, type SessaoSalva } from './ordem/sessao';
-import { useOfertaDoPro, usePlano } from './plano';
+import { useAtualizarUso, useOfertaDoPro, usePlano } from './plano';
 
 const SEM_INTERNET = 'Não deu para falar com o servidor. Confira a internet e tente de novo.';
 const REFAZER = 'Preencher a ordem de novo? O que você mudou à mão na ficha pode ser trocado.';
@@ -74,10 +74,10 @@ export function OrdemPorVoz() {
   const salvarVeiculo = useOficina((s) => s.salvarVeiculo);
   const registrarAtendimento = useOficina((s) => s.registrarAtendimento);
   const salvarOrdem = useOficina((s) => s.salvarOrdem);
-  const aparelhoId = useOficina((s) => s.aparelhoId);
   const contarMontagem = useOficina((s) => s.contarMontagem);
   const plano = usePlano();
   const abrirPro = useOfertaDoPro();
+  const atualizarUso = useAtualizarUso();
 
   const doLink = params.get('carro');
   const carroDoLink = doLink && veiculos[doLink] ? doLink : null;
@@ -247,10 +247,23 @@ export function OrdemPorVoz() {
   // ------------------------------------------------------------ o plano
 
   function podeComecar(): boolean {
+    // sem conta, a voz com IA fica fechada: a folha pede para entrar
+    if (plano.semConta) {
+      abrirPro('ordens');
+      return false;
+    }
     if (contada.current || plano.podeDitar) return true;
-    if (plano.liberado) toast({ texto: `Este aparelho chegou a ${PRO.ordensPro} ordens por voz neste mês. Fale com a equipe do Revisaí para liberar mais.`, tom: 'erro' });
+    if (plano.liberado) toast({ texto: mensagemDaCota('montagem', { plano: plano.tipo, limite: plano.limiteOrdens }), tom: 'erro' });
     else abrirPro('ordens');
     return false;
+  }
+
+  /** O servidor recusou pelo plano: sem conta, ou a cota do mês acabou (a mensagem fica na tela). */
+  function recusaDoPlano(r: { erro: string; semConta?: boolean; semCota?: boolean }, recurso: 'montagem' | 'transcricao') {
+    if (r.semCota) atualizarUso();
+    if (!montado.current) return;
+    if (r.semConta) abrirPro('ordens');
+    else if (r.semCota && recurso === 'montagem' && !plano.liberado) abrirPro('ordens');
   }
 
   // ------------------------------------------------------------ áudio → texto → ordem
@@ -278,8 +291,10 @@ export function OrdemPorVoz() {
     if (!r.ok) {
       // o áudio fica guardado (sem fala ou não, quem decide jogar fora é o mecânico)
       setTrabalho({ tipo: 'falhou', acao: 'ouvir', mensagem: r.erro, clipe });
+      recusaDoPlano(r, 'transcricao');
       return null;
     }
+    atualizarUso();
     const texto = juntarRelato(atual.current.relato, r.texto);
     atual.current.relato = texto;
     atual.current.clipes = atual.current.clipes.map((c) => (c.id === clipe.id ? { ...c, ouvido: true } : c));
@@ -310,6 +325,8 @@ export function OrdemPorVoz() {
       })
     );
     fotosDaIA.forEach((f) => dados.append('foto', f.arquivo));
+    // a mesma ordem só gasta uma vez a cota do mês, mesmo preenchendo de novo
+    dados.set('sessao', sessaoId.current);
     let r: Awaited<ReturnType<typeof montarOrdemComIA>>;
     try {
       r = await montarOrdemComIA(dados);
@@ -319,10 +336,13 @@ export function OrdemPorVoz() {
     if (!minha()) return;
     if (!r.ok) {
       setTrabalho({ tipo: 'falhou', acao: 'preencher', mensagem: r.erro, clipe });
+      recusaDoPlano(r, 'montagem');
       return;
     }
+    atualizarUso();
     if (!contada.current) {
       contada.current = true;
+      // cópia no aparelho; quem conta de verdade é o banco
       contarMontagem(hoje);
     }
     const feitoCom = { relato: texto, fotos: idsDasFotos(todas) };
@@ -577,9 +597,8 @@ export function OrdemPorVoz() {
         concluidoEm: agora
       });
     }
-    if (doWhatsApp) {
-      if (aparelhoId) void encerrarRascunhoDoWhatsApp(aparelhoId, doWhatsApp, 'confirmada').catch(() => {});
-    } else await encerrarSessao(sessaoId.current);
+    if (doWhatsApp) void encerrarRascunhoDoWhatsApp(doWhatsApp, 'confirmada').catch(() => {});
+    else await encerrarSessao(sessaoId.current);
     setSalvando(false);
     setFeito({ veiculoId: alvo, mensagem: rev.mensagem, atendimentoId });
     window.scrollTo({ top: 0 });
@@ -758,15 +777,22 @@ export function OrdemPorVoz() {
               <Keyboard size={16} aria-hidden="true" /> Escrever
             </button>
           </div>
-          {!plano.liberado ? (
+          {plano.semConta ? (
+            <p className="text-center text-[13px] text-tinta-3">
+              A voz com IA usa a conta da oficina.{' '}
+              <Link href="/entrar?para=/oficina/ordem" className="font-semibold text-caneta hover:underline">
+                Entrar
+              </Link>
+            </p>
+          ) : !plano.liberado ? (
             <p className="num text-[13px] text-tinta-3">
-              {Math.min(plano.montagens, PRO.ordensGratis)} de {PRO.ordensGratis} ordens grátis usadas neste mês
+              {Math.min(plano.montagens, plano.limiteOrdens)} de {plano.limiteOrdens} ordens grátis usadas neste mês
             </p>
           ) : null}
         </div>
       ) : null}
 
-      {aparelhoId && !trabalho && !escrevendo && !gravando ? <CaixaWhatsApp aparelhoId={aparelhoId} aoAbrir={abrirDoWhatsApp} /> : null}
+      {!plano.semConta && !trabalho && !escrevendo && !gravando ? <CaixaWhatsApp aoAbrir={abrirDoWhatsApp} /> : null}
 
       <Folha aberta={escolhendo} aoFechar={() => setEscolhendo(false)} titulo="Escolher o carro" descricao="Se não escolher, é só falar a placa: a IA procura o carro no cadastro.">
         <BuscaCarro
