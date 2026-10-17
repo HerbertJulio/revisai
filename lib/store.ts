@@ -18,6 +18,7 @@ import type { OrdemServico } from './agente/ordem';
 import { contarMontagem, juntarPlanos, PLANO_INICIAL, type EstadoPlano } from './plano';
 import { mudancas, todasAsChaves, valorAtual, type Chave } from './sincronia-dados';
 import type { ProdutoProprio } from './referencias';
+import { EXTRAS_VAZIOS, extrasDe, itemGravado, type ColecaoExtra, type DadosExtras, type NovoItemExtra } from './registros-oficina';
 import type {
   Atendimento,
   Cliente,
@@ -41,7 +42,7 @@ import type {
 export const CHAVE_DADOS = 'revisai:oficina';
 export const VERSAO_DADOS = 1;
 
-export interface DadosGuardados {
+export interface DadosGuardados extends DadosExtras {
   configurado: boolean;
   exemplo: boolean;
   oficina: Oficina;
@@ -154,6 +155,9 @@ interface Acoes {
   marcarEnviados(enviados: { chave: Chave; valor: unknown }[]): void;
   /** Aplica o que veio do banco (sem marcar como mudança local) e guarda a marca. */
   aplicarDoBanco(parte: Partial<DadosGuardados>, marca: number | null): void;
+  /** Grava um item dos cadastros novos (financeiro, agenda, checklist...). Devolve o id. */
+  salvarRegistro<C extends ColecaoExtra>(colecao: C, item: NovoItemExtra<C>): Id;
+  apagarRegistro(colecao: ColecaoExtra, id: Id): void;
 }
 
 export type EstadoOficina = DadosGuardados & Acoes;
@@ -180,6 +184,7 @@ const VAZIO: DadosGuardados = {
   movimentos: {},
   documentos: {},
   contadores: {},
+  ...EXTRAS_VAZIOS,
   resumoMostradoEm: null,
   ultimoBackup: null,
   contaOficinaId: null,
@@ -656,7 +661,8 @@ export const useOficina = create<EstadoOficina>()(
           estoque: dados.estoque ?? {},
           movimentos: dados.movimentos ?? {},
           documentos: dados.documentos ?? {},
-          contadores: dados.contadores ?? {}
+          contadores: dados.contadores ?? {},
+          ...extrasDe(dados)
         });
       },
 
@@ -712,6 +718,21 @@ export const useOficina = create<EstadoOficina>()(
       aplicarDoBanco(parte, marca) {
         const s = get();
         semMarcar(() => set({ ...parte, configurado: true, sinc: { ...s.sinc, marca: marca ?? s.sinc.marca, ultimaEm: new Date().toISOString() } }));
+      },
+
+      salvarRegistro(colecao, item) {
+        const id = item.id ?? novoId();
+        const mapa = get()[colecao] as Record<Id, never>;
+        const gravado = itemGravado(item, id, mapa[id], new Date().toISOString());
+        set({ [colecao]: { ...mapa, [id]: gravado } } as Partial<DadosGuardados>);
+        return id;
+      },
+
+      apagarRegistro(colecao, id) {
+        const mapa = { ...(get()[colecao] as Record<Id, unknown>) };
+        if (!(id in mapa)) return;
+        delete mapa[id];
+        set({ [colecao]: mapa } as Partial<DadosGuardados>);
       }
     }),
     {
@@ -740,6 +761,7 @@ export const useOficina = create<EstadoOficina>()(
         movimentos: s.movimentos,
         documentos: s.documentos,
         contadores: s.contadores,
+        ...extrasDe(s),
         resumoMostradoEm: s.resumoMostradoEm,
         ultimoBackup: s.ultimoBackup,
         salvoEm: Date.now(),
@@ -758,6 +780,7 @@ export const useOficina = create<EstadoOficina>()(
           movimentos: g.movimentos ?? {},
           documentos: g.documentos ?? {},
           contadores: g.contadores ?? {},
+          ...extrasDe(g),
           contaOficinaId: g.contaOficinaId ?? null,
           sinc: { ...SINC_INICIAL, ...g.sinc, pendentes: { ...(g.sinc?.pendentes ?? {}) } }
         };
@@ -852,6 +875,7 @@ export function dadosParaBackup(s: DadosGuardados) {
     movimentos: s.movimentos,
     documentos: s.documentos,
     contadores: s.contadores,
+    ...extrasDe(s),
     exemplo: s.exemplo
   };
 }

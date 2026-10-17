@@ -2,11 +2,12 @@
 // para testar: o motor (components/oficina/sincronia) cuida da rede, do tempo real e dos aparelhos.
 
 import { ehExemplo } from './exemplo';
+import { COLECOES_EXTRAS } from './registros-oficina';
 import type { DadosGuardados } from './store';
 import type { PedidoEnviado, Preferencias } from './tipos';
 
 /** As coleções que são um mapa id -> item no aparelho e uma linha por item no banco. */
-export const COLECOES = ['clientes', 'veiculos', 'atendimentos', 'leituras', 'contatos', 'produtosProprios', 'ordens', 'estoque', 'movimentos', 'documentos'] as const;
+export const COLECOES = ['clientes', 'veiculos', 'atendimentos', 'leituras', 'contatos', 'produtosProprios', 'ordens', 'estoque', 'movimentos', 'documentos', ...COLECOES_EXTRAS] as const;
 export type Colecao = (typeof COLECOES)[number];
 
 /** O cadastro, as preferências e a numeração dos documentos (uma linha cada, coleção 'config'). */
