@@ -116,7 +116,22 @@ export interface Preferencias {
   /** O passo a passo fala as perguntas em voz alta. */
   vozGuia: boolean;
   /** Horário de trabalho, usado na agenda e no agendamento pelo link. */
-  agenda?: { diasSemana: number[]; inicio: string; fim: string; intervaloMin: number; vagasPorHorario: number; agendamentoOnline: boolean };
+  agenda?: {
+    diasSemana: number[];
+    inicio: string;
+    fim: string;
+    intervaloMin: number;
+    vagasPorHorario: number;
+    agendamentoOnline: boolean;
+    /** O horário de cada dia da semana (0 = domingo), quando os dias não são iguais; null: fechado. */
+    semana?: ({ inicio: string; fim: string } | null)[];
+    /** Pausa de todos os dias (o almoço): não tem horário nela. */
+    pausa?: { inicio: string; fim: string } | null;
+    /** Dias fechados fora da semana normal (feriado, férias), AAAA-MM-DD. */
+    folgas?: string[];
+    /** O endereço do agendamento pelo link (/agendar/<slug>), depois que a oficina ligou. */
+    slug?: string | null;
+  };
   /** Garantia que sai na entrega do carro, em dias (o CDC dá 90 para serviço). */
   garantiaPadrao?: { servicosDias: number; pecasDias: number; condicoes: string };
   fidelidade?: { ativo: boolean; pontosPorReal: number; reaisPorPonto: number; minimoResgate: number };
