@@ -426,7 +426,7 @@ export interface Documento {
   profissionalId?: Id | null;
   aprovacao?: AprovacaoDocumento | null;
   /** Links públicos deste documento: o código curto para mostrar (o token só existe na criação). */
-  links?: Partial<Record<'orcamento' | 'andamento' | 'garantia' | 'checklist', { codigo: string; url?: string | null; publicadoEm?: string | null }>>;
+  links?: Partial<Record<'orcamento' | 'andamento' | 'garantia' | 'checklist' | 'pagamento', { codigo: string; url?: string | null; publicadoEm?: string | null }>>;
   /** Nota fiscal de serviço desta ordem. */
   nota?: { situacao: 'processando' | 'autorizada' | 'erro' | 'cancelada'; numero?: string | null; url?: string | null; chave?: string | null; mensagem?: string | null } | null;
   criadoEm: string;

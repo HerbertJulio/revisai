@@ -1,7 +1,7 @@
 import 'server-only';
 import { caminhoDeFotoValido } from './andamento';
 import { esquemaLinkVisto, esquemaOficinaDoLink, tokenValido, type LinkVisto, type OficinaDoLink } from './links-publicos';
-import { clientePublico, configSupabase } from './supabase-servidor';
+import { clientePublico, clienteSistema, configSupabase } from './supabase-servidor';
 
 // Os links do cliente pelo servidor, sem conta: ver (conta a visita), responder (aprovar o
 // orçamento, assinar o checklist) e consultar a garantia pela placa e pelo código. Tudo pelas
@@ -27,10 +27,13 @@ export async function verLink(token: string): Promise<LinkVisto | null> {
 
 export type Resposta = { ok: true; quando: string } | { ok: false; erro: string; codigo?: string };
 
-/** Guarda a resposta do cliente, com o IP e o aparelho de quem respondeu (o banco junta data e hora). */
+/**
+ * Guarda a resposta do cliente, com o IP e o aparelho de quem respondeu (o banco junta data e hora).
+ * Vai com a chave do sistema: só o servidor responde, para o IP guardado como prova ser o de verdade.
+ */
 export async function responderLink(token: string, resposta: Record<string, unknown>, ip: string, agente: string): Promise<Resposta> {
   if (!tokenValido(token)) return { ok: false, erro: 'Link inválido.' };
-  const sb = clientePublico();
+  const sb = clienteSistema();
   if (!sb) return { ok: false, erro: 'O servidor ainda não está ligado ao banco.' };
   const { data, error } = await sb.rpc('responder_link', { p_token: token, p_resposta: resposta, p_ip: ip.slice(0, 64), p_agente: agente.slice(0, 300) });
   if (error) {

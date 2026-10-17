@@ -71,9 +71,28 @@ describe.skipIf(!temBanco)('conta sem vínculo', () => {
     emTransacao(async (b) => {
       const dono = await criarPessoa(b, pessoa('dono'));
       const o = await criarOficina(b, dono);
-      const [pub] = await linhas(b, dono, `select public.publicar_link($1, 'orcamento', 'doc-x', '{"total":10}'::jsonb) as r`, [o]);
+      const [pub] = await linhas(b, dono, `select public.publicar_link($1, 'orcamento', 'doc-x', '{"total":10,"linhas":[{"id":"l1"},{"id":"l2"}]}'::jsonb) as r`, [o]);
       const token = (pub.r as { token: string }).token;
-      expect((await tentar(b, null, `select public.responder_link($1, '{}'::jsonb)`, [token])).codigo).toBe('22023');
-      expect((await tentar(b, null, `select public.responder_link($1, '{"acao":"aprovar"}'::jsonb)`, [token])).erro).toBeNull();
+      // direto pela API, sem passar pelo servidor (que guarda o IP de verdade), não vale
+      expect((await tentar(b, null, `select public.responder_link($1, '{"acao":"aprovar"}'::jsonb, '1.2.3.4', 'forjado')`, [token])).codigo).toBe('42501');
+      expect((await tentar(b, null, `select public.responder_link($1, '{}'::jsonb)`, [token], { sistema: true })).codigo).toBe('22023');
+      // recusar um item que não estava no orçamento não vale
+      expect((await tentar(b, null, `select public.responder_link($1, '{"acao":"aprovar","recusadas":["x9"]}'::jsonb)`, [token], { sistema: true })).codigo).toBe('22023');
+      expect((await tentar(b, null, `select public.responder_link($1, '{"acao":"aprovar","recusadas":["l2"]}'::jsonb)`, [token], { sistema: true })).erro).toBeNull();
+    }));
+
+  it('o IP do cabeçalho só vale assinado pelo servidor', () =>
+    emTransacao(async (b) => {
+      const { createHash, createHmac } = await import('node:crypto');
+      const { CHAVE_SISTEMA_TESTE } = await import('./ajuda');
+      const segredo = createHash('sha256').update(CHAVE_SISTEMA_TESTE).digest('hex');
+      const ip = '200.10.20.30';
+      const ler = async (headers: Record<string, string>) => {
+        await b.query(`select set_config('request.headers', $1, true)`, [JSON.stringify(headers)]);
+        return (await b.query('select privado.ip_confiavel() as ip')).rows[0].ip as string | null;
+      };
+      expect(await ler({ 'x-revisai-ip': ip })).toBeNull();
+      expect(await ler({ 'x-revisai-ip': ip, 'x-revisai-ip-prova': 'f'.repeat(64) })).toBeNull();
+      expect(await ler({ 'x-revisai-ip': ip, 'x-revisai-ip-prova': createHmac('sha256', segredo).update(ip).digest('hex') })).toBe(ip);
     }));
 });
