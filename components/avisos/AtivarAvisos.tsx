@@ -24,9 +24,11 @@ export function AtivarAvisos({ para }: { para: 'oficina' | 'loja' }) {
   const [prefs, setPrefs] = useState<Preferencias | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const [mensagem, setMensagem] = useState<{ tom: 'ok' | 'erro'; texto: string } | null>(null);
-  const instalar = typeof window !== 'undefined' && precisaInstalarParaPush();
+  // só no navegador (no servidor não há como saber o aparelho): evita diferença na hidratação
+  const [instalar, setInstalar] = useState(false);
 
   useEffect(() => {
+    setInstalar(precisaInstalarParaPush());
     void estadoDoPush().then(setEstado);
     void fetch('/api/avisos/preferencias', { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : null))
