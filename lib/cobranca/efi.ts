@@ -263,7 +263,9 @@ export function criarEfi(c: ConfigEfi, transporte: TransporteEfi = transporteHtt
 
     validarWebhook(p: PedidoWebhook) {
       if (!c.segredoWebhook) return false;
-      return iguais(p.url.searchParams.get('s') ?? '', c.segredoWebhook);
+      // a Efí acrescenta "/pix" no fim do endereço cadastrado (que pode cair dentro do ?s=)
+      const recebido = (p.url.searchParams.get('s') ?? '').replace(/\/pix$/, '');
+      return iguais(recebido, c.segredoWebhook);
     },
 
     lerEventos(corpo: unknown): Evento[] {

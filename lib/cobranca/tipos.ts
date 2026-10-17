@@ -132,6 +132,75 @@ export interface Provedor {
   lerEventos(corpo: unknown): Evento[];
 }
 
+/** Uma linha de public.assinaturas_pro. */
+export interface LinhaAssinatura {
+  id: string;
+  oficina_id: string;
+  provedor: NomeProvedor;
+  metodo: Metodo;
+  cliente_externo: string | null;
+  assinatura_externa: string | null;
+  valor: number;
+  situacao: SituacaoAssinatura;
+  documento: string | null;
+  nome_nota: string | null;
+  email_nota: string | null;
+  proximo_vencimento: string | null;
+  autorizacao: string | null;
+  cancelada_em: string | null;
+  criado_em: string;
+}
+
+/** Uma linha de public.pagamentos. */
+export interface LinhaPagamento {
+  id: string;
+  tipo: 'pro' | 'loja';
+  oficina_id: string | null;
+  fornecedor_id: number | null;
+  assinatura_id: string | null;
+  provedor: NomeProvedor | 'manual';
+  externo: string | null;
+  referencia: string | null;
+  metodo: Metodo | 'manual' | null;
+  valor: number;
+  situacao: SituacaoPagamento;
+  vencimento: string | null;
+  pago_em: string | null;
+  descricao: string | null;
+  link_pagamento: string | null;
+  pix_copia_cola: string | null;
+  boleto_linha: string | null;
+  nota_externa: string | null;
+  nota_numero: string | null;
+  nota_url: string | null;
+  nota_situacao: SituacaoNota | null;
+  nota_erro: string | null;
+  criado_em: string;
+}
+
+export const COLUNAS_ASSINATURA =
+  'id, oficina_id, provedor, metodo, cliente_externo, assinatura_externa, valor, situacao, documento, nome_nota, email_nota, proximo_vencimento, autorizacao, cancelada_em, criado_em';
+
+export const COLUNAS_PAGAMENTO =
+  'id, tipo, oficina_id, fornecedor_id, assinatura_id, provedor, externo, referencia, metodo, valor, situacao, vencimento, pago_em, descricao, link_pagamento, pix_copia_cola, boleto_linha, nota_externa, nota_numero, nota_url, nota_situacao, nota_erro, criado_em';
+
+export const NOMES_SITUACAO_PAGAMENTO: Record<SituacaoPagamento, string> = {
+  pendente: 'A pagar',
+  pago: 'Pago',
+  atrasado: 'Atrasado',
+  cancelado: 'Cancelado',
+  estornado: 'Devolvido'
+};
+
+export const NOMES_SITUACAO_ASSINATURA: Record<SituacaoAssinatura, string> = {
+  pendente: 'Esperando o pagamento',
+  ativa: 'Ativa',
+  atrasada: 'Pagamento atrasado',
+  cancelada: 'Cancelada'
+};
+
+export const NOMES_PROVEDOR: Record<NomeProvedor | 'manual', string> = { asaas: 'Asaas', efi: 'Efí', teste: 'Teste', manual: 'À mão' };
+
 export class ErroDoGateway extends Error {
   constructor(
     mensagem: string,
