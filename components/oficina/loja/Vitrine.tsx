@@ -5,7 +5,7 @@
 // O patrocinado conta como visto quando aparece e como clique quando a oficina abre ou põe no pedido.
 
 import { ChevronLeft, ChevronRight, ShoppingCart } from 'lucide-react';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useConta } from '@/components/conta/ProvedorConta';
 import { embalagem, melhorOferta, type Fornecedor, type Produto } from '@/lib/catalogo';
 import { formatarDataCurta } from '@/lib/datas';
@@ -41,6 +41,14 @@ export function Vitrine({
     const reduzir = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     el.scrollTo({ left: i * el.clientWidth, behavior: reduzir ? 'auto' : 'smooth' });
   }, []);
+
+  // os destaques mudaram (o catálogo chegou): volta para o primeiro. Sem isso, o navegador mantém
+  // à vista o slide que estava (agora em outra posição) e o patrocinado do começo fica escondido.
+  const chave = destaques.map((d) => d.produto.id).join(',');
+  useEffect(() => {
+    trilho.current?.scrollTo({ left: 0, behavior: 'auto' });
+    setAtual(0);
+  }, [chave]);
 
   if (!destaques.length) return null;
   const total = destaques.length;
