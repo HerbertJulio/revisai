@@ -24,6 +24,7 @@ function EscutaNaOrdem(_props: { doc: Documento }) {
 function ServicoNoCarro({ veiculoId }: { veiculoId: Id }) {
   return (
     <>
+      <EscutaDasRespostas />
       <LembretesDoCarro veiculoId={veiculoId} />
       <GarantiasDoCarro veiculoId={veiculoId} />
       <ChecklistsDoCarro veiculoId={veiculoId} />

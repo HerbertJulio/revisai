@@ -22,6 +22,7 @@ import type { Documento, Id, Oficina } from '@/lib/tipos';
 import { linkWhatsApp } from '@/lib/whatsapp';
 import { AvisoSemConta, CaixaDoServico, copiarTexto, janelaParaDepois } from './comum';
 import { useContextoDaConta } from './conta';
+import { CampoDoCnpj } from './Historico';
 import { publicarGarantia } from './publicar';
 
 export function oficinaDoAparelho(o: Oficina): OficinaDoLink {
@@ -126,6 +127,7 @@ export function PainelDaGarantia({ doc }: { doc: Documento }) {
       ) : (
         <AvisoSemConta texto="Sem conta, imprima o certificado. Entre com sua conta para mandar o link ao cliente." />
       )}
+      <CampoDoCnpj />
     </CaixaDoServico>
   );
 }

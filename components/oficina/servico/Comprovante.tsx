@@ -58,6 +58,9 @@ export function PainelDaAprovacao({ doc }: { doc: Documento }) {
         {a.nome ? `, por ${a.nome}` : ''}.
         {a.observacao ? <span className="text-tinta-2"> “{a.observacao}”</span> : null}
       </p>
+      {a.ip || a.agente ? (
+        <p className="text-[13.5px] text-tinta-2">{[a.ip ? `IP ${a.ip}` : '', aparelhoDoAgente(a.agente)].filter(Boolean).join(' · ')}</p>
+      ) : null}
       <p className="text-[13.5px] text-tinta-2">
         Código de conferência <strong className="num font-mono text-tinta">{codigoDeConferencia(a.versao)}</strong>
         {confere === true ? <span className="ml-1.5 text-ok">confere com o orçamento</span> : null}

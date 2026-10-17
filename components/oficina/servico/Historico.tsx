@@ -93,7 +93,10 @@ export function HistoricoParaVenda({ veiculoId }: { veiculoId: Id }) {
       {!ctx ? (
         <AvisoSemConta />
       ) : !temServico ? (
-        <p className="text-[13.5px] text-tinta-3">Aparece depois do primeiro serviço registrado.</p>
+        <>
+          <p className="text-[13.5px] text-tinta-3">Aparece depois do primeiro serviço registrado.</p>
+          <CampoDoCnpj />
+        </>
       ) : (
         <>
           {guardado?.url ? (

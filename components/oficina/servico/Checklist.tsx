@@ -23,6 +23,7 @@ import { useOficina } from '@/lib/store';
 import { linkWhatsApp } from '@/lib/whatsapp';
 import { AvisoSemConta, copiarTexto, janelaParaDepois } from './comum';
 import { useContextoDaConta } from './conta';
+import { EscutaDasRespostas } from './Escuta';
 import { enderecoDaFotoRegistro, enviarFoto, fotoNoAparelho, novoIdDeFoto } from './fotos';
 import { criarChecklist } from './PainelChecklist';
 import { publicarChecklist } from './publicar';
@@ -194,6 +195,7 @@ function Editor({ c }: { c: Checklist }) {
 
   return (
     <div className="flex flex-col gap-7">
+      <EscutaDasRespostas />
       <style>{'@page { size: A4; margin: 12mm; }'}</style>
       <div className="nao-imprimir flex flex-col gap-7">
         <header className="flex flex-col gap-3">

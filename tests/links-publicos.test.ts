@@ -202,6 +202,14 @@ describe('o histórico verificado', () => {
     expect(lerHistoricoDoLink(JSON.parse(JSON.stringify(d)))).toEqual(d);
   });
 
+  it('a peça que já é o produto do serviço não se repete, a não ser com a marca', () => {
+    const comProduto = { ...atendimentos, a2: { ...atendimentos.a2, itens: [{ servico: 'pastilhas' as const, produto: { nome: 'Pastilha dianteira' }, intervaloKm: 30000, intervaloMeses: 24 }] } };
+    expect(servicosDoHistorico('v1', { atendimentos: comProduto, documentos })[0].pecas).toEqual([]);
+    expect(servicosDoHistorico('v1', { atendimentos: comProduto, documentos, estoque: { e1: { id: 'e1', nome: 'P', marca: 'Cobreq', categoria: 'pastilha_freio', unidade: 'un', quantidade: 1, minimo: 0, custo: null, preco: null, criadoEm: '', atualizadoEm: '' } } })[0].pecas).toEqual([
+      { descricao: 'Pastilha dianteira', marca: 'Cobreq' }
+    ]);
+  });
+
   it('precisa publicar de novo quando não tem link ou tem serviço mais novo que ele', () => {
     expect(historicoDesatualizado(veiculo, atendimentos)).toBe(true);
     const publicado = { ...veiculo, links: { historico: { codigo: 'ABC234', url: `https://x/l/${TOKEN}`, publicadoEm: '2026-10-17T19:00:00Z' } } };

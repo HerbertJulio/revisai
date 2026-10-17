@@ -27,16 +27,14 @@ export function servicosDoHistorico(
     .sort((a, b) => (a.data !== b.data ? (a.data < b.data ? 1 : -1) : (b.km ?? 0) - (a.km ?? 0)))
     .map((a) => {
       const os = ordemDo.get(a.id);
+      const itens = a.itens.map((i) => ({ servico: servicoExiste(i.servico) ? infoServico(i.servico).nome : String(i.servico), produto: i.produto?.nome?.trim().slice(0, 120) || null }));
+      // a peça que já aparece como o produto do serviço não se repete na lista de peças (a não ser com a marca)
+      const produtos = new Set(itens.map((i) => i.produto?.toLowerCase()).filter(Boolean));
       const pecas = (os?.linhas ?? [])
         .filter((l) => l.tipo === 'peca' && !l.recusada && l.descricao.trim() && !(l.valorUnitario != null && l.valorUnitario < 0))
-        .map((l) => ({ descricao: l.descricao.trim().slice(0, 120), marca: (l.estoqueId ? dados.estoque?.[l.estoqueId]?.marca?.trim() : '')?.slice(0, 60) || null }));
-      return {
-        data: a.data,
-        km: a.km > 0 ? Math.round(a.km) : null,
-        os: os?.numero ?? null,
-        itens: a.itens.map((i) => ({ servico: servicoExiste(i.servico) ? infoServico(i.servico).nome : String(i.servico), produto: i.produto?.nome?.trim().slice(0, 120) || null })),
-        pecas: pecas.slice(0, 30)
-      };
+        .map((l) => ({ descricao: l.descricao.trim().slice(0, 120), marca: (l.estoqueId ? dados.estoque?.[l.estoqueId]?.marca?.trim() : '')?.slice(0, 60) || null }))
+        .filter((p) => p.marca || !produtos.has(p.descricao.toLowerCase()));
+      return { data: a.data, km: a.km > 0 ? Math.round(a.km) : null, os: os?.numero ?? null, itens, pecas: pecas.slice(0, 30) };
     });
 }
 

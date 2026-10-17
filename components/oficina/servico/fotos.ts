@@ -30,7 +30,9 @@ export async function enviarFoto(ctx: ContextoDaConta, pasta: 'andamento' | 'che
     const reduzida = await reduzirFoto(arquivo, 1280, 0.8);
     const ext = reduzida.type === 'image/webp' ? 'webp' : 'jpg';
     const caminho = `${ctx.oficinaId}/${pasta}/${aleatorio()}.${ext}`;
-    const { error } = await ctx.sb.storage.from('links').upload(caminho, reduzida, { contentType: reduzida.type, upsert: false, cacheControl: '31536000' });
+    // os bytes (não o File): vão como o próprio arquivo, com o tipo certo, e não como formulário
+    const bytes = await reduzida.arrayBuffer();
+    const { error } = await ctx.sb.storage.from('links').upload(caminho, bytes, { contentType: reduzida.type, upsert: false, cacheControl: '31536000' });
     if (error) {
       console.error('[fotos] envio', error);
       return { ok: false, erro: 'Não deu para guardar a foto. Confira a internet e tente de novo.' };

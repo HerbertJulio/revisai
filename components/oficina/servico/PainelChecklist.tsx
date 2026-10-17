@@ -62,8 +62,8 @@ export function PainelDoChecklist({ doc }: { doc: Documento }) {
   const checklist = useOficina((s) => (doc.checklistId ? s.checklists[doc.checklistId] : undefined));
   if (doc.situacao === 'cancelada' || doc.situacao === 'recusado') return null;
   if (!checklist) {
-    // depois de pronto não faz sentido o checklist de entrada
-    if (doc.situacao === 'concluida' || !doc.veiculoId) return null;
+    // depois de pronto não faz sentido o checklist de entrada; aprovado, ele é feito na ordem
+    if (doc.situacao === 'concluida' || doc.situacao === 'aprovado' || !doc.veiculoId) return null;
     return (
       <CaixaDoServico titulo="Checklist de entrada" icone={<ClipboardCheck size={18} aria-hidden="true" />}>
         <p className="text-[14px] text-tinta-2">Como o carro chegou: km, combustível, itens, avarias com foto e a assinatura do cliente.</p>
