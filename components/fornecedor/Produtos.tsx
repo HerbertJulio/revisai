@@ -3,7 +3,8 @@
 import { Camera, Pencil, Plus, Rocket, Search } from 'lucide-react';
 import { useRef, useState, useTransition } from 'react';
 import { enviarFoto, impulsionar, salvarProduto } from '@/app/fornecedor/acoes';
-import { AvisoErro, combina, paraBusca } from '@/components/equipe/comum';
+import { combina, paraBusca } from '@/lib/loja/comum';
+import { AvisoErro } from './comum';
 import { TrocaExibicao, useExibicao } from '@/components/exibicao';
 import { Folha } from '@/components/Folha';
 import { FotoProduto } from '@/components/oficina/FotoProduto';
@@ -121,13 +122,25 @@ function SelosDoProduto({ produto: p, promo, impulso }: { produto: LinhaProduto;
   );
 }
 
-function AcoesDoProduto({ produto: p, impulso, aoEditar, aoImpulsionar }: { produto: LinhaProduto; impulso?: LinhaImpulso; aoEditar: () => void; aoImpulsionar: () => void }) {
+function AcoesDoProduto({
+  produto: p,
+  impulso,
+  aoEditar,
+  aoImpulsionar,
+  podeImpulsionar
+}: {
+  produto: LinhaProduto;
+  impulso?: LinhaImpulso;
+  aoEditar: () => void;
+  aoImpulsionar: () => void;
+  podeImpulsionar: boolean;
+}) {
   return (
     <div className="flex flex-wrap gap-2">
       <Botao tamanho="pequeno" onClick={aoEditar}>
         <Pencil size={15} /> Editar
       </Botao>
-      {p.ativo && !impulso ? (
+      {podeImpulsionar && p.ativo && !impulso ? (
         <Botao tamanho="pequeno" onClick={aoImpulsionar}>
           <Rocket size={15} /> Impulsionar
         </Botao>
@@ -142,7 +155,8 @@ export function ProdutosFornecedor({
   impulsos,
   uf,
   hoje,
-  abrirNovo
+  abrirNovo,
+  podeImpulsionar
 }: {
   produtos: LinhaProduto[];
   promocoes: LinhaPromocao[];
@@ -150,6 +164,8 @@ export function ProdutosFornecedor({
   uf: string | null;
   hoje: string;
   abrirNovo: boolean;
+  /** Impulso é pago: só o dono pede. */
+  podeImpulsionar: boolean;
 }) {
   const toast = useToast();
   const { referencias } = useReferencias();
@@ -337,7 +353,7 @@ export function ProdutosFornecedor({
                       <p className="line-clamp-2 text-[14.5px] leading-snug font-bold sm:text-[15.5px]">{[p.marca, p.nome].filter(Boolean).join(' ')}</p>
                       <SelosDoProduto produto={p} promo={promo} impulso={imp} />
                       <p className="largo num mt-auto pt-1 text-[18px] font-extrabold sm:text-[19px]">{formatarMoeda(p.preco)}</p>
-                      <AcoesDoProduto produto={p} impulso={imp} aoEditar={() => abrir(p)} aoImpulsionar={() => setImpulso({ produto: p, dias: 7, regiao: uf ? 'uf' : 'brasil' })} />
+                      <AcoesDoProduto produto={p} impulso={imp} aoEditar={() => abrir(p)} aoImpulsionar={() => setImpulso({ produto: p, dias: 7, regiao: uf ? 'uf' : 'brasil' })} podeImpulsionar={podeImpulsionar} />
                     </div>
                   </li>
                 );
@@ -362,7 +378,7 @@ export function ProdutosFornecedor({
                     </div>
                     <p className="largo num shrink-0 text-[17px] font-extrabold sm:w-28 sm:text-right sm:text-[18px]">{formatarMoeda(p.preco)}</p>
                     <div className="w-full sm:flex sm:w-[232px] sm:justify-end">
-                      <AcoesDoProduto produto={p} impulso={imp} aoEditar={() => abrir(p)} aoImpulsionar={() => setImpulso({ produto: p, dias: 7, regiao: uf ? 'uf' : 'brasil' })} />
+                      <AcoesDoProduto produto={p} impulso={imp} aoEditar={() => abrir(p)} aoImpulsionar={() => setImpulso({ produto: p, dias: 7, regiao: uf ? 'uf' : 'brasil' })} podeImpulsionar={podeImpulsionar} />
                     </div>
                   </li>
                 );
