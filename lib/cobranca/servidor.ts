@@ -457,6 +457,32 @@ export async function cobrarLoja(sbEquipe: SupabaseClient, fornecedorId: number,
   return { ok: true, id };
 }
 
+/**
+ * A oficina que pediu para ser apagada (ou foi desativada pela equipe) não é mais cobrada: a
+ * assinatura viva é cancelada no gateway. Roda na rotina diária, antes de a oficina sumir.
+ */
+export async function cancelarDeOficinasSaindo(): Promise<Res<{ canceladas: number; falharam: number }>> {
+  const sistema = sistemaOuErro();
+  if (!sistema) return { ok: false, erro: SEM_SISTEMA };
+  const { data: saindo, error } = await sistema.from('oficinas').select('id').or('excluir_em.not.is.null,ativa.eq.false').limit(1000);
+  if (error) return { ok: false, erro: mensagemDoBanco(error) };
+  const ids = ((saindo ?? []) as { id: string }[]).map((o) => o.id);
+  if (!ids.length) return { ok: true, canceladas: 0, falharam: 0 };
+  const { data: vivas, error: e2 } = await sistema.from('assinaturas_pro').select('oficina_id').in('oficina_id', ids).neq('situacao', 'cancelada');
+  if (e2) return { ok: false, erro: mensagemDoBanco(e2) };
+  let canceladas = 0;
+  let falharam = 0;
+  for (const v of (vivas ?? []) as { oficina_id: string }[]) {
+    const r = await cancelarPro(v.oficina_id);
+    if (r.ok) canceladas++;
+    else {
+      falharam++;
+      console.error('[cobranca] cancelar a assinatura da oficina que sai', v.oficina_id, r.erro);
+    }
+  }
+  return { ok: true, canceladas, falharam };
+}
+
 // ------------------------------------------------------------------ Pix Automático do mês
 
 /**

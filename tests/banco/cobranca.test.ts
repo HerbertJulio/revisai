@@ -170,6 +170,27 @@ d('cobrança pelo servidor', () => {
       expect((await tentar(b, null, `select public.cobranca_nota('teste', 'txid_s2', 'x', null, null, 'esquisita')`, [], sistema)).codigo).toBe('22023');
     }));
 
+  it('apagar a oficina mantém o pagamento (registro fiscal) sem o vínculo; cobrança sem dono não entra', () =>
+    emTransacao(async (b) => {
+      const dono = await criarPessoa(b, pessoa('dono'));
+      const o = await criarOficina(b, dono);
+      const a = await assinatura(b, o);
+      const id = await cobranca(b, o, a.id, 'pay_x1');
+      await linhas(b, null, `select public.cobranca_pagamento_confirmado('teste', 'pay_x1', now())`, [], sistema);
+      await b.query(`delete from public.oficinas where id = $1`, [o]);
+      const [p] = (await b.query(`select oficina_id, assinatura_id, situacao from public.pagamentos where id = $1`, [id])).rows;
+      expect(p).toEqual({ oficina_id: null, assinatura_id: null, situacao: 'pago' });
+      expect((await b.query(`select count(*)::int as n from public.assinaturas_pro where id = $1`, [a.id])).rows[0].n).toBe(0);
+      const sem = await tentar(
+        b,
+        null,
+        `select public.cobranca_registrar_pagamento('teste', 'pay_x2', 'pro', null, null, null, 10, current_date, 'pix', 'x', null, null, null)`,
+        [],
+        sistema
+      );
+      expect(sem.codigo).toBe('22023');
+    }));
+
   it('depois do pagamento, o dono vê o código do Pro; o mecânico não', () =>
     emTransacao(async (b) => {
       const dono = await criarPessoa(b, pessoa('dono'));
