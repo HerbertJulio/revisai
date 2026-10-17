@@ -84,7 +84,8 @@ export function Carrinho({ aberto, aoFechar, aoAcompanhar }: { aberto: boolean; 
 
   const total = r2(lojas.reduce((s, g) => s + g.subtotal, 0));
   const cashbackUsado = r2(lojas.reduce((s, g) => s + g.usado, 0));
-  const abaixoDoMinimoDaLoja = lojas.filter((g) => g.minimo);
+  // sem os preços (não carregaram), o banco confere o mínimo no envio
+  const abaixoDoMinimoDaLoja = comPrecos ? lojas.filter((g) => g.minimo) : [];
   // produtos que saíram da loja desde que entraram no pedido
   const sairam = carregando ? [] : carrinho.filter((c) => !produto(c.produtoId));
   useEffect(() => {

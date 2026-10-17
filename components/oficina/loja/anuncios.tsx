@@ -91,14 +91,12 @@ export function ProvedorDeAnuncios({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (typeof IntersectionObserver === 'undefined') return;
+    // cada vez que o cartão aparece, conta (o registro do dia não deixa contar duas vezes)
     const o = new IntersectionObserver(
       (entradas) => {
         for (const e of entradas) {
-          if (!e.isIntersecting) continue;
           const produtoId = alvos.current.get(e.target);
-          o.unobserve(e.target);
-          alvos.current.delete(e.target);
-          if (produtoId != null) marcarVisto(produtoId);
+          if (e.isIntersecting && produtoId != null) marcarVisto(produtoId);
         }
       },
       { threshold: 0.5 }
@@ -110,6 +108,17 @@ export function ProvedorDeAnuncios({ children }: { children: ReactNode }) {
       observador.current = null;
     };
   }, [marcarVisto]);
+
+  // a conta (ou os anúncios) chegaram depois dos cartões: olha de novo o que já está na tela
+  const anunciosNoAr = extras.anuncios;
+  useEffect(() => {
+    const o = observador.current;
+    if (!o || !oficinaId || !anunciosNoAr.length) return;
+    for (const el of alvos.current.keys()) {
+      o.unobserve(el);
+      o.observe(el);
+    }
+  }, [oficinaId, anunciosNoAr]);
 
   // ao sair da Loja, o que estava na fila vai na hora; ao trocar de oficina, a fila era da outra
   useEffect(() => {
@@ -124,15 +133,14 @@ export function ProvedorDeAnuncios({ children }: { children: ReactNode }) {
 
   const observar = useCallback(
     (el: Element | null, produtoId: number) => {
-      if (!el || !atual.current.oficinaId) return () => {};
-      if (!observador.current) {
-        // sem IntersectionObserver (navegador antigo): conta ao aparecer
-        if (typeof IntersectionObserver === 'undefined') marcarVisto(produtoId);
-        else alvos.current.set(el, produtoId);
-        return () => alvos.current.delete(el);
+      if (!el) return () => {};
+      // sem IntersectionObserver (navegador antigo): conta ao aparecer
+      if (typeof IntersectionObserver === 'undefined') {
+        marcarVisto(produtoId);
+        return () => {};
       }
       alvos.current.set(el, produtoId);
-      observador.current.observe(el);
+      observador.current?.observe(el);
       return () => {
         alvos.current.delete(el);
         observador.current?.unobserve(el);
