@@ -162,3 +162,34 @@ describe('importar a planilha e avisar a loja', async () => {
     }
   });
 });
+
+describe('condições por oficina', async () => {
+  const { removerCondicao, salvarCondicao } = await import('@/lib/loja/clientes');
+  const oficinaId = '7c8e8f6a-1b2c-4d3e-8f9a-0b1c2d3e4f5a';
+
+  it('grava desconto ou preço fixo, um valor só, na chave da loja, oficina e produto', async () => {
+    const b = bancoFalso();
+    expect(await salvarCondicao(b.sb, 9, { oficinaId, produtoId: null, tipo: 'desconto', valor: 7.255 })).toEqual({ ok: true });
+    expect(b.chamadas[0]).toMatchObject({
+      nome: 'precos_por_oficina',
+      op: 'upsert',
+      dados: { fornecedor_id: 9, oficina_id: oficinaId, produto_id: null, desconto_percentual: 7.26, preco: null },
+      args: { onConflict: 'fornecedor_id,oficina_id,produto_id' }
+    });
+    expect(await salvarCondicao(b.sb, 9, { oficinaId, produtoId: 3, tipo: 'preco', valor: 31.5 })).toEqual({ ok: true });
+    expect(b.chamadas[1].dados).toMatchObject({ produto_id: 3, desconto_percentual: null, preco: 31.5 });
+    // preço fixo na loja toda e desconto acima de 90% não valem
+    expect((await salvarCondicao(b.sb, 9, { oficinaId, produtoId: null, tipo: 'preco', valor: 10 })).ok).toBe(false);
+    expect((await salvarCondicao(b.sb, 9, { oficinaId, produtoId: null, tipo: 'desconto', valor: 95 })).ok).toBe(false);
+    expect((await salvarCondicao(b.sb, 9, { oficinaId: 'x', produtoId: null, tipo: 'desconto', valor: 5 })).ok).toBe(false);
+    expect(b.chamadas).toHaveLength(2);
+    // o banco recusa oficina que nunca comprou: a mensagem explica
+    const recusa = bancoFalso({ precos_por_oficina: { error: { code: '42501', message: 'new row violates row-level security policy' } } });
+    expect(await salvarCondicao(recusa.sb, 9, { oficinaId, produtoId: null, tipo: 'desconto', valor: 5 })).toEqual({ ok: false, erro: 'Só dá para combinar condições com oficinas que já compraram da loja.' });
+    // tirar só na própria loja
+    const t = bancoFalso();
+    expect(await removerCondicao(t.sb, 9, 4)).toEqual({ ok: true });
+    expect(t.chamadas[0]).toMatchObject({ op: 'delete', filtros: [['eq', 'id', 4], ['eq', 'fornecedor_id', 9]] });
+  });
+});
+

@@ -1,4 +1,4 @@
-import { BadgePercent, BellRing, LayoutDashboard, Megaphone, Package, ReceiptText, ShoppingCart, Store } from 'lucide-react';
+import { BadgePercent, BellRing, LayoutDashboard, Megaphone, Package, ReceiptText, ShoppingCart, Store, Users } from 'lucide-react';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { sair } from '@/app/conta/acoes';
@@ -11,7 +11,7 @@ import { AoVivo } from './AoVivo';
 import { AvisoErro } from './comum';
 import { TrocarLoja } from './TrocarLoja';
 
-export type AbaFornecedor = 'inicio' | 'produtos' | 'promocoes' | 'pedidos' | 'alertas' | 'extrato' | 'plano' | 'conta';
+export type AbaFornecedor = 'inicio' | 'produtos' | 'promocoes' | 'pedidos' | 'alertas' | 'clientes' | 'extrato' | 'plano' | 'conta';
 
 /** Lateral, abas e título do painel da loja, com o aviso da análise e os avisos ao vivo. */
 export function MolduraFornecedor({
@@ -44,6 +44,7 @@ export function MolduraFornecedor({
       itens: [
         { id: 'pedidos', href: '/fornecedor/pedidos', rotulo: 'Pedidos', Icone: ShoppingCart, contador: novos },
         { id: 'alertas', href: '/fornecedor/alertas', rotulo: 'Alertas de preço', Icone: BellRing, contador: painel.alertasNovos },
+        { id: 'clientes', href: '/fornecedor/clientes', rotulo: 'Clientes', Icone: Users },
         { id: 'extrato', href: '/fornecedor/extrato', rotulo: 'Extrato', Icone: ReceiptText },
         { id: 'plano', href: '/fornecedor/plano', rotulo: 'Plano e impulsos', Icone: Megaphone }
       ]

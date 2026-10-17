@@ -38,11 +38,12 @@ const esquemaLoja = z.object({
   verificacao_obs: texto,
   prazo_entrega_horas: numeroOuNulo.optional().transform((v) => v ?? null),
   avisar_whatsapp: z.boolean().optional().default(true),
+  pedido_minimo: numeroOuNulo.optional().transform((v) => v ?? null),
   criado_em: z.string()
 });
 export type LinhaLoja = z.infer<typeof esquemaLoja>;
 export const COLUNAS_LOJA =
-  'id, nome, cidade, uf, whatsapp, descricao, email, cnpj, ativo, destaque, destaque_ate, demonstracao, verificacao, verificacao_obs, prazo_entrega_horas, avisar_whatsapp, criado_em';
+  'id, nome, cidade, uf, whatsapp, descricao, email, cnpj, ativo, destaque, destaque_ate, demonstracao, verificacao, verificacao_obs, prazo_entrega_horas, avisar_whatsapp, pedido_minimo, criado_em';
 
 /** Os prazos de entrega que a loja escolhe (em horas). */
 export const PRAZOS_DE_ENTREGA: { horas: number; nome: string }[] = [
@@ -411,6 +412,52 @@ export function ultimosMeses(hoje: string, n = 12): string[] {
     }
   }
   return lista;
+}
+
+// ---------------------------------------------------------------- clientes e condições
+
+export interface ClienteDaLoja {
+  oficinaId: string;
+  nome: string;
+  cidade: string | null;
+  uf: string | null;
+  pedidos: number;
+  total: number;
+  ultimo: string;
+}
+
+export interface CondicaoDaOficina {
+  id: number;
+  oficinaId: string;
+  /** null = a loja toda */
+  produtoId: number | null;
+  descontoPercentual: number | null;
+  preco: number | null;
+  atualizadoEm: string;
+}
+
+export function lerClientes(d: unknown): ClienteDaLoja[] {
+  return ler(
+    z.object({
+      oficinaId: z.string(),
+      nome: z.string().nullish().transform((v) => v ?? 'Oficina'),
+      cidade: texto,
+      uf: texto,
+      pedidos: numero,
+      total: numero,
+      ultimo: z.string()
+    }),
+    d
+  );
+}
+
+export const COLUNAS_CONDICAO = 'id, oficina_id, produto_id, desconto_percentual, preco, atualizado_em';
+
+export function lerCondicoes(d: unknown): CondicaoDaOficina[] {
+  return ler(
+    z.object({ id: numero, oficina_id: z.string(), produto_id: numeroOuNulo, desconto_percentual: numeroOuNulo, preco: numeroOuNulo, atualizado_em: z.string() }),
+    d
+  ).map((c) => ({ id: c.id, oficinaId: c.oficina_id, produtoId: c.produto_id, descontoPercentual: c.desconto_percentual, preco: c.preco, atualizadoEm: c.atualizado_em }));
 }
 
 // ---------------------------------------------------------------- equipe

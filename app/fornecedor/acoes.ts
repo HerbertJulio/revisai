@@ -9,6 +9,7 @@ import { after } from 'next/server';
 import { acessoDaLoja } from '@/lib/conta';
 import { permitido } from '@/lib/limite';
 import { responderAlerta } from '@/lib/loja/alertas';
+import { removerCondicao, salvarCondicao } from '@/lib/loja/clientes';
 import { avisarTrocaDePix, lojaParaAviso } from '@/lib/loja/avisos';
 import { cancelarConviteDaLoja, convidarParaLoja, mudarPapelNaLoja, tirarDaLoja, type ResultadoConvite, type ResultadoPapel } from '@/lib/loja/equipe';
 import { confirmarPagamento, mudarSituacao, saidaParaEntrega } from '@/lib/loja/pedidos';
@@ -132,6 +133,25 @@ export async function confirmarPagamentoDoPedido(parteId: number, confirmado: bo
   const a = await acesso('pagamento', 300);
   if (!a.ok) return a;
   const r = await confirmarPagamento(a.sb, a.loja.id, parteId, confirmado === true);
+  if (r.ok) atualizar();
+  return r;
+}
+
+// ---------------------------------------------------------------- condições por oficina
+
+export async function salvarCondicaoDaOficina(entrada: unknown): Promise<Gravacao> {
+  const a = await acesso('condicao', 200);
+  if (!a.ok) return a;
+  const r = await salvarCondicao(a.sb, a.loja.id, entrada);
+  if (r.ok) atualizar();
+  return r;
+}
+
+export async function removerCondicaoDaOficina(id: number): Promise<Gravacao> {
+  if (!idValido(id)) return { ok: false, erro: 'Condição inválida.' };
+  const a = await acesso('condicao', 200);
+  if (!a.ok) return a;
+  const r = await removerCondicao(a.sb, a.loja.id, id);
   if (r.ok) atualizar();
   return r;
 }

@@ -340,3 +340,110 @@ d('extrato da loja (base da cobrança)', () => {
       expect((await tentar(b, x.lojista, sql, [x.loja.fornecedorId, '2026-13'])).codigo).toBe('22023');
     }));
 });
+
+/**
+ * A ligação proposta em public.calcular_pedido (fica com quem cuida do pedido): o preço por oficina
+ * entra no menor preço e o pedido mínimo é conferido no fim. Aplicada só dentro da transação do teste.
+ */
+async function ligarCondicoesNoPedido(b: Banco) {
+  const [{ def }] = (await b.query(`select pg_get_functiondef('public.calcular_pedido'::regproc) as def`)).rows as { def: string }[];
+  const trocas: [string, string][] = [
+    ['v_unitario numeric(10, 2);', 'v_unitario numeric(10, 2);\n  v_especial numeric(10, 2);'],
+    [
+      'v_unitario := least(v_preco, coalesce(v_promocional, v_preco), coalesce(v_combinado, v_preco));',
+      'v_especial := privado.preco_para_oficina(v_produto_id, new.oficina_id, v_preco);\n    v_unitario := least(v_preco, coalesce(v_promocional, v_preco), coalesce(v_combinado, v_preco), v_especial);'
+    ],
+    ['new.itens := v_calculados;', 'perform privado.conferir_pedido_minimo(v_calculados);\n  new.itens := v_calculados;']
+  ];
+  let novo = def;
+  for (const [de, para] of trocas) {
+    expect(novo.includes(de), `calcular_pedido mudou: não achei "${de}"`).toBe(true);
+    novo = novo.replace(de, para);
+  }
+  await b.query(novo);
+}
+
+d('condições da loja: preço por oficina e pedido mínimo', () => {
+  it('a loja combina condições só com oficinas que já compraram; cada oficina vê só as dela', () =>
+    emTransacao(async (b) => {
+      const x = await pedidos(b, 1);
+      const [{ oficina_id: oficina }] = (await b.query('select oficina_id from public.pedidos_fornecedores where id = $1', [x.partes[0]])).rows;
+      const estranha = await criarPessoa(b, pessoa('estranha'));
+      const outraOficina = await criarOficina(b, estranha, 'Outra Oficina');
+      const rival = await criarPessoa(b, pessoa('rival'));
+      const outraLoja = await criarLoja(b, rival, { nome: 'Outra' });
+      const inserir = (p: Parameters<typeof tentar>[1], loja: number, of: string, produto: number | null, campo: string, valor: number) =>
+        tentar(b, p, `insert into public.precos_por_oficina (fornecedor_id, oficina_id, produto_id, ${campo}) values ($1, $2, $3, $4) returning id`, [loja, of, produto, valor]);
+      expect((await inserir(x.lojista, x.loja.fornecedorId, oficina, null, 'desconto_percentual', 5)).erro).toBeNull();
+      expect((await inserir(x.lojista, x.loja.fornecedorId, oficina, x.loja.produtoId, 'preco', 30)).erro).toBeNull();
+      // oficina que nunca comprou, produto de outra loja, loja dos outros: não
+      expect((await inserir(x.lojista, x.loja.fornecedorId, outraOficina, null, 'desconto_percentual', 5)).erro).toBeTruthy();
+      expect((await inserir(x.lojista, x.loja.fornecedorId, oficina, outraLoja.produtoId, 'preco', 1)).erro).toBeTruthy();
+      expect((await inserir(rival, x.loja.fornecedorId, oficina, null, 'desconto_percentual', 50)).erro).toBeTruthy();
+      // preço fixo só em produto, e um valor só
+      expect((await inserir(x.lojista, x.loja.fornecedorId, oficina, null, 'preco', 10)).erro).toBeTruthy();
+      expect((await tentar(b, x.lojista, 'insert into public.precos_por_oficina (fornecedor_id, oficina_id, desconto_percentual, preco) values ($1, $2, 5, 10)', [x.loja.fornecedorId, oficina])).erro).toBeTruthy();
+      // a oficina vê as dela; a outra oficina e a outra loja não veem nada
+      expect(await linhas(b, x.dono, 'select id from public.precos_por_oficina')).toHaveLength(2);
+      expect(await linhas(b, estranha, 'select id from public.precos_por_oficina')).toHaveLength(0);
+      expect(await linhas(b, rival, 'select id from public.precos_por_oficina')).toHaveLength(0);
+      // a oficina não mexe; a loja muda e tira
+      expect((await tentar(b, x.dono, 'update public.precos_por_oficina set desconto_percentual = 80 where produto_id is null returning id')).linhas).toHaveLength(0);
+      expect((await tentar(b, x.lojista, 'update public.precos_por_oficina set desconto_percentual = 8 where produto_id is null returning id')).linhas).toHaveLength(1);
+      expect((await tentar(b, x.lojista, 'update public.precos_por_oficina set oficina_id = $1 where produto_id is null', [outraOficina])).codigo).toBe('42501');
+      expect((await tentar(b, x.lojista, 'delete from public.precos_por_oficina where produto_id is not null returning id')).linhas).toHaveLength(1);
+      // a lista de clientes da loja
+      const [c] = await linhas(b, x.lojista, 'select public.loja_clientes($1) as c', [x.loja.fornecedorId]);
+      expect((c.c as { oficinaId: string; pedidos: number }[]).map((o) => [o.oficinaId, o.pedidos])).toEqual([[oficina, 1]]);
+      expect((await tentar(b, rival, 'select public.loja_clientes($1)', [x.loja.fornecedorId])).codigo).toBe('42501');
+    }));
+
+  it('o preço para a oficina: preço fixo do produto, senão o maior desconto; o pedido mínimo recusa com RV030', () =>
+    emTransacao(async (b) => {
+      const x = await pedidos(b, 1);
+      const [{ oficina_id: oficina }] = (await b.query('select oficina_id from public.pedidos_fornecedores where id = $1', [x.partes[0]])).rows;
+      const preco = async (p: Parameters<typeof linhas>[1]) => Number((await linhas(b, p, 'select privado.preco_para_oficina($1, $2, 40) as v', [x.loja.produtoId, oficina]))[0].v);
+      expect(await preco(x.dono)).toBe(40);
+      await linhas(b, x.lojista, `insert into public.precos_por_oficina (fornecedor_id, oficina_id, desconto_percentual) values ($1, $2, 5)`, [x.loja.fornecedorId, oficina]);
+      expect(await preco(x.dono)).toBe(38);
+      await linhas(b, x.lojista, `insert into public.precos_por_oficina (fornecedor_id, oficina_id, produto_id, desconto_percentual) values ($1, $2, $3, 12.5)`, [x.loja.fornecedorId, oficina, x.loja.produtoId]);
+      expect(await preco(x.dono)).toBe(35);
+      await linhas(b, x.lojista, `update public.precos_por_oficina set desconto_percentual = null, preco = 33.9 where produto_id is not null`);
+      expect(await preco(x.dono)).toBe(33.9);
+      // quem não é a oficina não enxerga a condição (fica o preço normal)
+      const curiosa = await criarPessoa(b, pessoa('curiosa'));
+      await criarOficina(b, curiosa);
+      expect(Number((await linhas(b, curiosa, 'select privado.preco_para_oficina($1, $2, 40) as v', [x.loja.produtoId, oficina]))[0].v)).toBe(40);
+
+      await b.query('update public.fornecedores set pedido_minimo = 100 where id = $1', [x.loja.fornecedorId]);
+      const itens = (q: number) => JSON.stringify([{ fornecedor_id: x.loja.fornecedorId, preco_unitario: 40, quantidade: q }]);
+      const r = await tentar(b, x.dono, 'select privado.conferir_pedido_minimo($1::jsonb)', [itens(2)]);
+      expect(r.codigo).toBe('RV030');
+      expect(r.erro).toContain('100,00');
+      expect((await tentar(b, x.dono, 'select privado.conferir_pedido_minimo($1::jsonb)', [itens(3)])).erro).toBeNull();
+    }));
+
+  it('com a ligação proposta no cálculo do pedido, a oficina paga o preço combinado e respeita o mínimo', () =>
+    emTransacao(async (b) => {
+      const x = await pedidos(b, 1);
+      const [{ oficina_id: oficina }] = (await b.query('select oficina_id from public.pedidos_fornecedores where id = $1', [x.partes[0]])).rows;
+      await ligarCondicoesNoPedido(b);
+      await linhas(b, x.lojista, `insert into public.precos_por_oficina (fornecedor_id, oficina_id, produto_id, preco) values ($1, $2, $3, 31.5)`, [x.loja.fornecedorId, oficina, x.loja.produtoId]);
+      const pedir = (codigo: string, quantidade: number) =>
+        tentar(b, x.dono, `insert into public.pedidos (codigo, oficina_id, oficina_nome, oficina_whatsapp, itens) values ($1, $2, 'x', '5521911112222', $3::jsonb) returning id`, [
+          codigo,
+          oficina,
+          JSON.stringify([{ produto_id: x.loja.produtoId, quantidade }])
+        ]);
+      const ok = await pedir('CND001', 2);
+      expect(ok.erro).toBeNull();
+      const parte = (await b.query('select itens, subtotal from public.pedidos_fornecedores where pedido_id = $1', [ok.linhas[0].id])).rows[0];
+      expect(Number(parte.itens[0].preco_unitario)).toBe(31.5);
+      expect(Number(parte.subtotal)).toBe(63);
+      // com pedido mínimo de R$ 100, duas unidades não bastam; quatro passam
+      await b.query('update public.fornecedores set pedido_minimo = 100 where id = $1', [x.loja.fornecedorId]);
+      expect((await pedir('CND002', 2)).codigo).toBe('RV030');
+      expect((await pedir('CND003', 4)).erro).toBeNull();
+    }));
+});
+

@@ -251,7 +251,8 @@ export const esquemaCadastroDaLoja = z.object({
   email: z.string().trim().max(160).optional().default(''),
   cidade: z.string().trim().max(80).optional().default(''),
   prazoEntregaHoras: z.number().int().min(1).max(720).nullable().optional().default(null),
-  avisarWhatsapp: z.boolean().optional().default(true)
+  avisarWhatsapp: z.boolean().optional().default(true),
+  pedidoMinimo: z.number().positive('O pedido mínimo precisa ser maior que zero.').max(100000).nullable().optional().default(null)
 });
 
 /** O dono muda o cadastro da loja. O estado (UF), o CNPJ e o plano ficam com a equipe. */
@@ -265,7 +266,7 @@ export async function salvarCadastro(sb: SupabaseClient, fornecedorId: number, e
   if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { ok: false, erro: 'Confira o e-mail.' };
   const { data, error } = await sb
     .from('fornecedores')
-    .update({ nome: d.nome, descricao: d.descricao || null, whatsapp, email: email || null, cidade: d.cidade || null, prazo_entrega_horas: d.prazoEntregaHoras, avisar_whatsapp: d.avisarWhatsapp })
+    .update({ nome: d.nome, descricao: d.descricao || null, whatsapp, email: email || null, cidade: d.cidade || null, prazo_entrega_horas: d.prazoEntregaHoras, avisar_whatsapp: d.avisarWhatsapp, pedido_minimo: d.pedidoMinimo == null ? null : Math.round(d.pedidoMinimo * 100) / 100 })
     .eq('id', fornecedorId)
     .select('id')
     .maybeSingle();

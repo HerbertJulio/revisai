@@ -8,7 +8,7 @@ export type Resposta = { data?: unknown; error?: Erro; count?: number };
 export interface Chamada {
   tipo: 'from' | 'rpc';
   nome: string;
-  op: 'select' | 'insert' | 'update';
+  op: 'select' | 'insert' | 'update' | 'upsert' | 'delete';
   dados?: unknown;
   args?: unknown;
   filtros: [string, string, unknown][];
@@ -37,6 +37,8 @@ export function bancoFalso(respostas: Record<string, Resposta | ((c: Chamada) =>
         select: () => q,
         insert: (d: unknown) => ((c.op = 'insert'), (c.dados = d), q),
         update: (d: unknown) => ((c.op = 'update'), (c.dados = d), q),
+        upsert: (d: unknown, o: unknown) => ((c.op = 'upsert'), (c.dados = d), (c.args = o), q),
+        delete: () => ((c.op = 'delete'), q),
         eq: filtro('eq'),
         in: filtro('in'),
         is: filtro('is'),
