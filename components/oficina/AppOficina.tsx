@@ -2,12 +2,14 @@
 
 import { Bell, ClipboardList, Mic, Package, Plus, Settings, Store, Users } from 'lucide-react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { useEffect, type ReactNode } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import { useEffect, useState, type ReactNode } from 'react';
+import { MenuDaConta } from '@/components/conta/MenuDaConta';
 import { ProvedorConta, useConta } from '@/components/conta/ProvedorConta';
 import { Logo } from '@/components/marca';
 import { Toasts } from '@/components/Toasts';
 import { classeBotao } from '@/components/ui';
+import { plural } from '@/lib/formatos';
 import type { Conta } from '@/lib/conta-dados';
 import { useGrupos, useHidratado } from '@/lib/ganchos';
 import { notificar, registrarServiceWorker } from '@/lib/notificacao';
@@ -101,21 +103,69 @@ function SemOficina() {
 }
 
 function SessaoTerminou() {
+  const router = useRouter();
+  const { banco } = useConta();
+  const pendentes = useOficina((s) => Object.keys(s.sinc.pendentes).length);
+  // a conta não veio: a sessão acabou, ou o servidor não conseguiu abrir a conta agora?
+  const [comSessao, setComSessao] = useState<boolean | null>(null);
+  useEffect(() => {
+    const sb = banco();
+    if (!sb) return setComSessao(false);
+    let vivo = true;
+    sb.auth
+      .getSession()
+      .then(({ data }) => vivo && setComSessao(!!data.session))
+      .catch(() => vivo && setComSessao(false));
+    return () => {
+      vivo = false;
+    };
+  }, [banco]);
+
+  if (comSessao === null)
+    return (
+      <div className="grid min-h-dvh place-items-center" aria-busy="true">
+        <Logo className="animate-pulse opacity-60" />
+      </div>
+    );
+
+  if (comSessao)
+    return (
+      <main className="grid min-h-dvh place-items-center px-4">
+        <div className="flex max-w-md flex-col items-start gap-4">
+          <Logo />
+          <h1 className="largo text-[26px]">Não deu para abrir a conta</h1>
+          <p className="text-tinta-2">
+            O servidor não respondeu agora. Os dados continuam guardados neste aparelho{pendentes ? `, com ${plural(pendentes, 'mudança', 'mudanças')} esperando para subir` : ''}.
+          </p>
+          <button type="button" className={classeBotao('escuro', 'grande')} onClick={() => router.refresh()}>
+            Tentar de novo
+          </button>
+        </div>
+      </main>
+    );
+
   return (
     <main className="grid min-h-dvh place-items-center px-4">
       <div className="flex max-w-md flex-col items-start gap-4">
         <Logo />
         <h1 className="largo text-[26px]">Entre de novo</h1>
-        <p className="text-tinta-2">Sua sessão terminou. Os dados da oficina estão guardados na conta: entre para continuar de onde parou.</p>
+        <p className="text-tinta-2">
+          {pendentes
+            ? `Sua sessão terminou. ${plural(pendentes, 'mudança deste aparelho ainda não subiu', 'mudanças deste aparelho ainda não subiram')}: entre com a mesma conta e elas sobem para a nuvem.`
+            : 'Sua sessão terminou. Os dados da oficina estão guardados na nuvem: entre para continuar de onde parou.'}
+        </p>
         <div className="flex flex-wrap gap-2">
-          <Link href="/entrar?para=/oficina" className={classeBotao('escuro', 'grande')}>
+          <Link href="/entrar?para=/oficina&motivo=sessao" className={classeBotao('escuro', 'grande')}>
             Entrar
           </Link>
           <button
             type="button"
             className={classeBotao('fantasma', 'grande')}
             onClick={() => {
-              if (confirm('Usar sem conta apaga deste aparelho a cópia dos dados da conta (eles continuam na nuvem). Continuar?')) useOficina.getState().esquecerConta();
+              const texto = pendentes
+                ? `Usar sem conta apaga deste aparelho a cópia dos dados da oficina, e ${plural(pendentes, 'mudança que não subiu se perde', 'mudanças que não subiram se perdem')}. Continuar?`
+                : 'Usar sem conta apaga deste aparelho a cópia dos dados da oficina (eles continuam na nuvem). Continuar?';
+              if (confirm(texto)) useOficina.getState().esquecerConta();
             }}
           >
             Usar sem conta
@@ -198,6 +248,7 @@ function Moldura({ children }: { children: ReactNode }) {
           <div className="mt-1">
             <IndicadorDaSincronia />
           </div>
+          <MenuDaConta />
         </div>
       </aside>
 
@@ -225,8 +276,11 @@ function Moldura({ children }: { children: ReactNode }) {
       <main
         className={`mx-auto w-full px-4 pt-5 pb-[calc(96px+env(safe-area-inset-bottom))] sm:px-6 lg:px-10 lg:pt-10 lg:pb-16 ${caminho.startsWith('/oficina/loja') ? 'max-w-7xl' : 'max-w-5xl'}`}
       >
-        <div className="mb-3 flex justify-end lg:hidden">
-          <IndicadorDaSincronia compacto />
+        <div className="mb-3 flex items-center gap-3 lg:hidden">
+          <MenuDaConta compacto />
+          <div className="ml-auto">
+            <IndicadorDaSincronia compacto />
+          </div>
         </div>
         {armazenamentoComProblema() ? (
           <p className="mb-5 rounded-xl bg-atraso-claro px-4 py-3 text-[14px] text-atraso" role="alert">

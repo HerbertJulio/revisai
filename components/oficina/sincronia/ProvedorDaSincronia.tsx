@@ -3,7 +3,7 @@
 import { Cloud, CloudOff, LoaderCircle, RefreshCw, TriangleAlert } from 'lucide-react';
 import Link from 'next/link';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { saindoDaConta } from '@/components/conta/sair';
+import { telaDaOficinaAbriu, useSaindoDaConta } from '@/components/conta/sair';
 import { useConta } from '@/components/conta/ProvedorConta';
 import { Folha } from '@/components/Folha';
 import { Botao } from '@/components/ui';
@@ -49,10 +49,15 @@ export function ProvedorDaSincronia({ children }: { children: ReactNode }) {
   const [pergunta, setPergunta] = useState<Pergunta>(null);
   const motor = useRef<MotorDeSincronia | null>(null);
   const oficinaId = oficina?.id ?? null;
+  const saindo = useSaindoDaConta();
+
+  useEffect(() => {
+    telaDaOficinaAbriu();
+  }, []);
 
   // de quem são os dados deste aparelho?
   useEffect(() => {
-    if (!hidratado || !oficinaId || saindoDaConta()) return;
+    if (!hidratado || !oficinaId || saindo) return;
     const s = useOficina.getState();
     if (s.contaOficinaId === oficinaId) {
       setPergunta(null);
@@ -68,11 +73,11 @@ export function ProvedorDaSincronia({ children }: { children: ReactNode }) {
       s.esquecerConta();
       useOficina.getState().vincularConta(oficinaId, false);
     } else setPergunta({ tipo: 'trocar', de: s.contaOficinaId, pendentes: n });
-  }, [hidratado, oficinaId, contaOficinaId]);
+  }, [hidratado, oficinaId, contaOficinaId, saindo]);
 
   // o motor roda numa aba só (as outras recebem pelo aparelho)
   useEffect(() => {
-    if (!hidratado || !oficinaId || contaOficinaId !== oficinaId) return;
+    if (!hidratado || !oficinaId || contaOficinaId !== oficinaId || saindo) return;
     const sb = banco();
     if (!sb) return;
     let atual: MotorDeSincronia | null = null;
@@ -106,7 +111,7 @@ export function ProvedorDaSincronia({ children }: { children: ReactNode }) {
       soltar?.();
       if (motor.current === atual) motor.current = null;
     };
-  }, [hidratado, oficinaId, contaOficinaId, banco]);
+  }, [hidratado, oficinaId, contaOficinaId, banco, saindo]);
 
   // oficina recém-criada: depois da primeira busca, se o banco não tinha o cadastro, o aparelho
   // começa com o da conta (e ele sobe como config)
@@ -238,8 +243,31 @@ function PerguntaDosDados({ pergunta, oficina, oficinaId, aoTerminar }: { pergun
   );
 }
 
-/** O estado da nuvem no canto do app: em dia, sincronizando, sem internet, guardado só aqui. */
+/** O estado da nuvem no canto do app: em dia, salvando, sem internet, guardado só aqui. */
 export function IndicadorDaSincronia({ compacto = false }: { compacto?: boolean }) {
+  const { estado, pendentes, rejeitados } = useSincronia();
+  // para quem usa leitor de tela: só os problemas são anunciados (o "salvando" muda o tempo todo)
+  const aviso =
+    estado === 'sem-internet'
+      ? 'Sem internet. O que você fizer fica guardado neste aparelho e sobe quando a internet voltar.'
+      : estado === 'sem-sessao'
+        ? 'Sua sessão terminou. Entre de novo para salvar na nuvem.'
+        : estado === 'erro' || estado === 'sem-permissao' || estado === 'limite'
+          ? 'Os dados não estão subindo para a nuvem.'
+          : rejeitados > 0 && pendentes === 0
+            ? 'Alguns itens não subiram para a nuvem.'
+            : '';
+  return (
+    <>
+      <ConteudoDoIndicador compacto={compacto} />
+      <span className="sr-only" aria-live="polite">
+        {aviso}
+      </span>
+    </>
+  );
+}
+
+function ConteudoDoIndicador({ compacto }: { compacto: boolean }) {
   const { estado, pendentes, rejeitados, ultimaEm, erro, sincronizar } = useSincronia();
   const titulo = ultimaEm ? `Última vez em dia: ${formatarDiaHora(ultimaEm)}` : undefined;
   const classe = 'flex items-center gap-2 text-[13px] font-semibold';
@@ -251,32 +279,39 @@ export function IndicadorDaSincronia({ compacto = false }: { compacto?: boolean 
     );
   if (estado === 'sem-sessao')
     return (
-      <Link href="/entrar?para=/oficina" className={`${classe} text-atraso hover:underline`} role="status">
-        <TriangleAlert size={15} aria-hidden="true" /> Entre de novo para salvar
+      <Link href="/entrar?para=/oficina&motivo=sessao" className={`${classe} text-atraso hover:underline`}>
+        <TriangleAlert size={15} aria-hidden="true" /> {pendentes ? `Entre de novo para salvar ${pendentes}` : 'Entre de novo para salvar'}
       </Link>
     );
   if (estado === 'sem-internet')
     return (
-      <span className={`${classe} text-oleo-tinta`} title={titulo} role="status">
+      <span className={`${classe} text-oleo-tinta`} title={titulo ?? 'Fica guardado neste aparelho e sobe quando a internet voltar.'}>
         <CloudOff size={15} aria-hidden="true" /> Sem internet{pendentes ? ` · ${pendentes} para subir` : ''}
       </span>
     );
   if (estado === 'limite' || estado === 'sem-permissao' || estado === 'erro')
     return (
-      <button type="button" onClick={sincronizar} className={`${classe} text-atraso`} title={erro ?? titulo} role="status">
-        <TriangleAlert size={15} aria-hidden="true" /> {estado === 'limite' ? 'Limite de dados da oficina' : estado === 'sem-permissao' ? 'Sem acesso a esta oficina' : 'Não sincronizou · tentar'}
+      <button type="button" onClick={sincronizar} className={`${classe} text-atraso`} title={erro ?? titulo}>
+        <TriangleAlert size={15} aria-hidden="true" />
+        {estado === 'limite' ? 'Limite de dados da oficina' : estado === 'sem-permissao' ? 'Sem acesso a esta oficina' : compacto ? 'Não salvou · tentar' : 'Não salvou na nuvem · tentar de novo'}
       </button>
     );
   if (rejeitados > 0 && pendentes === 0)
     return (
-      <button type="button" onClick={sincronizar} className={`${classe} text-oleo-tinta`} title="Alguns itens não subiram (grandes demais ou fora do formato). Edite o item para tentar de novo." role="status">
+      <button type="button" onClick={sincronizar} className={`${classe} text-oleo-tinta`} title="Grandes demais ou fora do formato. Edite o item para tentar de novo.">
         <TriangleAlert size={15} aria-hidden="true" /> {plural(rejeitados, 'item não subiu', 'itens não subiram')}
       </button>
     );
   if (estado === 'sincronizando' || estado === 'iniciando' || pendentes > 0)
     return (
-      <span className={`${classe} text-tinta-2`} title={titulo} role="status">
+      <span className={`${classe} text-tinta-2`} title={titulo}>
         <LoaderCircle size={15} className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> Salvando{pendentes ? ` · ${pendentes}` : ''}
+      </span>
+    );
+  if (estado === 'outra-aba')
+    return (
+      <span className={`${classe} text-ok`} title="Outra aba do Revisaí neste aparelho está cuidando da nuvem.">
+        <Cloud size={15} aria-hidden="true" /> Salvo na nuvem
       </span>
     );
   return (

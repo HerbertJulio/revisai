@@ -2,7 +2,7 @@
 
 import { ArrowLeft, Mail } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Botao, Campo, classeEntrada } from '@/components/ui';
 import { clienteNavegador, type ConfigPublica } from '@/lib/supabase-navegador';
 
@@ -11,14 +11,32 @@ const ERROS_DO_LINK: Record<string, string> = {
   google: 'Não deu para entrar com o Google. Tente de novo ou use o e-mail.'
 };
 
+/** Tempo entre dois códigos para o mesmo e-mail (o servidor também segura). */
+const ESPERA_REENVIO_S = 60;
+
+type ErroDeEntrada = { message?: string; status?: number; code?: string } | null;
+
 /** Mensagem do GoTrue para a pessoa. */
-export function mensagemDeEntrada(e: { message?: string; status?: number; code?: string } | null): string {
+export function mensagemDeEntrada(e: ErroDeEntrada): string {
   const m = (e?.message ?? '').toLowerCase();
-  if (e?.code === 'over_email_send_rate_limit' || m.includes('rate limit') || e?.status === 429) return 'Muitos códigos pedidos seguidos. Espere alguns minutos e tente de novo.';
+  if (e?.code === 'over_email_send_rate_limit' || e?.code === 'over_request_rate_limit' || m.includes('rate limit') || m.includes('only request this after') || e?.status === 429)
+    return 'Muitos códigos pedidos seguidos. Espere um pouco e tente de novo.';
   if (e?.code === 'otp_expired' || m.includes('expired') || m.includes('invalid')) return 'Código errado ou vencido. Confira ou peça outro.';
-  if (m.includes('signups not allowed')) return 'Novas contas estão fechadas no momento.';
-  if (m.includes('email address') && m.includes('invalid')) return 'Confira o e-mail.';
+  if (e?.code === 'signup_disabled' || m.includes('signups not allowed')) return 'Novas contas estão fechadas no momento.';
+  if (e?.code === 'email_address_invalid' || (m.includes('email address') && m.includes('invalid'))) return 'Confira o e-mail.';
+  if (m.includes('fetch') || m.includes('network')) return 'Sem conexão com o servidor. Confira a internet e tente de novo.';
   return 'Não deu para entrar agora. Confira a internet e tente de novo.';
+}
+
+/** Quantos segundos o servidor pediu para esperar antes de mandar outro código (ou 0). */
+export function esperaPedida(e: ErroDeEntrada): number {
+  const n = /after (\d+) seconds?/i.exec(e?.message ?? '');
+  return n ? Math.min(600, Number(n[1])) : 0;
+}
+
+/** Só os números do código (colado com espaço, traço ou o texto do e-mail junto). */
+export function digitosDoCodigo(valor: string): string {
+  return valor.replace(/\D/g, '').slice(0, 6);
 }
 
 export function FormEntrar({ config, para, google, erro: erroInicial, aoEntrar }: { config: ConfigPublica; para: string; google: boolean; erro?: string | null; aoEntrar?: () => void }) {
@@ -29,11 +47,28 @@ export function FormEntrar({ config, para, google, erro: erroInicial, aoEntrar }
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState<string | null>(erroInicial ? (ERROS_DO_LINK[erroInicial] ?? null) : null);
   const [aviso, setAviso] = useState<string | null>(null);
+  const [reenviarEm, setReenviarEm] = useState(0);
+  const [agora, setAgora] = useState(() => Date.now());
+  const campoCodigo = useRef<HTMLInputElement>(null);
+  const conferindo = useRef(false);
 
   const sb = () => clienteNavegador(config);
+  const faltam = Math.max(0, Math.ceil((reenviarEm - agora) / 1000));
+
+  // o relógio do "mandar de novo" só anda enquanto falta tempo
+  useEffect(() => {
+    if (reenviarEm <= Date.now()) return;
+    const t = setInterval(() => {
+      const n = Date.now();
+      setAgora(n);
+      if (n >= reenviarEm) clearInterval(t);
+    }, 1000);
+    return () => clearInterval(t);
+  }, [reenviarEm]);
 
   async function pedirCodigo(e?: FormEvent) {
     e?.preventDefault();
+    if (ocupado) return;
     const limpo = email.trim().toLowerCase();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(limpo)) {
       setErro('Confira o e-mail.');
@@ -41,33 +76,49 @@ export function FormEntrar({ config, para, google, erro: erroInicial, aoEntrar }
     }
     setOcupado(true);
     setErro(null);
-    const { error } = await sb().auth.signInWithOtp({
-      email: limpo,
-      options: { shouldCreateUser: true, emailRedirectTo: `${location.origin}/auth/confirmar?para=${encodeURIComponent(para)}` }
-    });
+    const { error } = await sb()
+      .auth.signInWithOtp({
+        email: limpo,
+        options: { shouldCreateUser: true, emailRedirectTo: `${location.origin}/auth/confirmar?para=${encodeURIComponent(para)}` }
+      })
+      .catch((x: unknown) => ({ error: { message: String((x as Error)?.message ?? x) } }));
     setOcupado(false);
-    if (error) {
+    const espera = esperaPedida(error);
+    if (error && !espera) {
       setErro(mensagemDeEntrada(error));
       return;
     }
+    // pedido seguido demais: o código anterior ainda vale, então segue para digitar
     setEmail(limpo);
     setPasso('codigo');
-    setAviso(`Mandamos um código para ${limpo}. Ele chega em até 1 minuto (olhe também o spam).`);
+    setReenviarEm(Date.now() + (espera || ESPERA_REENVIO_S) * 1000);
+    setAgora(Date.now());
+    setAviso(
+      espera
+        ? `Já mandamos um código para ${limpo} há pouco. Use esse; outro pode ser pedido em ${espera} segundos.`
+        : `Mandamos um código para ${limpo}. Ele chega em até 1 minuto (olhe também o spam).`
+    );
   }
 
-  async function conferir(e: FormEvent) {
-    e.preventDefault();
-    const token = codigo.replace(/\D/g, '');
+  async function conferir(token: string) {
+    if (conferindo.current) return;
     if (token.length < 6) {
       setErro('O código tem 6 números.');
+      campoCodigo.current?.focus();
       return;
     }
+    conferindo.current = true;
     setOcupado(true);
     setErro(null);
-    const { error } = await sb().auth.verifyOtp({ email, token, type: 'email' });
+    const { error } = await sb()
+      .auth.verifyOtp({ email, token, type: 'email' })
+      .catch((x: unknown) => ({ error: { message: String((x as Error)?.message ?? x) } }));
+    conferindo.current = false;
     if (error) {
       setOcupado(false);
       setErro(mensagemDeEntrada(error));
+      // volta para o campo, com o código selecionado para digitar por cima
+      requestAnimationFrame(() => campoCodigo.current?.select());
       return;
     }
     if (aoEntrar) {
@@ -94,31 +145,61 @@ export function FormEntrar({ config, para, google, erro: erroInicial, aoEntrar }
 
   if (passo === 'codigo')
     return (
-      <form onSubmit={conferir} className="flex flex-col gap-4">
-        {aviso ? <p className="rounded-xl bg-caneta-claro px-4 py-3 text-[14px] text-caneta">{aviso}</p> : null}
-        <Campo rotulo="Código do e-mail" erro={erro} htmlFor="codigo-entrada">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void conferir(digitosDoCodigo(codigo));
+        }}
+        className="flex flex-col gap-4"
+        noValidate
+      >
+        {aviso ? (
+          <p className="rounded-xl bg-caneta-claro px-4 py-3 text-[14px] text-caneta" role="status">
+            {aviso}
+          </p>
+        ) : null}
+        <Campo rotulo="Código do e-mail (6 números)" erro={erro} htmlFor="codigo-entrada">
           <input
+            ref={campoCodigo}
             id="codigo-entrada"
+            name="codigo"
             inputMode="numeric"
             autoComplete="one-time-code"
-            pattern="[0-9 ]*"
-            maxLength={12}
+            pattern="[0-9]*"
             value={codigo}
-            onChange={(e) => setCodigo(e.target.value)}
+            onChange={(e) => {
+              const digitos = digitosDoCodigo(e.target.value);
+              setCodigo(digitos);
+              if (erro) setErro(null);
+              // completou (digitando ou colando): confere sem precisar do botão
+              if (digitos.length === 6 && digitos !== codigo) void conferir(digitos);
+            }}
+            aria-invalid={erro ? true : undefined}
             className={`${classeEntrada} num text-center text-[22px] tracking-[0.3em]`}
             autoFocus
             required
+            disabled={ocupado}
           />
         </Campo>
         <Botao type="submit" variante="escuro" tamanho="grande" disabled={ocupado}>
           {ocupado ? 'Conferindo…' : 'Entrar'}
         </Botao>
-        <div className="flex items-center justify-between text-[14px]">
-          <button type="button" className="inline-flex items-center gap-1 font-semibold text-tinta-2 hover:text-tinta" onClick={() => (setPasso('email'), setCodigo(''), setErro(null))}>
+        <div className="flex flex-wrap items-center justify-between gap-2 text-[14px]">
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 font-semibold text-tinta-2 hover:text-tinta disabled:opacity-50"
+            disabled={ocupado}
+            onClick={() => {
+              setPasso('email');
+              setCodigo('');
+              setErro(null);
+              setAviso(null);
+            }}
+          >
             <ArrowLeft size={15} aria-hidden="true" /> Outro e-mail
           </button>
-          <button type="button" className="font-semibold text-caneta hover:underline disabled:opacity-50" disabled={ocupado} onClick={() => void pedirCodigo()}>
-            Mandar de novo
+          <button type="button" className="font-semibold text-caneta hover:underline disabled:text-tinta-3 disabled:no-underline" disabled={ocupado || faltam > 0} onClick={() => void pedirCodigo()}>
+            {faltam > 0 ? `Mandar de novo em ${faltam} s` : 'Mandar outro código'}
           </button>
         </div>
       </form>
@@ -144,17 +225,22 @@ export function FormEntrar({ config, para, google, erro: erroInicial, aoEntrar }
           </div>
         </>
       ) : null}
-      <form onSubmit={pedirCodigo} className="flex flex-col gap-4">
+      <form onSubmit={pedirCodigo} className="flex flex-col gap-4" noValidate>
         <Campo rotulo="Seu e-mail" erro={erro} dica="Mandamos um código de 6 números. Sem senha para lembrar." htmlFor="email-entrada">
           <input
             id="email-entrada"
+            name="email"
             type="email"
             inputMode="email"
             autoComplete="email"
             autoCapitalize="none"
             spellCheck={false}
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              if (erro) setErro(null);
+            }}
+            aria-invalid={erro ? true : undefined}
             className={classeEntrada}
             autoFocus={!google}
             required

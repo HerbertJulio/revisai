@@ -846,6 +846,13 @@ export async function recarregarDoAparelho(): Promise<void> {
   }
 }
 
+/** Grava o estado no aparelho agora e espera terminar (antes de a página mudar, por exemplo). */
+export async function gravarAgora(): Promise<void> {
+  const o = useOficina.persist.getOptions();
+  if (!o.storage || !o.name || !o.partialize) return;
+  await o.storage.setItem(o.name, { state: o.partialize(useOficina.getState()) as EstadoOficina, version: o.version });
+}
+
 /** Cada mudança dos dados da oficina vira pendente até subir (só com a conta ligada). */
 export function ligarRastreio(): () => void {
   return useOficina.subscribe((s, antes) => {
