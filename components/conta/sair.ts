@@ -6,6 +6,7 @@
 
 import { useSyncExternalStore } from 'react';
 import { MotorDeSincronia } from '@/components/oficina/sincronia/motor';
+import { limparCacheDoApp } from '@/lib/cache-app';
 import { plural } from '@/lib/formatos';
 import { aoHidratar, gravarAgora, jaHidratou, useOficina } from '@/lib/store';
 import { clienteNavegador, type ConfigPublica } from '@/lib/supabase-navegador';
@@ -103,5 +104,7 @@ export async function prepararSaida(config: ConfigPublica | null, confirmar?: (t
     // grava já: a página vai mudar logo em seguida
     await gravarAgora().catch(() => {});
   }
+  // as telas guardadas para abrir sem internet têm os dados da conta
+  await limparCacheDoApp();
   return true;
 }
