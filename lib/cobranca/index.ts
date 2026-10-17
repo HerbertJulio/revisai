@@ -32,6 +32,10 @@ import 'server-only';
                                        Cadastre com x-skip-mtls-checking: true (a Vercel não pede
                                        certificado do cliente); o segredo é a conferência.
 
+  Rotina diária (Vercel Cron): GET /api/pagamentos/rotina com Authorization: Bearer <CRON_SECRET>.
+  Agenda a cobrança do mês do Pix Automático, tenta de novo os avisos que falharam e cancela a
+  assinatura das oficinas que pediram para sair.
+
   Só no computador (nunca em produção):
     COBRANCA_PROVEDOR=teste            liga o gateway de mentira (lib/cobranca/teste.ts).
     COBRANCA_TESTE_SEGREDO             o cabeçalho x-teste-segredo dos avisos (padrão: segredo-de-teste).
