@@ -2,7 +2,8 @@
 -- guardado 30 dias (a mesma placa não é paga duas vezes) e o que a FIPE respondeu fica até o mês
 -- virar. Só o servidor lê e grava essas tabelas, com a chave do sistema. Cada oficina tem a sua
 -- cota de consultas de placa por mês (20; 200 no Pro e no teste do Pro), contada aqui, à parte
--- da cota da IA. Pode rodar de novo sem estragar nada.
+-- da cota da IA. Toda conferência de permissão usa coalesce: um papel NULL (quem não é membro)
+-- não pode fazer o IF negativo dar NULL e pular o erro. Pode rodar de novo sem estragar nada.
 
 -- ------------------------------------------------------------------ placas já consultadas
 
@@ -29,7 +30,7 @@ security definer
 set search_path = ''
 as $$
 begin
-  if not privado.sistema_autorizado() then
+  if not coalesce(privado.sistema_autorizado(), false) then
     raise exception 'Sem permissão' using errcode = '42501';
   end if;
   return (
@@ -50,7 +51,7 @@ security definer
 set search_path = ''
 as $$
 begin
-  if not privado.sistema_autorizado() then
+  if not coalesce(privado.sistema_autorizado(), false) then
     raise exception 'Sem permissão' using errcode = '42501';
   end if;
   if coalesce(p_placa, '') !~ '^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$' or jsonb_typeof(p_dados) is distinct from 'object' then
@@ -109,7 +110,7 @@ declare
   v_limite integer;
   v_usado integer;
 begin
-  if privado.papel_na_oficina(p_oficina) is null and not privado.sistema_autorizado() then
+  if coalesce(privado.papel_na_oficina(p_oficina), '') = '' and not coalesce(privado.sistema_autorizado(), false) then
     raise exception 'Você não é desta oficina' using errcode = '42501';
   end if;
   if not exists (select 1 from public.oficinas o where o.id = p_oficina and o.ativa) then
@@ -137,7 +138,7 @@ security definer
 set search_path = ''
 as $$
 begin
-  if not privado.sistema_autorizado() then
+  if not coalesce(privado.sistema_autorizado(), false) then
     raise exception 'Sem permissão' using errcode = '42501';
   end if;
   update privado.placas_uso set quantidade = greatest(quantidade - 1, 0)
@@ -157,7 +158,7 @@ as $$
 declare
   v_plano text;
 begin
-  if privado.papel_na_oficina(p_oficina) is null and not privado.sistema_autorizado() then
+  if coalesce(privado.papel_na_oficina(p_oficina), '') = '' and not coalesce(privado.sistema_autorizado(), false) then
     raise exception 'Você não é desta oficina' using errcode = '42501';
   end if;
   v_plano := privado.plano_da_oficina(p_oficina);
@@ -202,7 +203,7 @@ security definer
 set search_path = ''
 as $$
 begin
-  if not privado.sistema_autorizado() then
+  if not coalesce(privado.sistema_autorizado(), false) then
     raise exception 'Sem permissão' using errcode = '42501';
   end if;
   return (select c.dados from public.fipe_cache c where c.chave = p_chave and c.mes = p_mes);
@@ -218,7 +219,7 @@ security definer
 set search_path = ''
 as $$
 begin
-  if not privado.sistema_autorizado() then
+  if not coalesce(privado.sistema_autorizado(), false) then
     raise exception 'Sem permissão' using errcode = '42501';
   end if;
   if coalesce(p_mes, '') !~ '^[0-9]{4}-[0-9]{2}$' or p_dados is null then

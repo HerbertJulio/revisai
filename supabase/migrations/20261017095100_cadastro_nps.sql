@@ -1,7 +1,8 @@
 -- NPS: "de 0 a 10, quanto você indicaria o Revisaí para outra oficina?". Quem é de uma oficina
 -- (ou de uma loja) responde pelo app, no máximo uma vez a cada 60 dias; ninguém lê as respostas
 -- direto da tabela, só a equipe, pelo resumo (nps_resumo). O app pergunta depois de 30 dias na
--- oficina e de novo a cada 90 (respondendo ou dispensando). Pode rodar de novo sem estragar nada.
+-- oficina e de novo a cada 90 (respondendo ou dispensando). As conferências de permissão usam
+-- coalesce (um papel NULL não pula o erro). Pode rodar de novo sem estragar nada.
 
 create table if not exists public.nps_respostas (
   id uuid primary key default gen_random_uuid(),
@@ -57,10 +58,10 @@ begin
   if (p_oficina is null) = (p_fornecedor is null) then
     raise exception 'Responda pela oficina ou pela loja' using errcode = '22023';
   end if;
-  if p_oficina is not null and privado.papel_na_oficina(p_oficina) is null then
+  if p_oficina is not null and coalesce(privado.papel_na_oficina(p_oficina), '') = '' then
     raise exception 'Você não é desta oficina' using errcode = '42501';
   end if;
-  if p_fornecedor is not null and privado.papel_no_fornecedor(p_fornecedor) is null then
+  if p_fornecedor is not null and coalesce(privado.papel_no_fornecedor(p_fornecedor), '') = '' then
     raise exception 'Você não é desta loja' using errcode = '42501';
   end if;
   -- duas abas respondendo juntas: uma espera a outra
@@ -76,7 +77,7 @@ begin
 end;
 $$;
 
-/** Não quer responder agora: a pergunta volta em 90 dias. */
+/** Não quer responder agora: a pergunta volta em 90 dias (só para quem é de uma oficina ou loja). */
 create or replace function public.nps_dispensar()
 returns void
 language plpgsql
@@ -90,6 +91,10 @@ begin
   if v_uid is null then
     raise exception 'Entre na sua conta' using errcode = '28000';
   end if;
+  if not exists (select 1 from public.oficina_membros m where m.user_id = v_uid)
+     and not exists (select 1 from public.fornecedor_membros f where f.user_id = v_uid) then
+    raise exception 'Só quem é de uma oficina ou de uma loja responde' using errcode = '42501';
+  end if;
   insert into privado.nps_dispensas as d (user_id, dispensado_em) values (v_uid, now())
   on conflict (user_id) do update set dispensado_em = excluded.dispensado_em;
 end;
@@ -97,7 +102,7 @@ $$;
 
 /**
  * Se o app pergunta agora para quem entrou, nesta oficina: depois de 30 dias como membro dela e
- * 90 depois da última resposta ou dispensa.
+ * 90 depois da última resposta ou dispensa. Quem não é da oficina recebe 42501.
  */
 create or replace function public.nps_pendente(p_oficina uuid)
 returns jsonb
@@ -112,12 +117,12 @@ declare
   v_resposta timestamptz;
   v_dispensa timestamptz;
 begin
-  if v_uid is null or p_oficina is null then
-    return jsonb_build_object('perguntar', false);
+  if v_uid is null then
+    raise exception 'Entre na sua conta' using errcode = '28000';
   end if;
   select m.criado_em into v_desde from public.oficina_membros m where m.oficina_id = p_oficina and m.user_id = v_uid;
   if v_desde is null then
-    return jsonb_build_object('perguntar', false);
+    raise exception 'Você não é desta oficina' using errcode = '42501';
   end if;
   select max(r.criado_em) into v_resposta from public.nps_respostas r where r.user_id = v_uid;
   select d.dispensado_em into v_dispensa from privado.nps_dispensas d where d.user_id = v_uid;
@@ -149,7 +154,7 @@ declare
   v_desde timestamptz := v_inicio at time zone 'America/Sao_Paulo';
   v_res jsonb;
 begin
-  if not privado.eh_equipe() then
+  if not coalesce(privado.eh_equipe(), false) then
     raise exception 'Só a equipe' using errcode = '42501';
   end if;
   with r as (

@@ -113,6 +113,36 @@ d('tabela FIPE guardada', () => {
     }));
 });
 
+d('quem não é de nada', () => {
+  it('uma conta sem oficina, sem loja e fora da equipe recebe 42501 em todas as funções', () =>
+    emTransacao(async (b) => {
+      const dono = await criarPessoa(b, pessoa('dono'));
+      const o = await criarOficina(b, dono);
+      const { fornecedorId } = await criarLoja(b, null);
+      // segundo fator em dia não muda nada: não é da equipe
+      const estranho = await criarPessoa(b, pessoa('estranho', { totpHa: 60 }));
+      const chamadas: [string, unknown[]][] = [
+        ['select public.placas_cache_ler($1)', ['ABC1D23']],
+        [`select public.placas_cache_gravar($1, '{"v": 1}'::jsonb)`, ['ABC1D23']],
+        ['select public.placas_consumir($1)', [o]],
+        ['select public.placas_devolver($1)', [o]],
+        ['select public.placas_uso_do_mes($1)', [o]],
+        ["select public.fipe_cache_ler('preco:004478-1', $1)", ['2026-10']],
+        [`select public.fipe_cache_gravar('preco:004478-1', $1, '[]'::jsonb)`, ['2026-10']],
+        ['select public.nps_responder(9, null, $1)', [o]],
+        ['select public.nps_responder(9, null, null, $1)', [fornecedorId]],
+        ['select public.nps_pendente($1)', [o]],
+        ['select public.nps_dispensar()', []],
+        ['select public.nps_resumo(12)', []]
+      ];
+      for (const [sql, params] of chamadas) expect({ sql, codigo: (await tentar(b, estranho, sql, params)).codigo }).toEqual({ sql, codigo: '42501' });
+      // e nada mudou
+      expect((await b.query('select count(*)::int as n from privado.placas_uso where oficina_id = $1', [o])).rows[0].n).toBe(0);
+      expect((await b.query('select count(*)::int as n from public.nps_respostas where user_id = $1', [estranho.id])).rows[0].n).toBe(0);
+      expect((await b.query('select count(*)::int as n from privado.nps_dispensas where user_id = $1', [estranho.id])).rows[0].n).toBe(0);
+    }));
+});
+
 d('NPS', () => {
   it('responde pela oficina de que é membro; uma vez a cada 60 dias; ninguém lê a tabela', () =>
     emTransacao(async (b) => {
@@ -152,7 +182,8 @@ d('NPS', () => {
       const o = await criarOficina(b, dono);
       const pendente = async (p: Pessoa) => ((await linhas(b, p, 'select public.nps_pendente($1) as r', [o]))[0].r as { perguntar: boolean }).perguntar;
       expect(await pendente(dono)).toBe(false);
-      expect(await pendente(outro)).toBe(false);
+      // quem não é da oficina não pergunta sobre ela
+      expect((await tentar(b, outro, 'select public.nps_pendente($1)', [o])).codigo).toBe('42501');
       await b.query(`update public.oficina_membros set criado_em = now() - interval '31 days' where oficina_id = $1`, [o]);
       expect(await pendente(dono)).toBe(true);
       await linhas(b, dono, 'select public.nps_dispensar()');
@@ -164,6 +195,7 @@ d('NPS', () => {
       await b.query(`update public.nps_respostas set criado_em = now() - interval '90 days 1 minute' where user_id = $1`, [dono.id]);
       expect(await pendente(dono)).toBe(true);
       expect((await tentar(b, null, 'select public.nps_dispensar()')).codigo).toBe('42501');
+      expect((await tentar(b, outro, 'select public.nps_dispensar()')).codigo).toBe('42501');
     }));
 
   it('o resumo é só da equipe: NPS, mês a mês, notas e comentários com o nome da oficina', () =>
