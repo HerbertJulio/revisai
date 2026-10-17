@@ -5,6 +5,7 @@
 // oficina escolhida (o banco aplica as regras dela e recalcula os preços no gatilho
 // calcular_pedido); o cadastro de interesse do site é público.
 
+import { after } from 'next/server';
 import { z } from 'zod';
 import { itensFechados, type ItemFechado } from '@/lib/alertas';
 import { CATEGORIAS } from '@/lib/catalogo';
@@ -13,6 +14,7 @@ import { acessoDaOficina } from '@/lib/conta';
 import { mensagemDoBanco } from '@/lib/conta-dados';
 import { normalizarTelefone } from '@/lib/formatos';
 import { permitido } from '@/lib/limite';
+import { avisarLojasDoPedido } from '@/lib/loja/avisos';
 import { esquemaContatoDoPedido, mensagemDoPedido } from '@/lib/marketplace-dados';
 import { clientePublico } from '@/lib/supabase-servidor';
 import type { Categoria } from '@/lib/tipos';
@@ -26,7 +28,13 @@ const esquemaPedido = z.object({
     .min(1, 'O pedido está vazio.')
     .max(50),
   observacao: z.string().trim().max(500).optional().default(''),
-  contato: esquemaContatoDoPedido
+  contato: esquemaContatoDoPedido,
+  /** Quanto do cashback usar em cada loja ({ "<loja>": valor }); o banco confere o saldo. */
+  cashback: z
+    .record(z.string().regex(/^[1-9]\d{0,17}$/, 'Loja inválida no cashback.'), z.number().min(0).max(1_000_000))
+    .optional()
+    .default({})
+    .transform((c) => Object.fromEntries(Object.entries(c).map(([loja, v]) => [loja, Math.round(v * 100) / 100]).filter(([, v]) => (v as number) > 0)) as Record<string, number>)
 });
 
 /**
@@ -34,12 +42,12 @@ const esquemaPedido = z.object({
  * põe o nome e o WhatsApp do cadastro da oficina, confere os produtos, calcula os preços e divide
  * o pedido entre as lojas. Volta com os itens como o banco calculou.
  */
-export async function enviarPedido(entrada: unknown): Promise<Resposta<{ codigo: string; total: number; itens: ItemFechado[] }>> {
+export async function enviarPedido(entrada: unknown): Promise<Resposta<{ codigo: string; total: number; itens: ItemFechado[]; cashback: number }>> {
   const r = esquemaPedido.safeParse(entrada);
   if (!r.success) return { ok: false, erro: r.error.issues[0]?.message ?? 'Confira os dados do pedido.' };
   const a = await acessoDaOficina();
   if (!a.ok) return { ok: false, erro: a.erro, semConta: true };
-  const { itens, observacao, contato } = r.data;
+  const { itens, observacao, contato, cashback } = r.data;
   const whatsapp = normalizarTelefone(a.oficina.whatsapp ?? '') ?? normalizarTelefone(contato.whatsapp);
   if (!whatsapp) return { ok: false, erro: 'Confira o WhatsApp da oficina, com DDD. É por ele que a loja fala com você.' };
   if (!(await permitido('pedido', 8, 10))) return { ok: false, erro: 'Muitos pedidos seguidos. Espere alguns minutos e tente de novo.' };
@@ -61,13 +69,23 @@ export async function enviarPedido(entrada: unknown): Promise<Resposta<{ codigo:
         oficina_uf: contato.uf || null,
         oficina_endereco: contato.endereco || null,
         itens: [...porProduto].map(([produto_id, quantidade]) => ({ produto_id, quantidade })),
-        observacao: observacao || null
+        observacao: observacao || null,
+        cashback: Object.keys(cashback).length ? cashback : null
       })
-      .select('itens, total')
+      .select('id, itens, total')
       .single();
     if (!error && data) {
-      const pedido = data as { itens: unknown; total: number | string };
-      return { ok: true, codigo, total: Number(pedido.total), itens: itensFechados(pedido.itens) };
+      const pedido = data as { id: number | string; itens: unknown; total: number | string };
+      // o aviso no WhatsApp das lojas sai depois da resposta (sem o modelo configurado, não sai nada)
+      after(async () => {
+        try {
+          await avisarLojasDoPedido(a.sb, Number(pedido.id));
+        } catch (e) {
+          console.error('[pedido] aviso às lojas', e);
+        }
+      });
+      const usado = Math.round(Object.values(cashback).reduce((s, v) => s + v, 0) * 100) / 100;
+      return { ok: true, codigo, total: Number(pedido.total), itens: itensFechados(pedido.itens), cashback: usado };
     }
     if (error?.code === '23505') continue; // código repetido: tenta outro
     const m = mensagemDoPedido(error);

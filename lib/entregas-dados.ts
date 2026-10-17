@@ -60,7 +60,9 @@ export interface ParteAcompanhada {
   whatsapp: string | null;
   status: SituacaoParte;
   subtotal: number;
-  itens: { nome: string; quantidade: number; precoUnitario: number; combinado: boolean }[];
+  /** Cashback da oficina usado nesta compra (sai do valor a pagar). */
+  cashback: number;
+  itens: { produtoId: number | null; nome: string; quantidade: number; precoUnitario: number; combinado: boolean; especial: boolean }[];
   pagamento: SituacaoPagamento;
   pagamentoEm: string | null;
   /** A loja cadastrou a chave Pix. */
@@ -87,6 +89,7 @@ export interface LinhaDaParte {
   fornecedor_id: number;
   status: SituacaoParte;
   subtotal: number;
+  cashback?: number | null;
   itens: unknown;
   pagamento: SituacaoPagamento;
   pagamento_em: string | null;
@@ -124,7 +127,18 @@ function itensDaParte(dados: unknown): ItemDaParte[] {
     const quantidade = Number(i.quantidade);
     const precoUnitario = Number(i.preco_unitario);
     if (!Number.isFinite(quantidade) || !Number.isFinite(precoUnitario)) return [];
-    return [{ nome: String(i.nome ?? ''), quantidade, precoUnitario, combinado: i.combinado === true, fornecedor: typeof i.fornecedor === 'string' ? i.fornecedor : undefined }];
+    const produtoId = Number(i.produto_id);
+    return [
+      {
+        produtoId: Number.isSafeInteger(produtoId) && produtoId > 0 ? produtoId : null,
+        nome: String(i.nome ?? ''),
+        quantidade,
+        precoUnitario,
+        combinado: i.combinado === true,
+        especial: i.especial === true,
+        fornecedor: typeof i.fornecedor === 'string' ? i.fornecedor : undefined
+      }
+    ];
   });
 }
 
@@ -157,7 +171,8 @@ export function montarPedidos(
       whatsapp: loja?.whatsapp ?? null,
       status: l.status,
       subtotal: l.subtotal,
-      itens: itens.map(({ nome, quantidade, precoUnitario, combinado }) => ({ nome, quantidade, precoUnitario, combinado })),
+      cashback: Math.max(0, Number(l.cashback) || 0),
+      itens: itens.map(({ produtoId, nome, quantidade, precoUnitario, combinado, especial }) => ({ produtoId, nome, quantidade, precoUnitario, combinado, especial })),
       pagamento: l.pagamento,
       pagamentoEm: l.pagamento_em,
       pix: comPix(l.fornecedor_id),
