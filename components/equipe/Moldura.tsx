@@ -15,6 +15,7 @@ import {
   Megaphone,
   ShieldAlert,
   ShoppingCart,
+  Smile,
   Store,
   UserSearch,
   Users,
@@ -46,6 +47,7 @@ export type Aba =
   | 'marketplace'
   | 'coortes'
   | 'uso'
+  | 'nps'
   | 'antifraude'
   | 'equipe'
   | 'historico'
@@ -106,6 +108,7 @@ export async function Moldura({
         { id: 'marketplace', href: '/admin/marketplace', rotulo: 'Marketplace', Icone: ChartColumn, permissao: 'numeros' },
         { id: 'coortes', href: '/admin/coortes', rotulo: 'Coortes', Icone: Grid3x3, permissao: 'numeros' },
         { id: 'uso', href: '/admin/uso', rotulo: 'Uso e funil', Icone: Funnel, permissao: 'numeros' },
+        { id: 'nps', href: '/admin/nps', rotulo: 'NPS', Icone: Smile, permissao: 'ver' },
         { id: 'antifraude', href: '/admin/antifraude', rotulo: 'Antifraude', Icone: ShieldAlert, permissao: 'numeros' }
       ]
     },
