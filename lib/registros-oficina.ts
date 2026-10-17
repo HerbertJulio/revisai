@@ -187,6 +187,8 @@ export interface ClubeMembro {
   diaVencimento: number;
   situacao: 'ativo' | 'pausado' | 'cancelado';
   usos: { data: string; servico: string; documentoId?: Id | null }[];
+  /** O cartão do membro pelo link público (o código para mostrar e o endereço para mandar de novo). */
+  cartao?: { codigo: string | null; url: string | null } | null;
   criadoEm: string;
   atualizadoEm: string;
 }
@@ -201,6 +203,10 @@ export interface ClubeCobranca {
   pagoEm: string | null;
   forma?: FormaPagamento | null;
   lancamentoId?: Id | null;
+  /** O link de pagamento desta mensalidade (para mandar de novo). */
+  link?: { codigo: string | null; url: string | null } | null;
+  /** Quando o lembrete da mensalidade atrasada foi mandado. */
+  lembradoEm?: string | null;
   criadoEm: string;
   atualizadoEm: string;
 }
