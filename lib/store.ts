@@ -213,6 +213,18 @@ function novoUuid(): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
+let ultimoInstante = 0;
+
+/**
+ * O instante de agora, sempre depois do anterior neste aparelho. Os movimentos do estoque são
+ * somados em ordem de tempo (com o piso no zero): dois no mesmo milissegundo ficariam na ordem
+ * do id (sorteado), e uma saída grande podia ser contada antes da entrada feita logo antes dela.
+ */
+function instante(): string {
+  ultimoInstante = Math.max(Date.now(), ultimoInstante + 1);
+  return new Date(ultimoInstante).toISOString();
+}
+
 function semChaves<T>(registro: Record<Id, T>, remover: (item: T, id: Id) => boolean): Record<Id, T> {
   const r: Record<Id, T> = {};
   for (const [id, item] of Object.entries(registro)) if (!remover(item, id)) r[id] = item;
@@ -478,7 +490,7 @@ export const useOficina = create<EstadoOficina>()(
       salvarItemEstoque(i) {
         const id = i.id ?? novoId();
         const anterior = get().estoque[id] as ItemComBase | undefined;
-        const agora = new Date().toISOString();
+        const agora = instante();
         // a quantidade e o custo de um item que já existe só mudam por movimento (entrada, saída,
         // contagem): assim a soma dos aparelhos fecha e uma tela antiga não apaga o que chegou
         const quantidade = anterior ? anterior.quantidade : Math.max(0, i.quantidade);
@@ -509,24 +521,24 @@ export const useOficina = create<EstadoOficina>()(
         const item = get().estoque[m.itemId];
         if (!item || !Number.isFinite(m.quantidade)) return null;
         const id = novoId();
-        const mov: MovimentoEstoque = { ...m, id, quando: m.quando ?? new Date().toISOString() };
+        const mov: MovimentoEstoque = { ...m, id, quando: m.quando ?? instante() };
         const movimentos = { ...get().movimentos, [id]: mov };
         set({ estoque: { ...get().estoque, [item.id]: comMovimento(item, mov, movimentos) }, movimentos });
         return id;
       },
 
       receberPedido(codigo, entradas) {
-        const quando = new Date().toISOString();
+        const quando = instante();
         const estoque = { ...get().estoque };
         const movimentos = { ...get().movimentos };
-        for (const e of entradas) {
+        for (const [i, e] of entradas.entries()) {
           const item = estoque[e.itemId];
           if (!item || !(e.quantidade > 0)) continue;
           const id = novoId();
           const mov: MovimentoEstoque = {
             id,
             itemId: item.id,
-            quando,
+            quando: i === 0 ? quando : instante(),
             tipo: 'entrada',
             quantidade: e.quantidade,
             custoUnitario: e.custoUnitario,
@@ -622,7 +634,7 @@ export const useOficina = create<EstadoOficina>()(
           const item = estoque[itemId];
           if (!item) continue;
           const mid = novoId();
-          const mov: MovimentoEstoque = { id: mid, itemId, quando: agora, tipo: 'saida', quantidade: -quantidade, origem: { tipo: 'ordem', id, rotulo: `OS nº ${d.numero}` } };
+          const mov: MovimentoEstoque = { id: mid, itemId, quando: instante(), tipo: 'saida', quantidade: -quantidade, origem: { tipo: 'ordem', id, rotulo: `OS nº ${d.numero}` } };
           movimentos[mid] = mov;
           estoque[itemId] = comMovimento(item, mov, movimentos);
         }
