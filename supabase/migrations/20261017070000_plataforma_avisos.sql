@@ -160,8 +160,10 @@ begin
   if v_uid is null then
     raise exception 'Entre na sua conta' using errcode = '28000';
   end if;
-  if (select count(*) from public.push_inscricoes where user_id = v_uid) >= 20 then
-    delete from public.push_inscricoes where id in (select id from public.push_inscricoes where user_id = v_uid order by coalesce(ultimo_ok_em, criado_em) limit 1);
+  -- no máximo 20 navegadores por pessoa: o mais parado sai para o novo entrar
+  if not exists (select 1 from public.push_inscricoes where endpoint = p_endpoint and user_id = v_uid)
+     and (select count(*) from public.push_inscricoes where user_id = v_uid) >= 20 then
+    delete from public.push_inscricoes where id in (select id from public.push_inscricoes where user_id = v_uid order by coalesce(ultimo_ok_em, criado_em), id limit 1);
   end if;
   delete from public.push_inscricoes where endpoint = p_endpoint and user_id <> v_uid;
   insert into public.push_inscricoes (user_id, endpoint, p256dh, auth, agente)
