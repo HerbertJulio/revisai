@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { destravarParados, limparRascunhosVelhos } from '@/lib/agente/rascunhos';
 import { refazerComErro } from '@/lib/agente/webhook';
 import { processarAvisos } from '@/lib/avisos/processar';
+import { agendarCobrancasRecorrentes, cancelarDeOficinasSaindo, reprocessarAvisos } from '@/lib/cobranca/servidor';
 import { limparEntregasVelhas } from '@/lib/entregas';
 import { clienteSistema } from '@/lib/supabase-servidor';
 
@@ -55,6 +56,11 @@ export async function GET(req: NextRequest) {
   const refeitos = await passo('montagens com erro', () => refazerComErro(inicio + 75_000));
   const rascunhos = await passo('rascunhos velhos', () => limparRascunhosVelhos());
   const entregas = await passo('entregas', limparEntregasVelhas);
+  // cobrança: cancela no gateway quem pediu para sair, agenda o Pix Automático do mês e refaz os
+  // avisos dos gateways que falharam
+  const cobrancaSaindo = await passo('cobrança de quem saiu', cancelarDeOficinasSaindo);
+  const cobrancaAgenda = await passo('cobranças do mês', agendarCobrancasRecorrentes);
+  const cobrancaAvisos = await passo('avisos dos gateways', reprocessarAvisos);
   // os avisos que ficaram na fila (o banco chama o app na hora; aqui é a rede de segurança)
   const avisos = await passo('avisos', () => processarAvisos({ ateMs: 20_000 }));
 
@@ -69,6 +75,7 @@ export async function GET(req: NextRequest) {
       entregasLimpas: entregas,
       plataforma,
       avisos,
+      cobranca: { saindo: cobrancaSaindo, agenda: cobrancaAgenda, avisos: cobrancaAvisos },
       erros,
       ms: Date.now() - inicio
     },

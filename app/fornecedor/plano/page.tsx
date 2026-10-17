@@ -1,7 +1,9 @@
 import type { Metadata } from 'next';
 import { ErroDoPainel, MolduraFornecedor, SemLoja } from '@/components/fornecedor/Moldura';
 import { PlanoFornecedorTela } from '@/components/fornecedor/Plano';
+import { CobrancasDaLoja } from '@/components/cobranca/CobrancasDaLoja';
 import { Chip } from '@/components/ui';
+import { cobrancasDaLoja } from '@/lib/cobranca/loja';
 import { formatarMoeda } from '@/lib/formatos';
 import { metricasDosAnuncios } from '@/lib/loja/anuncios';
 import { dataCurta } from '@/lib/loja/comum';
@@ -17,11 +19,15 @@ export default async function PaginaPlano() {
   if (r.estado === 'erro') return <ErroDoPainel erro={r.erro} />;
   const { painel, sb } = r;
   const { contrato, impulsos, produtos, hoje } = painel;
-  const metricas = impulsos.length ? await metricasDosAnuncios(sb, painel.loja.id, 30) : new Map();
+  const [metricas, cobrancas] = await Promise.all([
+    impulsos.length ? metricasDosAnuncios(sb, painel.loja.id, 30) : Promise.resolve(new Map()),
+    cobrancasDaLoja(sb, painel.loja.id)
+  ]);
   const nomes = new Map(produtos.map((p) => [p.id, [p.marca, p.nome].filter(Boolean).join(' ')]));
   return (
     <MolduraFornecedor aba="plano" painel={painel} titulo="Plano e impulsos">
       <PlanoFornecedorTela atual={contrato?.plano ?? 'vitrine'} comissao={contrato?.comissaoPercentual ?? null} mensalidade={contrato?.mensalidade ?? null} dono={painel.papel === 'dono'} />
+      <CobrancasDaLoja pagamentos={cobrancas} />
       {impulsos.length ? (
         <section className="flex flex-col gap-3">
           <h2 className="text-[21px]">Seus impulsos</h2>
