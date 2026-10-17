@@ -7,6 +7,8 @@ export interface DadosDaEmpresa {
   endereco: string;
   emailPrivacidade: string;
   emailContato: string;
+  /** Quem responde como encarregado pelo tratamento de dados (LGPD, art. 41). */
+  encarregado: string;
   /** O foro como entra no texto: "da comarca de Rio de Janeiro/RJ" (EMPRESA_FORO) ou "do domicílio da empresa". */
   foro: string;
   site: string;
@@ -38,6 +40,7 @@ export function dadosDaEmpresa(): DadosDaEmpresa {
     endereco: endereco || A_PREENCHER,
     emailPrivacidade: emailPrivacidade || A_PREENCHER,
     emailContato: emailContato || A_PREENCHER,
+    encarregado: valor('EMPRESA_ENCARREGADO') || A_PREENCHER,
     foro: foro ? `da comarca de ${foro}` : 'do domicílio da empresa',
     site: (valor('SITE_URL') || 'https://revisai.howlks.com').replace(/\/+$/, ''),
     incompleto: !razaoSocial || !cnpj || !endereco || !emailPrivacidade

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, describe, expect, it } from 'vitest';
+import { VERSAO_DOS_DOCUMENTOS } from '@/app/(site)/termos/versao';
 import { criarEquipe, criarLoja, criarOficina, criarPessoa, emTransacao, fechar, linhas, pessoa, temBanco, tentar, type Banco, type Pessoa } from './ajuda';
 
 // Avisos (fila, quem recebe, preferências, Web Push), erros dos navegadores e a limpeza.
@@ -299,6 +300,15 @@ d('Web Push e preferências', () => {
       expect((await tentar(b, c, 'update public.avisos_preferencias set email = true where user_id = $1 returning user_id', [a.id])).linhas).toEqual([]);
       expect((await tentar(b, a, `update public.avisos_preferencias set desligados = '{nao_existe}' where user_id = $1`, [a.id])).codigo).toBe('23514');
       expect((await tentar(b, null, 'select * from public.avisos_preferencias')).codigo).toBe('42501');
+    }));
+});
+
+d('documentos', () => {
+  it('a versão das páginas é a que o banco pede para aceitar', () =>
+    emTransacao(async (b) => {
+      const versoes = (await b.query('select public.versoes_dos_termos() as v')).rows[0].v as Record<string, string>;
+      expect(Object.keys(versoes).sort()).toEqual(['contrato_loja', 'privacidade', 'termos', 'tratamento_dados']);
+      for (const v of Object.values(versoes)) expect(v).toBe(VERSAO_DOS_DOCUMENTOS);
     }));
 });
 
