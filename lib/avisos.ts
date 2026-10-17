@@ -3,6 +3,8 @@
 
 import { calcularVencimento, estimarRodagem, kmEstimado, pontosDoVeiculo, type Rodagem, type Vencimento } from './agenda';
 import { dataLocal, diasEntre } from './datas';
+import { lembretesDoDia } from './lembretes';
+import type { Lembrete } from './registros-oficina';
 import type { Atendimento, Cliente, Contato, Id, Leitura, Preferencias, ProdutoUsado, ServicoId, Veiculo } from './tipos';
 
 export type Situacao = 'atrasado' | 'avisar' | 'futuro';
@@ -214,6 +216,26 @@ function ordemDosGrupos(a: GrupoAviso, b: GrupoAviso): number {
   const da = a.dataPrevista ?? '9999-12-31';
   const db = b.dataPrevista ?? '9999-12-31';
   return da < db ? -1 : da > db ? 1 : 0;
+}
+
+// ---------------------------------------------------------------- lembretes
+
+export interface ItemDeLembrete {
+  lembrete: Lembrete;
+  veiculo: Veiculo | undefined;
+  cliente: Cliente | undefined;
+}
+
+/**
+ * O grupo de lembretes do início: os abertos que chegaram na data (recusados no orçamento,
+ * recalls e anotações), cada um com o carro e o cliente, dos mais antigos para os mais novos.
+ */
+export function grupoDeLembretes(lembretes: Record<Id, Lembrete>, dados: Pick<DadosOficina, 'veiculos' | 'clientes'>, hoje: string): ItemDeLembrete[] {
+  return lembretesDoDia(Object.values(lembretes), hoje).map((lembrete) => {
+    const veiculo = lembrete.veiculoId ? dados.veiculos[lembrete.veiculoId] : undefined;
+    const cliente = (lembrete.clienteId ? dados.clientes[lembrete.clienteId] : undefined) ?? (veiculo ? dados.clientes[veiculo.clienteId] : undefined);
+    return { lembrete, veiculo, cliente };
+  });
 }
 
 export interface Resumo {
