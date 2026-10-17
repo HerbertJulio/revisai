@@ -19,7 +19,6 @@ import {
   servicosIncluidosNaOrdem,
   somarCompetencia,
   txidDaMensalidade,
-  urlDoCartao,
   usosDaOrdem,
   vencimentoDaMensalidade
 } from '@/lib/clube';
@@ -201,7 +200,6 @@ describe('cartão do membro', () => {
     // sem chave Pix, o cartão não mostra o código; pausado também não
     expect(dadosDoCartao({ membro: membro(), plano: PLANO, cliente: 'Ana', oficina: 'X', cobrancas, recebedor: null, hoje: '2026-10-17' }).aberta).toBeNull();
     expect(dadosDoCartao({ membro: membro({ situacao: 'pausado' }), plano: PLANO, cliente: 'Ana', oficina: 'X', cobrancas, recebedor, hoje: '2026-10-17' }).aberta).toBeNull();
-    expect(urlDoCartao('https://revisai.app', 'tok')).toBe('https://revisai.app/clube/tok');
   });
 
   it('as mensagens da mensalidade e do lembrete', () => {

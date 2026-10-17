@@ -1,15 +1,14 @@
 // Cobrança do cliente da oficina: o Pix da ordem de serviço (e da mensalidade do clube) pelo
 // WhatsApp, com a página de pagamento. O Pix é o código estático do Banco Central com a chave da
 // oficina: o dinheiro cai direto na conta dela e o Revisaí não passa pelo pagamento. O cliente
-// avisa "Já paguei" pela página; a oficina confere no banco e confirma no app, e só então entra
-// a conta recebida no financeiro.
+// avisa "Já paguei" pela página; a oficina confere no banco e confirma no app, e só então o
+// dinheiro entra no financeiro (os mesmos lançamentos e regras de lib/financeiro).
 
 import { z } from 'zod';
 import { somarDias } from './datas';
-import { totais } from './documentos';
-import { cpfValido } from './fiscal/identificacao';
-import { formatarMoeda, formatarPlaca, primeiroNome } from './formatos';
-import { codigoPix, formatarChavePix, normalizarChavePix, type TipoChavePix } from './pix';
+import { chavePixDaOficina, marcarPago, montarRecebimento, NOMES_TIPO_CHAVE, pagamentoDaOrdem, tipoDaChavePix } from './financeiro';
+import { formatarMoeda, formatarPlaca, lerNumero, primeiroNome } from './formatos';
+import { codigoPix, formatarChavePix } from './pix';
 import type { Lancamento, NovoItemExtra } from './registros-oficina';
 import type { Documento, Id, Oficina, Veiculo } from './tipos';
 
@@ -20,17 +19,10 @@ export const DIAS_DO_LINK = 15;
 
 // ---------------------------------------------------------------- quanto cobrar
 
-/** O que já entrou de uma ordem: as contas a receber pagas ligadas a ela. */
-export function recebidoDoDocumento(lancamentos: Record<Id, Lancamento> | Lancamento[], documentoId: Id): number {
-  const lista = Array.isArray(lancamentos) ? lancamentos : Object.values(lancamentos);
-  let soma = 0;
-  for (const l of lista) if (l.tipo === 'receber' && l.pagoEm && l.documentoId === documentoId && l.valor > 0) soma += l.valor;
-  return r2(soma);
-}
-
-/** O que falta receber: o total da ordem menos o que já entrou (nunca negativo). */
-export function valorEmAberto(doc: Pick<Documento, 'linhas' | 'desconto'>, recebido: number): number {
-  return Math.max(0, r2(totais(doc).total - Math.max(0, recebido)));
+/** O que falta entrar no caixa da ordem (o total menos o recebido, como no pagamento da OS). */
+export function valorParaCobrar(doc: Pick<Documento, 'id' | 'linhas' | 'desconto'>, lancamentos: Lancamento[]): number {
+  const p = pagamentoDaOrdem(doc, lancamentos);
+  return Math.max(0, r2(p.total - p.recebido));
 }
 
 /** A ordem que dá para cobrar: aberta (sinal) ou concluída. */
@@ -40,85 +32,30 @@ export function podeCobrar(doc: Pick<Documento, 'tipo' | 'situacao'>): boolean {
 
 /** Lê o valor digitado ('350', '350,50', 'R$ 1.200,00'); null quando não é um valor que dá para cobrar. */
 export function lerValorDaCobranca(texto: string): number | null {
-  let t = (texto ?? '').replace(/R\$|\s/gi, '');
-  if (!t) return null;
-  if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.');
-  else if (/^\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');
-  const n = Number(t);
-  if (!Number.isFinite(n) || n < 0.01 || n > 1_000_000) return null;
+  const n = lerNumero((texto ?? '').replace(/R\$/gi, ''));
+  if (n == null || !Number.isFinite(n) || n < 0.01 || n > 1_000_000) return null;
   return r2(n);
 }
 
 // ---------------------------------------------------------------- chave Pix da oficina
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/** O tipo de uma chave já guardada (normalizada). */
-export function tipoDaChavePix(chave: string | null | undefined): TipoChavePix | null {
-  const t = (chave ?? '').trim();
-  if (!t) return null;
-  if (t.includes('@')) return 'email';
-  if (UUID.test(t)) return 'aleatoria';
-  if (/^\+55\d{10,11}$/.test(t)) return 'telefone';
-  if (/^\d{11}$/.test(t)) return 'cpf';
-  if (/^[0-9A-Z]{12}\d{2}$/.test(t)) return 'cnpj';
-  return null;
-}
-
-/**
- * A chave pronta para o código Pix, do jeito que estiver escrita: com tipo conhecido, só
- * normaliza; sem tipo, descobre (11 números com dígito de CPF válido é CPF; senão, celular).
- */
-export function chavePixUsavel(chave: string | null | undefined, tipo?: TipoChavePix | null): string | null {
-  const t = (chave ?? '').trim();
-  if (!t) return null;
-  if (tipo) return normalizarChavePix(tipo, t);
-  if (t.includes('@')) return normalizarChavePix('email', t);
-  if (UUID.test(t)) return normalizarChavePix('aleatoria', t);
-  if (t.startsWith('+')) return normalizarChavePix('telefone', t);
-  const alfa = t.toUpperCase().replace(/[^0-9A-Z]/g, '');
-  if (/[A-Z]/.test(alfa)) return normalizarChavePix('cnpj', t);
-  const d = t.replace(/\D/g, '');
-  if (d.length === 14) return normalizarChavePix('cnpj', d);
-  if (d.length === 11) return cpfValido(d) ? d : normalizarChavePix('telefone', d);
-  if (d.length === 10 || ((d.length === 12 || d.length === 13) && d.startsWith('55'))) return normalizarChavePix('telefone', d);
-  return null;
-}
-
-export const TIPOS_DE_CHAVE: { id: TipoChavePix; nome: string; exemplo: string }[] = [
-  { id: 'cnpj', nome: 'CNPJ', exemplo: '00.000.000/0000-00' },
-  { id: 'cpf', nome: 'CPF', exemplo: '000.000.000-00' },
-  { id: 'telefone', nome: 'Celular', exemplo: '(21) 99999-0000' },
-  { id: 'email', nome: 'E-mail', exemplo: 'pix@oficina.com.br' },
-  { id: 'aleatoria', nome: 'Chave aleatória', exemplo: 'Como aparece no app do banco' }
-];
-
-export const ERRO_DA_CHAVE: Record<TipoChavePix, string> = {
-  cnpj: 'O CNPJ tem 14 letras e números, como no cartão do CNPJ.',
-  cpf: 'O CPF tem 11 números.',
-  email: 'Confira o e-mail da chave.',
-  telefone: 'Escreva o celular da chave com DDD.',
-  aleatoria: 'A chave aleatória tem 32 letras e números, com tracinhos, como aparece no app do banco.'
-};
-
 /** "CNPJ 12.345.678/0001-95", "Celular (21) 99999-0000". */
 export function chavePixParaMostrar(chave: string | null | undefined): string {
   const tipo = tipoDaChavePix(chave);
   if (!chave || !tipo) return chave ?? '';
-  const nome = TIPOS_DE_CHAVE.find((t) => t.id === tipo)?.nome ?? '';
-  return `${nome} ${formatarChavePix(tipo, chave)}`.trim();
+  return `${NOMES_TIPO_CHAVE[tipo]} ${formatarChavePix(tipo, chave)}`;
 }
 
 export interface RecebedorPix {
   chave: string;
-  /** Quem recebe, como aparece no app do banco (até 25 letras). */
+  /** Quem recebe, como aparece no app do banco. */
   nome: string;
   cidade: string;
 }
 
-/** A chave, o nome e a cidade da oficina para o código Pix (null sem chave válida). */
+/** A chave (a mesma do financeiro), o nome e a cidade da oficina para o código Pix (null sem chave válida). */
 export function recebedorDaOficina(o: Pick<Oficina, 'chavePix' | 'nome' | 'razaoSocial' | 'cidade'>): RecebedorPix | null {
-  const chave = chavePixUsavel(o.chavePix);
+  const chave = chavePixDaOficina(o);
   if (!chave) return null;
   return { chave, nome: (o.razaoSocial?.trim() || o.nome.trim() || 'Oficina').slice(0, 60), cidade: o.cidade?.trim() || 'Brasil' };
 }
@@ -207,8 +144,9 @@ export function dadosDoPagamento(c: NovaCobranca): DadosDoPagamento {
   };
 }
 
-export function urlDoPagamento(origem: string, token: string): string {
-  return `${origem.replace(/\/+$/, '')}/pagar/${token}`;
+/** Uma referência nova para cada cobrança da ordem (o aviso de uma não apaga o da outra). */
+export function refDaCobranca(documentoId: Id, agora: number = Date.now()): string {
+  return `pix-${documentoId}`.slice(0, 80) + `-${agora.toString(36)}`;
 }
 
 /** O texto do WhatsApp: o link da página e, numa linha só, o código para copiar e colar. */
@@ -242,7 +180,7 @@ export function lerRespostaPaguei(resposta: unknown): RespostaPaguei | null {
   return { quando, nome, competencia };
 }
 
-/** A linha do link público como a oficina lê (RLS: só dono e gerente). */
+/** A linha do link público como a oficina lê (só o dono e o gerente leem estes links). */
 export interface LinkDeCobranca {
   id: string;
   tipo: 'pagamento' | 'clube';
@@ -293,8 +231,8 @@ export function idDoLancamentoDaMensalidade(cobrancaId: Id): Id {
   return `clube-${cobrancaId}`;
 }
 
-/** A conta recebida (paga hoje, por Pix) que entra no financeiro quando a oficina confirma. */
-export function lancamentoRecebido(ctx: {
+/** A conta recebida por Pix hoje, montada pelo financeiro (com o id fixo do link ou da mensalidade). */
+export function recebimentoPorPix(ctx: {
   id: Id;
   valor: number;
   hoje: string;
@@ -304,17 +242,32 @@ export function lancamentoRecebido(ctx: {
   documentoId?: Id | null;
   observacao?: string;
 }): NovoItemExtra<'lancamentos'> & { id: Id } {
+  const [l] = montarRecebimento(
+    { valor: r2(ctx.valor), forma: 'pix', parcelas: 1, hoje: ctx.hoje, descricao: ctx.descricao.slice(0, 200), categoria: ctx.categoria, clienteId: ctx.clienteId ?? null, documentoId: ctx.documentoId ?? null, observacao: ctx.observacao },
+    () => ctx.id
+  );
+  return { ...l, id: ctx.id };
+}
+
+/**
+ * O Pix da ordem confirmado entra no financeiro: quita a conta em aberto da ordem com o mesmo
+ * valor (o fiado ou o boleto que o cliente pagou por Pix) ou vira um recebimento novo.
+ */
+export function lancamentoDoPixDaOrdem(
+  ctx: { linkId: string; valor: number; hoje: string; descricao: string; clienteId?: Id | null; documentoId: Id; observacao?: string },
+  lancamentos: Lancamento[]
+): { quitar: Lancamento | null; novo: (NovoItemExtra<'lancamentos'> & { id: Id }) | null } {
+  const id = idDoLancamentoDoLink(ctx.linkId);
+  if (lancamentos.some((l) => l.id === id)) return { quitar: null, novo: null };
+  const aberta = lancamentos
+    .filter((l) => l.tipo === 'receber' && !l.pagoEm && l.documentoId === ctx.documentoId && Math.round(l.valor * 100) === Math.round(ctx.valor * 100))
+    .sort((a, b) => (a.vencimento < b.vencimento ? -1 : 1))[0];
+  if (aberta) {
+    const obs = [aberta.observacao, ctx.observacao].filter(Boolean).join('. ');
+    return { quitar: { ...marcarPago(aberta, ctx.hoje, 'pix'), ...(obs ? { observacao: obs.slice(0, 300) } : {}) }, novo: null };
+  }
   return {
-    id: ctx.id,
-    tipo: 'receber',
-    descricao: ctx.descricao.slice(0, 200),
-    valor: r2(ctx.valor),
-    vencimento: ctx.hoje,
-    pagoEm: ctx.hoje,
-    forma: 'pix',
-    categoria: ctx.categoria,
-    clienteId: ctx.clienteId ?? null,
-    documentoId: ctx.documentoId ?? null,
-    ...(ctx.observacao ? { observacao: ctx.observacao.slice(0, 300) } : {})
+    quitar: null,
+    novo: recebimentoPorPix({ id, valor: ctx.valor, hoje: ctx.hoje, descricao: ctx.descricao, categoria: 'servico', clienteId: ctx.clienteId, documentoId: ctx.documentoId, observacao: ctx.observacao })
   };
 }

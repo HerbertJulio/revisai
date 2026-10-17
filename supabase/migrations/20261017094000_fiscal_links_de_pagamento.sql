@@ -20,7 +20,8 @@ set search_path = ''
 as $$
 declare
   l public.links_publicos%rowtype;
-  v_acao text := p_resposta ->> 'acao';
+  -- sem ação, a ação é vazia: um NULL não pode pular nenhuma das conferências abaixo
+  v_acao text := coalesce(p_resposta ->> 'acao', '');
   v_cobranca boolean;
 begin
   if p_token !~ '^[A-Za-z0-9_-]{43}$' or jsonb_typeof(p_resposta) is distinct from 'object' or pg_column_size(p_resposta) > 120000 then
@@ -48,7 +49,7 @@ begin
   if l.tipo not in ('orcamento', 'checklist', 'pagamento', 'clube') then
     raise exception 'Este link não recebe resposta' using errcode = '22023';
   end if;
-  if l.respondido_em is not null and not (v_cobranca and l.processado_em is not null) then
+  if l.respondido_em is not null and not coalesce(v_cobranca and l.processado_em is not null, false) then
     raise exception 'Já respondido' using errcode = 'RV051';
   end if;
   if l.respondido_em is not null then
@@ -71,4 +72,4 @@ grant execute on function public.responder_link(text, jsonb, text, text) to anon
 -- o mecânico não lê os links de cobrança nem os cartões do clube (valores e Pix da oficina)
 drop policy if exists "Cobranças só para dono e gerente" on public.links_publicos;
 create policy "Cobranças só para dono e gerente" on public.links_publicos as restrictive for select to authenticated
-  using (tipo not in ('pagamento', 'clube') or privado.papel_na_oficina(oficina_id) in ('dono', 'gerente'));
+  using (tipo not in ('pagamento', 'clube') or coalesce(privado.papel_na_oficina(oficina_id), '') in ('dono', 'gerente'));

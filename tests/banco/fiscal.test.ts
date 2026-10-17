@@ -64,12 +64,15 @@ d('cobrança do cliente pelo link', () => {
       const { dono, o } = await comMecanico(b);
       const orc = await publicar(b, dono, o, 'orcamento', 'orc-1', { total: 10 });
       expect((await tentar(b, null, PAGUEI, [orc.token, '{"acao":"paguei"}'])).codigo).toBe('22023');
+      // sem a ação, a resposta não passa (um NULL não pula a conferência)
+      expect((await tentar(b, null, PAGUEI, [orc.token, '{"recusadas":[]}'])).codigo).toBe('22023');
       expect((await tentar(b, null, PAGUEI, [orc.token, '{"acao":"aprovar","recusadas":[]}'])).erro).toBeNull();
       await linhas(b, dono, 'select public.link_processado($1)', [await idDoLink(b, o, 'orc-1')]);
       // o orçamento respondido não aceita outra resposta, mesmo depois de aplicado
       expect((await tentar(b, null, PAGUEI, [orc.token, '{"acao":"recusar"}'])).codigo).toBe('RV051');
       const chk = await publicar(b, dono, o, 'checklist', 'chk-1', {});
       expect((await tentar(b, null, PAGUEI, [chk.token, '{"acao":"paguei"}'])).codigo).toBe('22023');
+      expect((await tentar(b, null, PAGUEI, [chk.token, '{"nome":"Ana"}'])).codigo).toBe('22023');
       expect((await tentar(b, null, PAGUEI, [chk.token, '{"acao":"assinar","nome":"Ana"}'])).erro).toBeNull();
       const and = await publicar(b, dono, o, 'andamento', 'and-1', {});
       expect((await tentar(b, null, PAGUEI, [and.token, '{"acao":"paguei"}'])).codigo).toBe('22023');
@@ -189,6 +192,39 @@ d('notas fiscais da oficina', () => {
       expect((await tentar(b, dono, `insert into public.notas_fiscais (oficina_id, tipo, provedor, externo, ambiente, valor) values ($1, 'nfe', 'teste', 'abcdef', 'homologacao', 1)`, [o])).codigo).toBe('42501');
       expect((await tentar(b, dono, `select public.fiscal_atualizar_nota('teste', 'nfse_teste_000001', '{}'::jsonb)`)).codigo).toBe('42501');
       expect((await tentar(b, null, `select public.fiscal_webhook('teste', 'evt-2', 'nfse_teste_000001', '{}'::jsonb)`)).codigo).toBe('42501');
+    }));
+
+  it('quem não é de oficina nenhuma recebe 42501 em todas as funções das notas', () =>
+    emTransacao(async (b) => {
+      const { dono, o } = await comMecanico(b);
+      await b.query(`update public.oficinas set pro_ate = current_date + 30 where id = $1`, [o]);
+      await configurar(b, dono, o);
+      await registrar(b, dono, o);
+      const estranho = await criarPessoa(b, pessoa('estranho'));
+      const chamadas: [string, unknown[]][] = [
+        [`select public.fiscal_salvar_config($1, $2, $3::jsonb)`, [o, estranho.id, JSON.stringify(CONFIG)]],
+        [`select public.fiscal_guardar_credenciais($1, $2, 'teste', '{}'::jsonb)`, [o, estranho.id]],
+        [`select public.fiscal_credenciais($1)`, [o]],
+        [`select public.fiscal_certificado($1, $2, now())`, [o, estranho.id]],
+        [`select public.fiscal_registrar_nota($1, $2, 'doc-x', 'nfse', 'teste', 'nfse_estranho_01', 'homologacao', 10, '{}'::jsonb)`, [o, estranho.id]],
+        [`select public.fiscal_atualizar_nota('teste', 'nfse_teste_000001', '{"situacao":"cancelada"}'::jsonb)`, []],
+        [`select public.fiscal_webhook('teste', 'evt-estranho', 'nfse_teste_000001', '{"situacao":"cancelada"}'::jsonb)`, []]
+      ];
+      // pela API, com a conta dele (sem a chave do sistema) e sem conta nenhuma
+      for (const [sql, params] of chamadas) {
+        expect((await tentar(b, estranho, sql, params)).codigo, sql).toBe('42501');
+        expect((await tentar(b, null, sql, params)).codigo, sql).toBe('42501');
+      }
+      // pelo servidor (chave do sistema), mas em nome de quem não é da oficina
+      for (const [sql, params] of chamadas.filter(([, p]) => p.includes(estranho.id))) {
+        expect((await tentar(b, null, sql, params, { sistema: true })).codigo, sql).toBe('42501');
+      }
+      // nada mudou e ele não lê nada
+      const [n] = await linhas(b, dono, `select situacao from public.notas_fiscais where oficina_id = $1`, [o]);
+      expect(n.situacao).toBe('processando');
+      expect(await linhas(b, estranho, `select id from public.notas_fiscais`)).toEqual([]);
+      expect(await linhas(b, estranho, `select oficina_id from public.oficinas_fiscal`)).toEqual([]);
+      expect(await linhas(b, null, `select id from public.notas_fiscais`)).toEqual([]);
     }));
 
   it('o plano grátis não emite nota', () =>

@@ -2,11 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   avisoPendente,
   chavePixParaMostrar,
-  chavePixUsavel,
   dadosDoPagamento,
   descricaoDaOrdem,
   idDoLancamentoDoLink,
-  lancamentoRecebido,
+  lancamentoDoPixDaOrdem,
   lerDadosDoPagamento,
   lerLinkDeCobranca,
   lerRespostaPaguei,
@@ -15,10 +14,9 @@ import {
   novoTxid,
   podeCobrar,
   recebedorDaOficina,
-  recebidoDoDocumento,
-  tipoDaChavePix,
-  urlDoPagamento,
-  valorEmAberto
+  recebimentoPorPix,
+  refDaCobranca,
+  valorParaCobrar
 } from '@/lib/cobranca-cliente';
 import { cnpjValido, cpfValido, formatarCpfCnpj, lerCpfCnpj } from '@/lib/fiscal/identificacao';
 import { crc16 } from '@/lib/pix';
@@ -40,18 +38,16 @@ function lancamento(p: Partial<Lancamento>): Lancamento {
 describe('quanto cobrar', () => {
   const doc = ordem([linha({ tipo: 'servico', valorUnitario: 200 }), linha({ tipo: 'peca', quantidade: 2, valorUnitario: 75 }), linha({ tipo: 'peca', valorUnitario: 999, recusada: true })], 20);
 
-  it('o total menos o que já entrou da ordem', () => {
+  it('o total menos o que já entrou no caixa da ordem (o fiado em aberto ainda é cobrado)', () => {
     const lancs = [
       lancamento({ id: 'a', valor: 100, documentoId: 'os-1' }),
-      lancamento({ id: 'b', valor: 50, documentoId: 'os-1', pagoEm: null }),
+      lancamento({ id: 'b', valor: 50, documentoId: 'os-1', pagoEm: null, forma: 'fiado' }),
       lancamento({ id: 'c', valor: 40, documentoId: 'outra' }),
       lancamento({ id: 'd', valor: 30, documentoId: 'os-1', tipo: 'pagar' })
     ];
-    expect(recebidoDoDocumento(lancs, 'os-1')).toBe(100);
-    expect(recebidoDoDocumento(Object.fromEntries(lancs.map((l) => [l.id, l])), 'os-1')).toBe(100);
     // 200 + 150 - 20 = 330; já entrou 100
-    expect(valorEmAberto(doc, 100)).toBe(230);
-    expect(valorEmAberto(doc, 500)).toBe(0);
+    expect(valorParaCobrar(doc, lancs)).toBe(230);
+    expect(valorParaCobrar(doc, [lancamento({ valor: 500, documentoId: 'os-1' })])).toBe(0);
   });
 
   it('só ordem aberta ou concluída', () => {
@@ -72,40 +68,20 @@ describe('quanto cobrar', () => {
 });
 
 describe('chave Pix da oficina', () => {
-  it('descobre o tipo da chave escrita de qualquer jeito', () => {
-    expect(chavePixUsavel('12.345.678/0001-95')).toBe('12345678000195');
-    expect(chavePixUsavel('12.ABC.345/01DE-35')).toBe('12ABC34501DE35');
-    expect(chavePixUsavel('529.982.247-25')).toBe('52998224725');
-    // 11 números que não são CPF: celular com DDD
-    expect(chavePixUsavel('21987654321')).toBe('+5521987654321');
-    expect(chavePixUsavel('(21) 3333-4444')).toBe('+552133334444');
-    expect(chavePixUsavel('+55 21 98765-4321')).toBe('+5521987654321');
-    expect(chavePixUsavel('Pix@Oficina.com')).toBe('pix@oficina.com');
-    expect(chavePixUsavel('123E4567-E12B-12D1-A456-426655440000')).toBe('123e4567-e12b-12d1-a456-426655440000');
-    expect(chavePixUsavel('123')).toBeNull();
-    expect(chavePixUsavel('')).toBeNull();
-    // com o tipo escolhido, vale o tipo
-    expect(chavePixUsavel('529.982.247-25', 'telefone')).toBe('+5552998224725');
-    expect(chavePixUsavel('529.982.247-25', 'cnpj')).toBeNull();
-  });
-
-  it('o tipo da chave guardada e como ela aparece', () => {
-    expect(tipoDaChavePix('+5521987654321')).toBe('telefone');
-    expect(tipoDaChavePix('52998224725')).toBe('cpf');
-    expect(tipoDaChavePix('12345678000195')).toBe('cnpj');
-    expect(tipoDaChavePix('a@b.co')).toBe('email');
-    expect(chavePixParaMostrar('12345678000195')).toBe('CNPJ 12.345.678/0001-95');
-    expect(chavePixParaMostrar('+5521987654321')).toBe('Celular (21) 98765-4321');
-  });
-
-  it('o recebedor é a razão social (ou o nome) e a cidade da oficina', () => {
+  it('o recebedor usa a chave do financeiro (guardada normalizada ou não), a razão social e a cidade', () => {
     expect(recebedorDaOficina({ chavePix: '', nome: 'Oficina', cidade: 'Rio' })).toBeNull();
     expect(recebedorDaOficina({ chavePix: '12.345.678/0001-95', nome: 'Auto Center', razaoSocial: 'Auto Center Ltda', cidade: 'Guapimirim' })).toEqual({
       chave: '12345678000195',
       nome: 'Auto Center Ltda',
       cidade: 'Guapimirim'
     });
-    expect(recebedorDaOficina({ chavePix: 'pix@a.com', nome: 'Auto Center', cidade: '' })?.cidade).toBe('Brasil');
+    expect(recebedorDaOficina({ chavePix: '+5521987654321', nome: 'Auto Center', cidade: '' })).toEqual({ chave: '+5521987654321', nome: 'Auto Center', cidade: 'Brasil' });
+  });
+
+  it('a chave como a pessoa lê', () => {
+    expect(chavePixParaMostrar('12345678000195')).toBe('CNPJ 12.345.678/0001-95');
+    expect(chavePixParaMostrar('+5521987654321')).toBe('Celular (21) 98765-4321');
+    expect(chavePixParaMostrar('')).toBe('');
   });
 });
 
@@ -135,28 +111,28 @@ describe('o link de pagamento', () => {
     expect(lerDadosDoPagamento({ valor: 10 })).toBeNull();
   });
 
-  it('o txid tem o prefixo e até 25 letras e números', () => {
+  it('o txid tem o prefixo e até 25 letras e números; cada cobrança tem a sua referência', () => {
     const t = novoTxid('OS 12/ç', () => 0.5);
     expect(t).toMatch(/^OS12[A-Z0-9]{8}$/);
     expect(novoTxid('X'.repeat(40)).length).toBe(25);
+    expect(refDaCobranca('os-1', 1_700_000_000_000)).toBe(`pix-os-1-${(1_700_000_000_000).toString(36)}`);
+    expect(refDaCobranca('x'.repeat(120)).length).toBeLessThanOrEqual(100);
   });
 
   it('a mensagem do WhatsApp tem o link e o código numa linha só', () => {
-    const texto = mensagemDeCobranca({ oficina: 'Auto Center', cliente: 'Ana Souza', valor: 230.46, descricao: 'OS nº 12', link: 'https://revisai.app/pagar/abc', pix: '000201XYZ' });
+    const texto = mensagemDeCobranca({ oficina: 'Auto Center', cliente: 'Ana Souza', valor: 230.46, descricao: 'OS nº 12', link: 'https://revisai.app/l/abc', pix: '000201XYZ' });
     expect(texto).toContain('Oi, Ana! Aqui é da Auto Center.');
-    expect(texto).toContain('R$');
     expect(texto).toContain('230,46');
-    expect(texto).toContain('https://revisai.app/pagar/abc');
+    expect(texto).toContain('https://revisai.app/l/abc');
     expect(texto.split('\n').at(-1)).toBe('000201XYZ');
     const semLink = mensagemDeCobranca({ oficina: '', cliente: '', valor: 10, descricao: '', link: null, pix: '000201XYZ' });
     expect(semLink).not.toContain('Já paguei');
     expect(semLink.startsWith('Oi! Aqui é da oficina.')).toBe(true);
   });
 
-  it('a descrição da ordem e o endereço da página', () => {
+  it('a descrição da ordem', () => {
     expect(descricaoDaOrdem({ numero: 7 }, { modelo: 'Gol', placa: 'abc1234' })).toBe('OS nº 7 · Gol, placa ABC-1234');
     expect(descricaoDaOrdem({ numero: 7 }, null)).toBe('OS nº 7');
-    expect(urlDoPagamento('https://revisai.app/', 'tok')).toBe('https://revisai.app/pagar/tok');
   });
 });
 
@@ -174,20 +150,33 @@ describe('o aviso do cliente e a confirmação', () => {
     expect(lerLinkDeCobranca({ ...base, tipo: 'orcamento' })).toBeNull();
   });
 
-  it('a conta recebida entra paga hoje, por Pix, com id fixo por link', () => {
-    const l = lancamentoRecebido({ id: idDoLancamentoDoLink('link-1'), valor: 230.456, hoje: '2026-10-17', descricao: 'Pix da OS nº 12', categoria: 'servico', clienteId: 'c1', documentoId: 'os-1' });
-    expect(l).toEqual({
-      id: 'pix-link-1',
+  it('o recebimento por Pix sai do financeiro, pago hoje, com o id fixo', () => {
+    expect(recebimentoPorPix({ id: 'clube-k1', valor: 89.9, hoje: '2026-10-17', descricao: 'Clube Ouro', categoria: 'clube', clienteId: 'c1' })).toEqual({
+      id: 'clube-k1',
       tipo: 'receber',
-      descricao: 'Pix da OS nº 12',
-      valor: 230.46,
+      descricao: 'Clube Ouro',
+      valor: 89.9,
       vencimento: '2026-10-17',
       pagoEm: '2026-10-17',
       forma: 'pix',
-      categoria: 'servico',
+      categoria: 'clube',
+      parcela: null,
       clienteId: 'c1',
-      documentoId: 'os-1'
+      documentoId: null
     });
+  });
+
+  it('o Pix da ordem quita a conta em aberto do mesmo valor, ou entra como recebimento novo, uma vez só', () => {
+    const ctx = { linkId: 'link-1', valor: 50, hoje: '2026-10-18', descricao: 'Pix da OS nº 12', clienteId: 'c1', documentoId: 'os-1' };
+    const fiado = lancamento({ id: 'f1', valor: 50, documentoId: 'os-1', pagoEm: null, forma: 'fiado', vencimento: '2026-11-01' });
+    const r1 = lancamentoDoPixDaOrdem(ctx, [fiado, lancamento({ id: 'f2', valor: 50, documentoId: 'outra', pagoEm: null })]);
+    expect(r1.novo).toBeNull();
+    expect(r1.quitar).toMatchObject({ id: 'f1', pagoEm: '2026-10-18', forma: 'pix' });
+    const r2 = lancamentoDoPixDaOrdem({ ...ctx, valor: 80 }, [fiado]);
+    expect(r2.quitar).toBeNull();
+    expect(r2.novo).toMatchObject({ id: idDoLancamentoDoLink('link-1'), valor: 80, pagoEm: '2026-10-18', forma: 'pix', categoria: 'servico', documentoId: 'os-1', clienteId: 'c1' });
+    // já lançado (outro aparelho confirmou): nada de novo
+    expect(lancamentoDoPixDaOrdem({ ...ctx, valor: 80 }, [lancamento({ id: 'pix-link-1', valor: 80, documentoId: 'os-1' })])).toEqual({ quitar: null, novo: null });
   });
 });
 

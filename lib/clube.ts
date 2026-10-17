@@ -279,10 +279,6 @@ export function dadosDoCartao(ctx: {
   };
 }
 
-export function urlDoCartao(origem: string, token: string): string {
-  return `${origem.replace(/\/+$/, '')}/clube/${token}`;
-}
-
 // ---------------------------------------------------------------- mensagens
 
 export function mensagemDoCartao(ctx: { oficina: string; cliente: string; plano: string; link: string }): string {

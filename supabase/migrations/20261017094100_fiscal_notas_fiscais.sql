@@ -111,17 +111,17 @@ create policy "Ninguém pela API" on privado.fiscal_eventos as restrictive for a
 
 drop policy if exists "Dono e gerente veem o cadastro fiscal" on public.oficinas_fiscal;
 create policy "Dono e gerente veem o cadastro fiscal" on public.oficinas_fiscal for select to authenticated
-  using (privado.papel_na_oficina(oficina_id) in ('dono', 'gerente') or (select privado.eh_equipe(array['financeiro'])));
+  using (coalesce(privado.papel_na_oficina(oficina_id), '') in ('dono', 'gerente') or coalesce((select privado.eh_equipe(array['financeiro'])), false));
 drop policy if exists "O sistema lê o cadastro fiscal" on public.oficinas_fiscal;
 create policy "O sistema lê o cadastro fiscal" on public.oficinas_fiscal for select to anon
-  using ((select privado.sistema_autorizado()));
+  using (coalesce((select privado.sistema_autorizado()), false));
 
 drop policy if exists "Dono e gerente veem as notas" on public.notas_fiscais;
 create policy "Dono e gerente veem as notas" on public.notas_fiscais for select to authenticated
-  using (privado.papel_na_oficina(oficina_id) in ('dono', 'gerente') or (select privado.eh_equipe(array['financeiro'])));
+  using (coalesce(privado.papel_na_oficina(oficina_id), '') in ('dono', 'gerente') or coalesce((select privado.eh_equipe(array['financeiro'])), false));
 drop policy if exists "O sistema lê as notas" on public.notas_fiscais;
 create policy "O sistema lê as notas" on public.notas_fiscais for select to anon
-  using ((select privado.sistema_autorizado()));
+  using (coalesce((select privado.sistema_autorizado()), false));
 
 drop trigger if exists auditar on public.oficinas_fiscal;
 create trigger auditar after insert or update or delete on public.oficinas_fiscal for each row execute function privado.auditar();
@@ -152,10 +152,10 @@ security definer
 set search_path = ''
 as $$
 begin
-  if not privado.sistema_autorizado() then
+  if not coalesce(privado.sistema_autorizado(), false) then
     raise exception 'Sem permissão' using errcode = '42501';
   end if;
-  if p_user is null or not privado.fiscal_gestao(p_oficina, p_user) then
+  if p_user is null or not coalesce(privado.fiscal_gestao(p_oficina, p_user), false) then
     raise exception 'Só o dono e o gerente cuidam das notas fiscais' using errcode = '42501';
   end if;
   if coalesce(privado.plano_da_oficina(p_oficina), 'gratis') not in ('pro', 'teste') then
@@ -248,7 +248,7 @@ security definer
 set search_path = ''
 as $$
 begin
-  if not privado.sistema_autorizado() then
+  if not coalesce(privado.sistema_autorizado(), false) then
     raise exception 'Sem permissão' using errcode = '42501';
   end if;
   return (select jsonb_build_object('provedor', f.provedor, 'dados', f.dados) from privado.fiscal_credenciais f where f.oficina_id = p_oficina);
@@ -317,7 +317,7 @@ declare
   v_pdf text := d ->> 'urlPdf';
   v_xml text := d ->> 'urlXml';
 begin
-  if not privado.sistema_autorizado() then
+  if not coalesce(privado.sistema_autorizado(), false) then
     raise exception 'Sem permissão' using errcode = '42501';
   end if;
   select * into n from public.notas_fiscais where provedor = p_provedor and externo = p_externo for update;
@@ -359,7 +359,7 @@ declare
   v_id bigint;
   v_nota jsonb;
 begin
-  if not privado.sistema_autorizado() then
+  if not coalesce(privado.sistema_autorizado(), false) then
     raise exception 'Sem permissão' using errcode = '42501';
   end if;
   insert into privado.fiscal_eventos (provedor, evento_id, externo, corpo)
