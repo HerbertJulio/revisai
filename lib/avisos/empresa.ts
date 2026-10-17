@@ -7,7 +7,7 @@ export interface DadosDaEmpresa {
   endereco: string;
   emailPrivacidade: string;
   emailContato: string;
-  /** Cidade e estado do foro (contratos com empresas). */
+  /** O foro como entra no texto: "da comarca de Rio de Janeiro/RJ" (EMPRESA_FORO) ou "do domicílio da empresa". */
   foro: string;
   site: string;
   /** Algum dado ainda não foi preenchido. */
@@ -38,7 +38,7 @@ export function dadosDaEmpresa(): DadosDaEmpresa {
     endereco: endereco || A_PREENCHER,
     emailPrivacidade: emailPrivacidade || A_PREENCHER,
     emailContato: emailContato || A_PREENCHER,
-    foro: foro || 'do domicílio da empresa',
+    foro: foro ? `da comarca de ${foro}` : 'do domicílio da empresa',
     site: (valor('SITE_URL') || 'https://revisai.howlks.com').replace(/\/+$/, ''),
     incompleto: !razaoSocial || !cnpj || !endereco || !emailPrivacidade
   };

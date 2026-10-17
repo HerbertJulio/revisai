@@ -38,16 +38,18 @@ export async function processarAvisos(opcoes: { lote?: number; ateMs?: number } 
   let chaves: Awaited<ReturnType<typeof chavesVapid>> | undefined;
 
   while (Date.now() < fim) {
-    const { data, error } = await sb.rpc('avisos_reservar', { p_limite: opcoes.lote ?? 25 });
+    const { data, error } = await sb.rpc('avisos_reservar', { p_limite: opcoes.lote ?? 10 });
     if (error) {
       console.error('[avisos] reservar', error.message);
       return { ...total, erro: 'reservar' };
     }
     const lote = lerLote(data);
     if (!lote.length) break;
-    total.lidos += lote.length;
 
     for (const a of lote) {
+      // acabou o tempo: o que sobrou do lote volta para a fila quando a reserva vencer (2 minutos)
+      if (Date.now() >= fim) break;
+      total.lidos++;
       const m = tipoAvisoValido(a.tipo) ? mensagemDoAviso(a.tipo, a.dados) : null;
       if (!m) {
         await sb.rpc('avisos_concluir', { p_id: a.id, p_ok: true, p_erro: 'tipo desconhecido' });
