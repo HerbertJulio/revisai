@@ -6,6 +6,7 @@
 import { Check, ClipboardList, Copy, ExternalLink, MessageCircle } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
+import { useConta } from '@/components/conta/ProvedorConta';
 import { useToast } from '@/components/Toasts';
 import { Botao, classeBotao } from '@/components/ui';
 import { mensagemDePronto, situacaoVisivel, SITUACOES, tituloDoDocumento, totais, validoAte } from '@/lib/documentos';
@@ -15,8 +16,9 @@ import { useHoje } from '@/lib/ganchos';
 import { useOficina } from '@/lib/store';
 import type { Id } from '@/lib/tipos';
 import { linkWhatsApp } from '@/lib/whatsapp';
-import { useLinkDoOrcamento } from '../documentos';
+import { useLinkDoOrcamento, useMandarOrcamento } from '../documentos';
 import { Feito } from '../Feito';
+import { janelaParaDepois } from '../servico/comum';
 
 export type Resultado =
   | { tipo: 'concluida'; documentoId: Id; atendimentoId: Id | null; veiculoId: Id }
@@ -80,6 +82,8 @@ function OrcamentoSalvo({ documentoId, enviado, aoNova }: { documentoId: Id; env
   const cliente = useOficina((s) => (veiculo ? s.clientes[veiculo.clienteId] : undefined));
   const marcarEnviado = useOficina((s) => s.marcarEnviado);
   const montar = useLinkDoOrcamento();
+  const mandarOrcamento = useMandarOrcamento();
+  const { oficina: conta } = useConta();
   const hoje = useHoje();
   const toast = useToast();
   const [mandado, setMandado] = useState(enviado);
@@ -88,9 +92,12 @@ function OrcamentoSalvo({ documentoId, enviado, aoNova }: { documentoId: Id; env
   const situacao = situacaoVisivel(doc, hoje);
   const telefone = normalizarTelefone(cliente?.telefone ?? '');
 
-  function link() {
+  /** Com a conta, publica (ou atualiza) o link do servidor; sem conta, o link com os dados no endereço. */
+  async function link() {
     if (doc!.situacao === 'rascunho') marcarEnviado(doc!.id);
-    return montar(doc!.id);
+    const l = await mandarOrcamento(doc!.id);
+    if (!l.ok) toast({ texto: l.erro, tom: 'erro' });
+    return l.ok ? l : null;
   }
 
   return (
@@ -105,18 +112,22 @@ function OrcamentoSalvo({ documentoId, enviado, aoNova }: { documentoId: Id; env
         </p>
       </div>
       <p className="rounded-2xl bg-papel px-4 py-3.5 text-[14.5px] text-tinta-2 ring-1 ring-linha">
-        O cliente abre o link, vê os itens, desmarca o que não quiser e aprova pelo WhatsApp da oficina. Quando ele aprovar, toque em Aprovado na lista de orçamentos e o orçamento vira uma ordem de serviço já preenchida.
+        {conta
+          ? 'O cliente abre o link, vê os itens, desmarca o que não quiser e aprova ali mesmo. A aprovação volta sozinha para cá, com a prova, e o orçamento vira uma ordem de serviço já preenchida.'
+          : 'O cliente abre o link, vê os itens, desmarca o que não quiser e aprova pelo WhatsApp da oficina. Quando ele aprovar, toque em Aprovado na lista de orçamentos e o orçamento vira uma ordem de serviço já preenchida.'}
       </p>
       <div className="flex flex-wrap gap-2">
         {telefone ? (
           <button
             type="button"
-            onClick={() => {
-              const l = link();
+            onClick={async () => {
+              // a janela abre já no toque; o link do servidor fica pronto em seguida
+              const janela = janelaParaDepois();
+              const l = await link();
               if (l?.whatsapp) {
-                window.open(l.whatsapp, '_blank', 'noopener,noreferrer');
+                janela.ir(l.whatsapp);
                 setMandado(true);
-              }
+              } else janela.fechar();
             }}
             className={classeBotao('whatsapp', 'grande')}
           >
@@ -126,7 +137,7 @@ function OrcamentoSalvo({ documentoId, enviado, aoNova }: { documentoId: Id; env
         <Botao
           tamanho="grande"
           onClick={async () => {
-            const l = link();
+            const l = await link();
             if (!l) return;
             try {
               await navigator.clipboard.writeText(`${l.texto}`);

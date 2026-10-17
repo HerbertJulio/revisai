@@ -1,6 +1,7 @@
 // O texto de cada aviso (push, e-mail e WhatsApp), a partir do que o banco pôs na fila.
 // Sem nada de servidor aqui, para testar e para a tela de preferências usar os mesmos nomes.
 
+import { formatarDataCurta } from '../datas';
 import { formatarMoeda } from '../formatos';
 
 export const TIPOS_AVISO = [
@@ -10,6 +11,7 @@ export const TIPOS_AVISO = [
   { id: 'pedido_situacao', nome: 'Andamento dos pedidos', para: 'oficina', descricao: 'A loja confirmou, mandou, entregou ou cancelou um pedido.' },
   { id: 'alerta_resposta', nome: 'Resposta de alerta', para: 'oficina', descricao: 'Uma loja aceitou ou fez proposta no seu alerta de preço.' },
   { id: 'link_resposta', nome: 'Resposta do cliente', para: 'oficina', descricao: 'O cliente aprovou ou recusou um orçamento, ou assinou o checklist.' },
+  { id: 'agendamento_online', nome: 'Pedido de horário', para: 'oficina', descricao: 'Um cliente pediu um horário pelo link de agendamento.' },
   { id: 'suporte_resposta', nome: 'Resposta do suporte', para: 'todos', descricao: 'A equipe do Revisaí respondeu o seu pedido de ajuda.' }
 ] as const;
 
@@ -27,6 +29,7 @@ export const ROTAS_AVISO: Record<TipoAviso, string> = {
   pedido_situacao: '/oficina/loja',
   alerta_resposta: '/oficina/loja',
   link_resposta: '/oficina/ordens',
+  agendamento_online: '/oficina/agenda?aba=pedidos',
   suporte_resposta: '/conta?ver=1'
 };
 
@@ -148,6 +151,19 @@ export function mensagemDoAviso(tipo: string, dados: Dados): MensagemAviso | nul
         corpo,
         url: ROTAS_AVISO.link_resposta,
         marca: `link-${texto(d, 'linkId')}`
+      };
+    }
+    case 'agendamento_online': {
+      const quem = texto(d, 'cliente') || 'Um cliente';
+      const data = texto(d, 'data');
+      const hora = texto(d, 'hora');
+      const servico = texto(d, 'servico');
+      const quando = /^\d{4}-\d{2}-\d{2}$/.test(data) ? `o dia ${formatarDataCurta(data)}${/^\d{2}:\d{2}$/.test(hora) ? ` às ${hora}` : ''}` : 'um horário';
+      return {
+        titulo: 'Pedido de horário pelo link',
+        corpo: `${quem} pediu ${quando}${servico ? ` (${servico})` : ''}. Aceite ou recuse na agenda.`,
+        url: ROTAS_AVISO.agendamento_online,
+        marca: `agenda-${texto(d, 'pedidoId')}`
       };
     }
     case 'suporte_resposta': {

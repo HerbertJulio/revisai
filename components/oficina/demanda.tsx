@@ -1,8 +1,14 @@
 'use client';
 
+// A previsão de compras dos próximos 30 dias, para as lojas da região prepararem ofertas. Vai uma
+// vez por dia, só da oficina da conta que ligou o compartilhamento (uma linha por oficina; as
+// lojas veem só a soma da região).
+
 import { Megaphone } from 'lucide-react';
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { enviarDemanda } from '@/app/acoes';
+import { useConta } from '@/components/conta/ProvedorConta';
 import { useToast } from '@/components/Toasts';
 import { Alternar } from '@/components/ui';
 import { itensParaComprar } from '@/lib/avisos';
@@ -26,10 +32,9 @@ function mandar(dados: ReturnType<typeof useDadosAvisos>, catalogo: Catalogo, ho
 
 async function enviarPrevisao(dados: ReturnType<typeof useDadosAvisos>, catalogo: Catalogo, hoje: string): Promise<boolean> {
   const s = useOficina.getState();
-  const id = s.garantirAparelhoId();
   const linhas = calcularDemanda(itensParaComprar(dados, hoje, 30), catalogo, hoje, 30);
   try {
-    const r = await enviarDemanda({ id, uf: s.oficina.uf || '', cidade: s.oficina.cidade.trim().slice(0, 80), itens: itensDaDemanda(linhas) });
+    const r = await enviarDemanda({ uf: /^[A-Z]{2}$/.test(s.oficina.uf) ? s.oficina.uf : '', cidade: s.oficina.cidade.trim().slice(0, 80), itens: itensDaDemanda(linhas) });
     if (r.ok) s.marcarDemandaEnviada();
     return r.ok;
   } catch {
@@ -37,19 +42,21 @@ async function enviarPrevisao(dados: ReturnType<typeof useDadosAvisos>, catalogo
   }
 }
 
-/** Com o compartilhamento ligado, manda a previsão uma vez por dia, quando o app abre. */
+/** Com o compartilhamento ligado e a conta, manda a previsão uma vez por dia, quando o app abre. */
 export function useEnvioDeDemanda() {
   const ligado = useOficina((s) => s.preferencias.compartilharDemanda);
   const enviadaEm = useOficina((s) => s.demandaEnviadaEm);
+  const { oficina } = useConta();
   const { catalogo, carregando } = useCatalogo();
   const dados = useDadosAvisos();
   const hoje = useHoje();
+  const oficinaId = oficina?.id ?? null;
   useEffect(() => {
-    if (!ligado || carregando) return;
+    if (!ligado || carregando || !oficinaId) return;
     if (enviadaEm && Date.now() - new Date(enviadaEm).getTime() < INTERVALO_MS) return;
     void mandar(dados, catalogo, hoje);
-    // só ao abrir e quando liga; as mudanças do dia vão no envio de amanhã
-  }, [ligado, carregando]);
+    // só ao abrir, ao entrar e quando liga; as mudanças do dia vão no envio de amanhã
+  }, [ligado, carregando, oficinaId]);
 }
 
 /** O convite para compartilhar a previsão de compras, na loja. */
@@ -57,6 +64,7 @@ export function CartaoDemanda() {
   const ligado = useOficina((s) => s.preferencias.compartilharDemanda);
   const uf = useOficina((s) => s.oficina.uf);
   const salvar = useOficina((s) => s.salvarPreferencias);
+  const { conta } = useConta();
   const { catalogo } = useCatalogo();
   const dados = useDadosAvisos();
   const hoje = useHoje();
@@ -67,6 +75,10 @@ export function CartaoDemanda() {
     salvar({ compartilharDemanda: v });
     if (!v) {
       toast({ texto: 'Pronto. A previsão deixa de ser enviada.' });
+      return;
+    }
+    if (!conta) {
+      toast({ texto: 'Ligado. A previsão vai quando você entrar na sua conta.' });
       return;
     }
     setOcupado(true);
@@ -88,6 +100,14 @@ export function CartaoDemanda() {
           rotulo="Receber ofertas para o que vou comprar"
           descricao={`Os fornecedores${uf ? ` de ${uf}` : ''} veem só a soma do que as oficinas da região vão precisar nos próximos 30 dias e preparam promoções. Não vai nome de cliente, placa nem o nome da oficina.${ocupado ? ' Enviando…' : ''}`}
         />
+        {!conta ? (
+          <p className="mt-2 text-[13.5px] text-tinta-3">
+            A previsão vai só para quem tem conta.{' '}
+            <Link href="/entrar?para=/oficina/loja" className="font-semibold text-caneta hover:underline">
+              Entrar
+            </Link>
+          </p>
+        ) : null}
       </div>
     </div>
   );

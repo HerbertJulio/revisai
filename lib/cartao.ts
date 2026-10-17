@@ -1,5 +1,6 @@
 // Cartão de manutenção que a oficina manda para o cliente. Os dados vão no fragmento (#) do link,
-// que o navegador não envia ao servidor: nada fica guardado em lugar nenhum.
+// que o navegador não envia ao servidor: nada fica guardado em lugar nenhum. Com a conta, o cartão
+// leva também o token do histórico verificado do carro (o link do servidor).
 
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string';
 import { z } from 'zod';
@@ -25,7 +26,9 @@ const esquema = z.object({
       })
     )
     .max(30),
-  g: z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+  g: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  /** Token do histórico verificado (página /l/<token>), quando a oficina tem conta. */
+  h: z.string().regex(/^[A-Za-z0-9_-]{43}$/).optional()
 });
 
 export type DadosCartao = z.infer<typeof esquema> & { i: { s: ServicoId; d: string | null; l?: string | null; k: number | null; f: string; fk: number }[] };
@@ -37,6 +40,7 @@ const km = (n: number | null | undefined) => (n == null || !Number.isFinite(n) ?
 export function montarCartao(oficina: Oficina, cliente: Cliente | undefined, veiculo: Veiculo, itens: ItemAviso[], hoje: string): DadosCartao {
   const ano = veiculo.ano && veiculo.ano >= 1900 && veiculo.ano <= 2100 ? Math.round(veiculo.ano) : undefined;
   const local = [oficina.cidade, oficina.uf].map((x) => x?.trim()).filter(Boolean).join(' - ');
+  const historico = (veiculo.links?.historico?.url ?? '').match(/\/l\/([A-Za-z0-9_-]{43})(?:[/?#]|$)/)?.[1];
   return {
     v: 1,
     o: {
@@ -55,8 +59,14 @@ export function montarCartao(oficina: Oficina, cliente: Cliente | undefined, vei
       f: item.base.data,
       fk: km(item.base.km) ?? 0
     })),
-    g: hoje
+    g: hoje,
+    ...(historico ? { h: historico } : {})
   };
+}
+
+/** O endereço do histórico verificado que veio no cartão (null sem ele). */
+export function historicoDoCartao(origem: string, c: Pick<DadosCartao, 'h'>): string | null {
+  return c.h && /^[A-Za-z0-9_-]{43}$/.test(c.h) ? `${origem.replace(/\/$/, '')}/l/${c.h}` : null;
 }
 
 export function codificarCartao(d: DadosCartao): string {

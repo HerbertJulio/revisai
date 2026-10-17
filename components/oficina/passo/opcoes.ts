@@ -98,6 +98,8 @@ export function useOpcoesDePeca(s: ServicoId, veiculo: Pick<Veiculo, 'oleo' | 'i
     const quantidade = quantidadePadraoDaPeca(s, unidadeLinha, veiculo);
 
     const precoDaLoja = (p: Produto) => {
+      // sem conta, o catálogo vem sem preço: não sugere peça a R$ 0
+      if (!(p.preco > 0)) return { porUnidade: null, embalagem: undefined };
       const fator = fatorDoProduto(p);
       const embalagens = Math.max(1, Math.ceil(quantidade / fator - 1e-9));
       const { preco } = precoNaQuantidade(p, catalogo.promocoes, hoje, embalagens);

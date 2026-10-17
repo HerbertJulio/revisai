@@ -6,12 +6,13 @@
 import { z } from 'zod';
 import { litrosPorUnidade, type Unidade } from './catalogo';
 import { formatarMoeda, plural } from './formatos';
+import { esquemaContatoDoPedido } from './marketplace-dados';
 import type { Categoria } from './tipos';
 
 export const ALERTAS = {
   /** Alertas por mês no Pro. */
   porMesPro: 10,
-  /** Sem o código do Pro (no teste de 30 dias): alertas a cada 30 dias por aparelho e WhatsApp. */
+  /** Sem o Pro em dia (no teste e no grátis): alertas a cada 30 dias por oficina. */
   amostra: 3,
   /** Alertas esperando resposta ao mesmo tempo. */
   abertosMax: 5,
@@ -298,24 +299,53 @@ export function resultadoParaLoja(a: { status: SituacaoAlerta; expiraEm: string 
   return 'aberto';
 }
 
+// ---------------------------------------------------------------- cota da oficina
+
+/**
+ * A cota de quem tem conta: com o Pro em dia, a do mês mais os pacotes; no teste do Pro e no
+ * grátis, a de 30 dias. É a mesma conta que o banco faz ao receber o alerta (limitar_alertas).
+ */
+export function cotaDaOficina(plano: 'pro' | 'teste' | 'gratis', alertas: AlertaParaContar[], creditos: number, agora: number): CotaAlertas {
+  return plano === 'pro' ? cotaPro(alertas, creditos, agora) : cotaAmostra(alertas, agora);
+}
+
+/** O começo do mês em Brasília, como instante (Brasília é UTC−3, sem horário de verão). */
+export function inicioDoMesEmBrasilia(agora: number): string {
+  return `${mesEmBrasilia(agora)}-01T03:00:00.000Z`;
+}
+
+const SEM_ESTADO = 'Escolha o estado da oficina em Ajustes: o alerta vai para as lojas do seu estado.';
+
+/** O estado para onde vai o alerta: o escrito no app, ou o do cadastro da oficina. */
+export function ufDoAlerta(doApp: string | null | undefined, daConta: string | null | undefined): string | null {
+  const uf = (doApp ?? '').trim() || (daConta ?? '').trim();
+  return /^[A-Z]{2}$/.test(uf) ? uf : null;
+}
+
+/** O que o banco diz quando o alerta não sai (a trava de limitar_alertas), numa frase para a oficina. */
+export function mensagemDoAlerta(e: { code?: string; message?: string } | null | undefined): { erro: string; semCota?: boolean } | null {
+  if (!e) return null;
+  const m = e.message ?? '';
+  if (e.code === '28000') return { erro: 'Entre na sua conta para mandar alertas.' };
+  if (e.code === '42501') return { erro: 'Esta conta não pode mandar alertas por esta oficina.' };
+  if (e.code !== 'P0001') return null;
+  if (/teste esgotados/i.test(m)) return { erro: 'Os alertas de teste acabaram. Com o Pro são 10 alertas por mês.', semCota: true };
+  if (/mês esgotados/i.test(m)) return { erro: 'Os alertas do mês acabaram. Dá para comprar um pacote com mais alertas.', semCota: true };
+  if (/abertos demais/i.test(m)) return { erro: `Você já tem ${ALERTAS.abertosMax} alertas esperando resposta. Espere as lojas responderem ou cancele um.` };
+  if (/repetido/i.test(m)) return { erro: 'Você já tem um alerta esperando resposta para este produto.' };
+  return { erro: 'Muitos alertas seguidos. Espere um pouco e tente de novo.' };
+}
+
 // ---------------------------------------------------------------- entradas
 
 const uuid = z.uuid();
 const preco = z.number().positive().max(100_000);
 
+/** O alerta que a oficina manda (quem manda é a oficina da conta; o banco confere e conta a cota). */
 export const esquemaNovoAlerta = z.object({
-  aparelhoId: uuid,
-  codigoPro: z
-    .string()
-    .regex(/^[0-9A-Z]{16}$/)
-    .nullable()
-    .default(null),
-  oficina: z.object({
-    nome: z.string().trim().min(2, 'Escreva o nome da oficina em Ajustes.').max(120),
-    whatsapp: z.string().trim().max(30),
-    cidade: z.string().trim().max(80).optional().default(''),
-    uf: z.string().trim().regex(/^[A-Z]{2}$/, 'Escolha o estado da oficina em Ajustes: o alerta vai para as lojas do seu estado.')
-  }),
+  /** O estado e a cidade escritos no app (sem eles, valem os do cadastro da oficina). */
+  uf: z.string().trim().regex(/^([A-Z]{2})?$/, SEM_ESTADO).optional().default(''),
+  cidade: z.string().trim().max(80).optional().default(''),
   produtoId: z.number().int().positive(),
   quantidade: z.number().int().min(1, 'Quantas unidades você quer?').max(999),
   precoAlvo: preco,
@@ -324,6 +354,8 @@ export const esquemaNovoAlerta = z.object({
 });
 
 export type NovoAlerta = z.infer<typeof esquemaNovoAlerta>;
+
+export { SEM_ESTADO };
 
 const prazoEntrega = z.string().trim().max(60).optional().default('');
 const mensagem = z.string().trim().max(300).optional().default('');
@@ -345,7 +377,6 @@ export const esquemaResposta = z.discriminatedUnion('tipo', [
 export type EntradaResposta = z.infer<typeof esquemaResposta>;
 
 export const esquemaFechar = z.object({
-  aparelhoId: uuid,
   alertaId: uuid,
   respostaId: uuid,
   quantidade: z.number().int().min(1).max(999),
@@ -353,18 +384,7 @@ export const esquemaFechar = z.object({
   precoEsperado: preco,
   produtoEsperado: z.number().int().positive(),
   minimoEsperado: z.number().int().min(1).max(999),
-  oficina: z.object({
-    nome: z.string().trim().min(2).max(120),
-    whatsapp: z.string().trim().max(30),
-    cidade: z.string().trim().max(80).optional().default(''),
-    uf: z
-      .string()
-      .trim()
-      .regex(/^([A-Z]{2})?$/)
-      .optional()
-      .default(''),
-    endereco: z.string().trim().max(160).optional().default('')
-  }),
+  contato: esquemaContatoDoPedido,
   observacao: z.string().trim().max(500).optional().default('')
 });
 

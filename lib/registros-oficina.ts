@@ -63,6 +63,8 @@ export interface Agendamento {
   documentoId?: Id | null;
   /** O pedido do kit da revisão na loja. */
   kitPedidoCodigo?: string | null;
+  /** Quando a oficina mandou o lembrete da véspera pelo WhatsApp. */
+  lembradoEm?: string | null;
   criadoEm: string;
   atualizadoEm: string;
 }
@@ -122,6 +124,8 @@ export interface Checklist {
   observacao?: string;
   /** Assinatura feita no celular (PNG pequeno em data URL) e quem assinou. */
   assinatura?: { nome: string; imagem: string; quando: string } | null;
+  /** O link da cópia para o cliente (o token só existe na criação: guarda o endereço). */
+  link?: { codigo: string; url?: string | null; publicadoEm?: string | null } | null;
   criadoEm: string;
   atualizadoEm: string;
 }

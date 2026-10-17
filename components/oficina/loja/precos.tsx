@@ -33,7 +33,8 @@ export function usePrecosPagos(): PrecoPago[] {
 export function SeloPrecoPago({ produto, preco }: { produto: Produto; preco: number }) {
   const pagos = usePrecosPagos();
   const pago = useMemo(() => ultimoPrecoPago(produto, pagos), [produto, pagos]);
-  if (!pago) return null;
+  // sem o preço de hoje (quem não entrou na conta), não tem o que comparar
+  if (!pago || !(preco > 0)) return null;
   const atual = precoComparavel(produto, preco);
   const subiu = atual > pago.comparavel * 1.005;
   const desceu = atual < pago.comparavel * 0.995;

@@ -1,22 +1,9 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { estadoDaIA } from '@/lib/agente/ia';
 import { permitido } from '@/lib/limite';
-import { clientePublico } from '@/lib/supabase-servidor';
+import { conferirBanco } from '@/lib/saude-do-sistema';
 
 export const dynamic = 'force-dynamic';
-
-/** Uma consulta leve no banco, com 3 segundos de prazo. */
-async function conferirBanco(): Promise<{ ok: boolean; ms: number }> {
-  const inicio = Date.now();
-  const sb = clientePublico();
-  if (!sb) return { ok: false, ms: 0 };
-  try {
-    const { error } = await sb.from('fornecedores').select('id').limit(1).abortSignal(AbortSignal.timeout(3000));
-    return { ok: !error, ms: Date.now() - inicio };
-  } catch {
-    return { ok: false, ms: Date.now() - inicio };
-  }
-}
 
 /**
  * Diagnóstico para o monitor: o banco responde? Responde 503 quando não. Com ?ia=1, diz também

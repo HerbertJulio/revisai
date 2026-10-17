@@ -5,13 +5,14 @@
 
 import { ChevronLeft, ChevronRight, ShoppingCart } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
+import { useConta } from '@/components/conta/ProvedorConta';
 import { embalagem, melhorOferta, type Fornecedor, type Produto } from '@/lib/catalogo';
 import { formatarDataCurta } from '@/lib/datas';
 import { formatarMoeda } from '@/lib/formatos';
 import { descontoDeVitrine, precoDeVitrine, type DestaqueDaVitrine } from '@/lib/vitrine';
 import { useCatalogo } from '../catalogo';
 import { FotoProduto } from '../FotoProduto';
-import { legendaDoPreco, nomeComMarca, quantidadeInicial, SeloPatrocinado } from './comum';
+import { BotaoEntrar, legendaDoPreco, nomeComMarca, quantidadeInicial, SeloPatrocinado, SemPreco } from './comum';
 
 export function Vitrine({
   destaques,
@@ -110,7 +111,8 @@ function Slide({
   aoPor: (p: Produto, q: number) => void;
   aoAbrir: (p: Produto) => void;
 }) {
-  const { catalogo } = useCatalogo();
+  const { catalogo, comPrecos } = useCatalogo();
+  const { conta } = useConta();
   const p = destaque.produto;
   const preco = precoDeVitrine(p, catalogo.promocoes, hoje);
   const oferta = melhorOferta(p, catalogo.promocoes, hoje);
@@ -132,15 +134,23 @@ function Slide({
           <p className="mt-1.5 text-[14.5px] text-white/70">{oferta ? `${oferta.titulo}, até ${formatarDataCurta(oferta.fim)}` : embalagem(p)}</p>
         </div>
         <div className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            {preco < p.preco ? <p className="num text-[14px] text-white/50 line-through">{formatarMoeda(p.preco)}</p> : null}
-            <p className="largo num text-[30px] leading-none font-extrabold text-oleo">{formatarMoeda(preco)}</p>
-            <p className="mt-1 text-[13px] text-white/65">{legendaDoPreco(p, catalogo.promocoes, hoje)}</p>
-          </div>
+          {comPrecos ? (
+            <div>
+              {preco < p.preco ? <p className="num text-[14px] text-white/50 line-through">{formatarMoeda(p.preco)}</p> : null}
+              <p className="largo num text-[30px] leading-none font-extrabold text-oleo">{formatarMoeda(preco)}</p>
+              <p className="mt-1 text-[13px] text-white/65">{legendaDoPreco(p, catalogo.promocoes, hoje)}</p>
+            </div>
+          ) : (
+            <SemPreco escuro />
+          )}
           <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => aoPor(p, quantidade)} className="inline-flex h-11 items-center gap-2 rounded-[10px] bg-oleo px-4 text-[15px] font-semibold text-[#1b1f22] hover:brightness-[0.96]">
-              <ShoppingCart size={17} aria-hidden="true" /> Pôr no pedido
-            </button>
+            {conta ? (
+              <button type="button" onClick={() => aoPor(p, quantidade)} className="inline-flex h-11 items-center gap-2 rounded-[10px] bg-oleo px-4 text-[15px] font-semibold text-[#1b1f22] hover:brightness-[0.96]">
+                <ShoppingCart size={17} aria-hidden="true" /> Pôr no pedido
+              </button>
+            ) : (
+              <BotaoEntrar claro />
+            )}
             <button type="button" onClick={() => aoAbrir(p)} className="inline-flex h-11 items-center rounded-[10px] border border-white/30 px-4 text-[15px] font-semibold text-white hover:border-white/70 hover:bg-white/5">
               Detalhes
             </button>

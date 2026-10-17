@@ -99,13 +99,3 @@ export async function ativarCodigoNaOficina(sb: SupabaseClient, oficinaId: strin
   const r = (data ?? {}) as { ate?: unknown; oficina?: unknown };
   return { ok: true, ate: String(r.ate ?? ''), oficina: String(r.oficina ?? ''), codigo };
 }
-
-/**
- * @deprecated Use ativarCodigoNaOficina com o acesso da oficina. Fica para a tela antiga do
- * plano: ativa o código na oficina escolhida de quem entrou.
- */
-export async function ativarCodigo(texto: string): Promise<Gravacao<{ ate: string; oficina: string; codigo: string }>> {
-  const a = await acessoDaOficina();
-  if (!a.ok) return a;
-  return ativarCodigoNaOficina(a.sb, a.oficina.id, texto);
-}
