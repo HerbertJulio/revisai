@@ -341,28 +341,6 @@ d('extrato da loja (base da cobrança)', () => {
     }));
 });
 
-/**
- * A ligação proposta em public.calcular_pedido (fica com quem cuida do pedido): o preço por oficina
- * entra no menor preço e o pedido mínimo é conferido no fim. Aplicada só dentro da transação do teste.
- */
-async function ligarCondicoesNoPedido(b: Banco) {
-  const [{ def }] = (await b.query(`select pg_get_functiondef('public.calcular_pedido'::regproc) as def`)).rows as { def: string }[];
-  const trocas: [string, string][] = [
-    ['v_unitario numeric(10, 2);', 'v_unitario numeric(10, 2);\n  v_especial numeric(10, 2);'],
-    [
-      'v_unitario := least(v_preco, coalesce(v_promocional, v_preco), coalesce(v_combinado, v_preco));',
-      'v_especial := privado.preco_para_oficina(v_produto_id, new.oficina_id, v_preco);\n    v_unitario := least(v_preco, coalesce(v_promocional, v_preco), coalesce(v_combinado, v_preco), v_especial);'
-    ],
-    ['new.itens := v_calculados;', 'perform privado.conferir_pedido_minimo(v_calculados);\n  new.itens := v_calculados;']
-  ];
-  let novo = def;
-  for (const [de, para] of trocas) {
-    expect(novo.includes(de), `calcular_pedido mudou: não achei "${de}"`).toBe(true);
-    novo = novo.replace(de, para);
-  }
-  await b.query(novo);
-}
-
 d('condições da loja: preço por oficina e pedido mínimo', () => {
   it('a loja combina condições só com oficinas que já compraram; cada oficina vê só as dela', () =>
     emTransacao(async (b) => {
@@ -423,11 +401,10 @@ d('condições da loja: preço por oficina e pedido mínimo', () => {
       expect((await tentar(b, x.dono, 'select privado.conferir_pedido_minimo($1::jsonb)', [itens(3)])).erro).toBeNull();
     }));
 
-  it('com a ligação proposta no cálculo do pedido, a oficina paga o preço combinado e respeita o mínimo', () =>
+  it('no cálculo do pedido, a oficina paga o preço combinado e respeita o mínimo', () =>
     emTransacao(async (b) => {
       const x = await pedidos(b, 1);
       const [{ oficina_id: oficina }] = (await b.query('select oficina_id from public.pedidos_fornecedores where id = $1', [x.partes[0]])).rows;
-      await ligarCondicoesNoPedido(b);
       await linhas(b, x.lojista, `insert into public.precos_por_oficina (fornecedor_id, oficina_id, produto_id, preco) values ($1, $2, $3, 31.5)`, [x.loja.fornecedorId, oficina, x.loja.produtoId]);
       const pedir = (codigo: string, quantidade: number) =>
         tentar(b, x.dono, `insert into public.pedidos (codigo, oficina_id, oficina_nome, oficina_whatsapp, itens) values ($1, $2, 'x', '5521911112222', $3::jsonb) returning id`, [
