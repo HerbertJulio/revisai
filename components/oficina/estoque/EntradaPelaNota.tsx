@@ -22,12 +22,12 @@ import {
   fatorSugerido,
   formatarChave,
   lerNotaFiscal,
+  nomeDoProduto,
   notaJaLancada,
   type ComoAchou,
   type ItemNota,
   type NotaFiscal
 } from '@/lib/nfe-xml';
-import { tituloDeNome } from '@/lib/placa';
 import { useOficina } from '@/lib/store';
 import type { Categoria, Id, ItemEstoque, UnidadeEstoque } from '@/lib/tipos';
 
@@ -68,7 +68,7 @@ function linhaInicial(item: ItemNota, casamento: { itemId: Id | null; como: Como
     incluir: true,
     itemId: alvo?.id ?? null,
     como: alvo ? casamento.como : null,
-    nome: tituloDeNome(item.descricao),
+    nome: nomeDoProduto(item.descricao),
     categoria,
     unidade,
     fator: textoNumero(fatorSugerido(item, unidade), 3),

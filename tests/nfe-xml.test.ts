@@ -12,6 +12,7 @@ import {
   idDaParcela,
   lerNotaFiscal,
   litrosNoNome,
+  nomeDoProduto,
   notaJaLancada,
   palavrasDoProduto,
   semelhanca,
@@ -337,6 +338,16 @@ describe('embalagem para a unidade do estoque', () => {
     expect(custoPorUnidade(oleo, 20)).toBe(31.5);
     expect(custoPorUnidade(filtro, 1)).toBe(19.93);
     expect(custoPorUnidade({ custoTotal: 0, quantidade: 1 }, 1)).toBeNull();
+  });
+});
+
+describe('nome do produto novo', () => {
+  it('como a oficina escreve, com acento e com os códigos em maiúsculas', () => {
+    expect(nomeDoProduto('OLEO MOTOR LUBRAX 5W30 SINTETICO BALDE 20L')).toBe('Óleo Motor Lubrax 5W30 Sintético Balde 20L');
+    expect(nomeDoProduto('FILTRO DE AR TECFIL ARL4152')).toBe('Filtro de Ar Tecfil ARL4152');
+    expect(nomeDoProduto('VELA IGNICAO NGK BKR6E JOGO C/4')).toBe('Vela Ignição NGK BKR6E Jogo C/4');
+    expect(nomeDoProduto('  fluido   de cambio  ')).toBe('Fluido de Câmbio');
+    expect(nomeDoProduto('')).toBe('');
   });
 });
 

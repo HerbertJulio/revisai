@@ -214,6 +214,52 @@ export function lerNotaFiscal(xml: string, ler: (xml: string) => Documento = ler
   };
 }
 
+// ---------------------------------------------------------------- nome do produto novo
+
+const ACENTOS: Record<string, string> = {
+  oleo: 'óleo',
+  oleos: 'óleos',
+  sintetico: 'sintético',
+  semissintetico: 'semissintético',
+  ignicao: 'ignição',
+  cambio: 'câmbio',
+  combustivel: 'combustível',
+  agua: 'água',
+  valvula: 'válvula',
+  suspensao: 'suspensão',
+  direcao: 'direção',
+  eletrico: 'elétrico',
+  lampada: 'lâmpada',
+  transmissao: 'transmissão',
+  automatico: 'automático',
+  automatica: 'automática',
+  hidraulico: 'hidráulico'
+};
+
+const MINUSCULAS = new Set(['de', 'da', 'do', 'das', 'dos', 'e', 'p/', 'c/', 'para', 'com']);
+
+/**
+ * O nome do produto da nota como a oficina escreve: "OLEO MOTOR LUBRAX 5W30 SINTETICO BALDE 20L"
+ * vira "Óleo Motor Lubrax 5W30 Sintético Balde 20L" (código e sigla ficam em maiúsculas).
+ */
+export function nomeDoProduto(descricao: string): string {
+  return String(descricao ?? '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((p, i) => {
+      const baixa = p.toLowerCase();
+      if (/\d/.test(p)) return p.toUpperCase();
+      if (i > 0 && MINUSCULAS.has(baixa)) return baixa;
+      const semAcento = baixa.normalize('NFD').replace(/[̀-ͯ]/g, '');
+      const certo = ACENTOS[semAcento] ?? baixa;
+      // sigla sem vogal (NGK, KYB, SKF) fica em maiúsculas
+      if (p.length <= 4 && !/[aeiouáéíóúâêôãõ]/i.test(p)) return p.toUpperCase();
+      return certo.charAt(0).toUpperCase() + certo.slice(1);
+    })
+    .join(' ');
+}
+
 // ---------------------------------------------------------------- achar no estoque
 
 const ABREVIACOES: Record<string, string> = {
