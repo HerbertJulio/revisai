@@ -51,12 +51,17 @@ function textoNumero(n: number | null, casas = 2): string {
   return n == null || !Number.isFinite(n) ? '' : formatarNumero(n, casas);
 }
 
+/** Dinheiro para editar: sempre com os centavos ("31,50"). */
+function textoDinheiro(n: number | null): string {
+  return n == null || !Number.isFinite(n) ? '' : n.toFixed(2).replace('.', ',');
+}
+
 /** Os números da linha depois de mudar o fator (o que a pessoa já mexeu fica). */
 function recalcular(l: Linha, item: ItemNota): Linha {
   const fator = lerNumero(l.fator) ?? 0;
   const quantidade = l.mexeuQuantidade ? l.quantidade : textoNumero(r2(item.quantidade * fator), 3);
   const q = lerNumero(quantidade) ?? 0;
-  const custo = l.mexeuCusto ? l.custo : textoNumero(q > 0 ? custoPorUnidade({ custoTotal: item.custoTotal, quantidade: q }, 1) : null);
+  const custo = l.mexeuCusto ? l.custo : textoDinheiro(q > 0 ? custoPorUnidade({ custoTotal: item.custoTotal, quantidade: q }, 1) : null);
   return { ...l, quantidade, custo };
 }
 

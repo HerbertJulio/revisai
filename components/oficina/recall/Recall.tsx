@@ -175,7 +175,7 @@ function CartaoCampanha({ recall: r, veiculos, hoje, aoEditar }: { recall: Campa
 }
 
 const SITUACAO: Record<Lembrete['situacao'], { nome: string; tom: 'oleo' | 'ok' | 'neutro' | 'caneta' }> = {
-  aberto: { nome: 'Avisar', tom: 'oleo' },
+  aberto: { nome: 'Não avisado', tom: 'oleo' },
   avisado: { nome: 'Avisado', tom: 'caneta' },
   feito: { nome: 'Feito', tom: 'ok' },
   descartado: { nome: 'Descartado', tom: 'neutro' }

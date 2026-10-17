@@ -106,9 +106,11 @@ export function PontosDaOrdem({ doc }: { doc: Documento }) {
   const aberta = doc.tipo === 'ordem' && doc.situacao === 'aberta';
   const cancelada = doc.situacao === 'cancelada';
   return (
-    <section className="flex flex-col gap-2.5 rounded-xl bg-papel-2 px-3.5 py-3 text-[14.5px]" aria-label="Pontos de fidelidade" data-testid="pontos-da-ordem">
-      <p className="flex items-start gap-2">
-        <Award size={17} className="mt-0.5 shrink-0 text-tinta-2" aria-hidden="true" />
+    <section className="flex flex-col gap-2.5 rounded-2xl px-3.5 py-3 text-[14.5px] ring-1 ring-linha" aria-labelledby={`pontos-${doc.id}`} data-testid="pontos-da-ordem">
+      <h3 id={`pontos-${doc.id}`} className="flex items-center gap-2 font-bold">
+        <Award size={18} aria-hidden="true" /> Fidelidade
+      </h3>
+      <p>
         <span>
           {nome} tem <strong className="num">{formatarNumero(saldo)}</strong> {saldo === 1 ? 'ponto' : 'pontos'} ({formatarMoeda(valorDosPontos(saldo, config))}).
           {resgate && !cancelada ? ` Usou ${formatarNumero(-resgate.pontos)} aqui: ${formatarMoeda(resgate.valor ?? 0)} de desconto.` : ''}
