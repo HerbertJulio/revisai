@@ -12,30 +12,66 @@ import {
   situacaoPromocao,
   somaDosPedidos
 } from '@/lib/equipe-dados';
-import { criarSessao, DURACAO_SESSAO_MS, senhaConfere, sessaoValida } from '@/lib/sessao-equipe';
+import { codigoLimpo, descricaoDoAparelho, emailValido, mensagemDaEntrada } from '@/lib/equipe/entrada';
+import { nomeDoPapelEquipe, pode, temPapel } from '@/lib/equipe/papeis';
+import { quandoPassouPeloApp, segundoFatorEmDia } from '@/lib/equipe/segundo-fator';
 
-const SEGREDO = 'segredo-de-teste-0123456789abcdef0123456789';
+describe('entrada da equipe', () => {
+  const agora = Date.parse('2026-10-16T21:00:00-03:00');
+  const seg = Math.floor(agora / 1000);
 
-describe('sessão da equipe', () => {
-  const agora = Date.parse('2026-10-13T21:00:00-03:00');
-
-  it('aceita a sessão recém-criada e recusa a adulterada, a vencida e a de outra senha', () => {
-    const s = criarSessao(SEGREDO, 'rvq7-m4kp', agora);
-    expect(sessaoValida(s, SEGREDO, 'rvq7-m4kp', agora + 1000)).toBe(true);
-    expect(sessaoValida(s, SEGREDO, 'outra-senha', agora + 1000)).toBe(false);
-    expect(sessaoValida(s, 'outro-segredo-0123456789abcdef0123456789', 'rvq7-m4kp', agora + 1000)).toBe(false);
-    expect(sessaoValida(s, SEGREDO, 'rvq7-m4kp', agora + DURACAO_SESSAO_MS + 1)).toBe(false);
-    const [expira, assinatura] = s.split('.');
-    expect(sessaoValida(`${Number(expira) + 1000}.${assinatura}`, SEGREDO, 'rvq7-m4kp', agora)).toBe(false);
-    expect(sessaoValida(`${expira}.${assinatura.slice(0, -2)}xx`, SEGREDO, 'rvq7-m4kp', agora)).toBe(false);
-    expect(sessaoValida('lixo', SEGREDO, 'rvq7-m4kp', agora)).toBe(false);
-    expect(sessaoValida(undefined, SEGREDO, 'rvq7-m4kp', agora)).toBe(false);
+  it('o código do app vale por 12 horas, e só com aal2', () => {
+    const sessao = (aal: 'aal1' | 'aal2', totpHa: number | null) => ({
+      aal,
+      metodos: [{ metodo: 'otp', quando: seg - 20 * 3600 }, ...(totpHa == null ? [] : [{ metodo: 'totp', quando: seg - totpHa }])]
+    });
+    expect(segundoFatorEmDia(sessao('aal2', 60), agora)).toBe(true);
+    expect(segundoFatorEmDia(sessao('aal2', 11 * 3600 + 3500), agora)).toBe(true);
+    expect(segundoFatorEmDia(sessao('aal2', 12 * 3600 + 1), agora)).toBe(false);
+    expect(segundoFatorEmDia(sessao('aal1', 60), agora)).toBe(false);
+    expect(segundoFatorEmDia(sessao('aal2', null), agora)).toBe(false);
+    // vale o mais recente quando a pessoa confirmou mais de uma vez
+    expect(quandoPassouPeloApp({ metodos: [{ metodo: 'totp', quando: 10 }, { metodo: 'totp', quando: 20 }, { metodo: 'otp', quando: 30 }] })).toBe(20_000);
+    expect(quandoPassouPeloApp({ metodos: [{ metodo: 'otp', quando: 30 }] })).toBeNull();
   });
 
-  it('confere a senha sem ligar para maiúsculas e espaços nas pontas', () => {
-    expect(senhaConfere(' Rvq7-M4kp ', 'rvq7-m4kp')).toBe(true);
-    expect(senhaConfere('rvq7-m4kq', 'rvq7-m4kp')).toBe(false);
-    expect(senhaConfere('', '')).toBe(false);
+  it('confere e-mail e código, e não diz se o e-mail existe', () => {
+    expect(emailValido('ana@revisai.com.br')).toBe(true);
+    expect(emailValido('ana@revisai')).toBe(false);
+    expect(emailValido('ana revisai@x.com')).toBe(false);
+    expect(codigoLimpo(' 123 456 ')).toBe('123456');
+    expect(codigoLimpo('12345')).toBeNull();
+    expect(codigoLimpo('12a456')).toBeNull();
+    expect(mensagemDaEntrada({ code: 'over_email_send_rate_limit' })).toMatch(/Muitas tentativas/);
+    expect(mensagemDaEntrada({ code: 'otp_expired', message: 'Token has expired or is invalid' })).toMatch(/Código errado ou vencido/);
+    expect(mensagemDaEntrada({ message: 'Signups not allowed for otp' })).toBe('Não deu para entrar agora. Tente de novo em instantes.');
+  });
+
+  it('descreve o aparelho para o histórico', () => {
+    expect(descricaoDoAparelho('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36')).toBe('Chrome no Windows');
+    expect(descricaoDoAparelho('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1')).toBe('Safari no iPhone');
+    expect(descricaoDoAparelho('Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Mobile Safari/537.36 EdgA/141.0')).toBe('Chrome no Android');
+    expect(descricaoDoAparelho('')).toBe('Navegador no outro sistema');
+  });
+});
+
+describe('papéis da equipe', () => {
+  it('admin pode tudo; cada papel só o que é dele', () => {
+    expect(temPapel('admin', ['financeiro'])).toBe(true);
+    expect(temPapel('suporte', ['financeiro'])).toBe(false);
+    expect(temPapel('suporte')).toBe(true);
+    expect(pode('financeiro', 'criarCodigo')).toBe(true);
+    expect(pode('suporte', 'criarCodigo')).toBe(false);
+    expect(pode('suporte', 'mudarPedido')).toBe(true);
+    expect(pode('financeiro', 'mudarPedido')).toBe(false);
+    expect(pode('financeiro', 'mudarContrato')).toBe(true);
+    expect(pode('suporte', 'mudarContrato')).toBe(false);
+    expect(pode('suporte', 'equipe')).toBe(false);
+    expect(pode('financeiro', 'historico')).toBe(false);
+    expect(pode('admin', 'acessos')).toBe(true);
+    expect(pode('financeiro', 'ver')).toBe(true);
+    expect(nomeDoPapelEquipe('financeiro')).toBe('Financeiro');
+    expect(nomeDoPapelEquipe('sistema')).toBe('Sistema');
   });
 });
 

@@ -33,7 +33,7 @@ function grupoDe(r: LinhaReferencia): Grupo {
   return r.aprovado ? 'base' : 'sugestoes';
 }
 
-export function BaseAdmin({ linhas }: { linhas: LinhaReferencia[] }) {
+export function BaseAdmin({ linhas, podeDecidir = true }: { linhas: LinhaReferencia[]; /** Só o suporte aprova e tira da base. */ podeDecidir?: boolean }) {
   const toast = useToast();
   const [grupo, setGrupo] = useState<Grupo>(linhas.some((r) => grupoDe(r) === 'sugestoes') ? 'sugestoes' : 'base');
   const [categoria, setCategoria] = useState<Categoria | ''>('');
@@ -113,7 +113,7 @@ export function BaseAdmin({ linhas }: { linhas: LinhaReferencia[] }) {
                 </p>
               </div>
               <div className="flex gap-2">
-                {grupo === 'sugestoes' ? (
+                {!podeDecidir ? null : grupo === 'sugestoes' ? (
                   <>
                     <Botao tamanho="pequeno" variante="escuro" onClick={() => decidir(r, true)} disabled={ocupado}>
                       Aprovar

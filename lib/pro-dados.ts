@@ -6,15 +6,14 @@ import { formatarData } from './datas';
 import { formatarMoeda } from './formatos';
 import { formatarCodigo, PRO } from './plano';
 
-export const COLUNAS_ASSINATURA = 'id, oficina_nome, oficina_whatsapp, meses, valor, ate, codigo, observacao, ativacoes, criado_em';
-
-/** Quantos aparelhos podem ativar o mesmo código (celular, computador e um reserva). */
-export const MAX_APARELHOS = 3;
+export const COLUNAS_ASSINATURA = 'id, oficina_id, oficina_nome, oficina_whatsapp, meses, valor, ate, codigo, observacao, ativacoes, criado_em';
 
 export const MESES_PRO = [1, 3, 6, 12] as const;
 
 const linha = z.object({
   id: z.coerce.number(),
+  /** A oficina que ativou o código (ou para quem a equipe deu o Pro direto). */
+  oficina_id: z.string().nullish().transform((v) => v ?? null),
   oficina_nome: z.string(),
   oficina_whatsapp: z.string().nullish().transform((v) => v ?? null),
   meses: z.coerce.number(),
@@ -54,7 +53,7 @@ export function mensagemDoCodigo(a: Pick<Assinatura, 'oficina_nome' | 'codigo' |
   return [
     `Olá! Aqui é da equipe do Revisaí. O Pro da ${a.oficina_nome} está liberado.`,
     `Seu código: ${formatarCodigo(a.codigo)}`,
-    'Abra o Revisaí, vá em Ajustes, na parte Plano, e digite o código. Vale em até 3 aparelhos da oficina.',
+    'Entre no Revisaí com a conta do dono da oficina, vá em Ajustes, na parte Plano, e digite o código. Ele fica ligado à sua oficina e vale para todo mundo dela.',
     `O Pro vale até ${formatarData(a.ate)}. Obrigado pela confiança!`
   ].join('\n');
 }
