@@ -197,7 +197,7 @@ export function PassoAPasso() {
   const s = servicoDoPasso(passo);
   const veiculo = r.veiculoId ? veiculos[r.veiculoId] : undefined;
   const dono = veiculo ? clientes[veiculo.clienteId] : undefined;
-  const opcoes = useOpcoesDePeca(s ?? 'revisao', veiculo, r.tipo ?? 'ordem', hoje);
+  const opcoes = useOpcoesDePeca(s ?? 'revisao', veiculo, r.tipo ?? 'ordem', hoje, r.carroNovo);
   const opcoesRef = useRef(opcoes);
   opcoesRef.current = opcoes;
 
