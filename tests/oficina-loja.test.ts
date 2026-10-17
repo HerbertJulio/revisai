@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { assinarLojaDaOficina, juntarAvisos, TABELAS_DA_OFICINA, type EstadoDoCanal } from '@/components/oficina/loja/tempo-real';
 import { CATALOGO_EXEMPLO } from '@/lib/catalogo-demo';
-import { montarPedidos, pixTrocadoHaPouco, textoDaMudanca, textoDoCancelamento, type LinhaDaParte, type LinhaDoHistorico } from '@/lib/entregas-dados';
+import { montarPedidos, pixTrocadoHaPouco, textoDaMudanca, textoDoCancelamento, textoDoFaturado, type LinhaDaParte, type LinhaDoHistorico } from '@/lib/entregas-dados';
 import { esquemaContatoDoPedido, lerReputacoes, mensagemDoPedido, seloDaReputacao } from '@/lib/marketplace-dados';
 import { ordensDisponiveis, semPrecos, temPreco } from '@/lib/vitrine';
 
@@ -56,6 +56,20 @@ describe('pedidos da oficina (partes do banco)', () => {
     // sem o produto no item (pedido antigo), o item fica sem o número; sem cashback, zero
     expect(k7.partes[1].itens[0].produtoId).toBeNull();
     expect(k7.partes.map((x) => x.cashback)).toEqual([0, 0]);
+    // sem a forma de pagamento (banco antigo) ou com Pix, não é faturado
+    expect(k7.partes.map((x) => x.faturado)).toEqual([null, null]);
+  });
+
+  it('a compra faturada mostra o prazo antes da entrega e o vencimento depois', () => {
+    const [antes] = montarPedidos([parte({ forma_pagamento: 'faturado', prazo_dias: 28 })], [], new Map(), () => true);
+    expect(antes.partes[0].faturado).toEqual({ prazoDias: 28, vencimento: null });
+    expect(textoDoFaturado(antes.partes[0].faturado!, '2026-10-17')).toBe('Faturado: vence 28 dias depois da entrega');
+    const [depois] = montarPedidos([parte({ forma_pagamento: 'faturado', prazo_dias: 1, vencimento: '2026-11-14', status: 'entregue' })], [], new Map(), () => true);
+    expect(textoDoFaturado(depois.partes[0].faturado!, '2026-10-17')).toBe('Faturado: vence em 14/11/2026');
+    expect(textoDoFaturado(depois.partes[0].faturado!, '2026-11-15')).toBe('Faturado: venceu em 14/11/2026');
+    expect(textoDoFaturado({ prazoDias: 1, vencimento: null }, '2026-10-17')).toBe('Faturado: vence 1 dia depois da entrega');
+    const [pix] = montarPedidos([parte({ forma_pagamento: 'pix' })], [], new Map(), () => true);
+    expect(pix.partes[0].faturado).toBeNull();
   });
 
   it('traz o cashback usado e o preço combinado com a oficina', () => {

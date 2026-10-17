@@ -68,6 +68,8 @@ export interface ParteAcompanhada {
   pagamentoEm: string | null;
   /** A loja cadastrou a chave Pix. */
   pix: boolean;
+  /** Compra faturada (com o crédito que a loja deu): o prazo e o vencimento, que sai na entrega. */
+  faturado: { prazoDias: number | null; vencimento: string | null } | null;
   entrega: { previsao: string | null; saiuEm: string | null; posicao: PosicaoEntrega | null; entregueEm: string | null };
   /** Quem cancelou e por quê (só na parte cancelada). */
   cancelamento: { por: 'loja' | 'oficina' | 'equipe' | null; motivo: string | null } | null;
@@ -94,6 +96,9 @@ export interface LinhaDaParte {
   itens: unknown;
   pagamento: SituacaoPagamento;
   pagamento_em: string | null;
+  forma_pagamento?: 'pix' | 'faturado' | null;
+  prazo_dias?: number | null;
+  vencimento?: string | null;
   entrega_previsao: string | null;
   entrega_saiu_em: string | null;
   entrega_lat: number | null;
@@ -177,6 +182,7 @@ export function montarPedidos(
       pagamento: l.pagamento,
       pagamentoEm: l.pagamento_em,
       pix: comPix(l.fornecedor_id),
+      faturado: l.forma_pagamento === 'faturado' ? { prazoDias: l.prazo_dias ?? null, vencimento: l.vencimento ?? null } : null,
       entrega: {
         previsao: l.entrega_previsao,
         saiuEm: l.entrega_saiu_em,
@@ -237,6 +243,17 @@ export function textoDaMudanca(m: MudancaDaParte): string {
 export function textoDoCancelamento(c: NonNullable<ParteAcompanhada['cancelamento']>): string {
   const quem = c.por === 'oficina' ? 'Você cancelou esta parte do pedido' : c.por === 'equipe' ? 'A equipe do Revisaí cancelou esta parte do pedido' : 'A loja cancelou esta parte do pedido';
   return c.motivo ? `${quem}: ${c.motivo}${/[.!?]$/.test(c.motivo) ? '' : '.'}` : `${quem}.`;
+}
+
+/** A compra faturada numa frase: "Faturado: vence 12/11/2026" ou, antes da entrega, o prazo. */
+export function textoDoFaturado(f: NonNullable<ParteAcompanhada['faturado']>, hoje: string): string {
+  if (f.vencimento) {
+    const [a, m, d] = f.vencimento.split('-');
+    const data = `${d}/${m}/${a}`;
+    if (f.vencimento < hoje) return `Faturado: venceu em ${data}`;
+    return `Faturado: vence em ${data}`;
+  }
+  return f.prazoDias ? `Faturado: vence ${f.prazoDias} ${f.prazoDias === 1 ? 'dia' : 'dias'} depois da entrega` : 'Faturado com a loja';
 }
 
 /** A loja trocou a chave Pix há pouco (até 7 dias): vale conferir o nome de quem recebe. */

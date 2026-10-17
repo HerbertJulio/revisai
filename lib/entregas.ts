@@ -19,7 +19,7 @@ const numeroOuNulo = z.union([z.number(), z.string(), z.null()]).transform((v) =
 const textoOuNulo = z.string().nullish().transform((v) => v ?? null);
 
 const COLUNAS_PARTE_DA_OFICINA =
-  'id, codigo, fornecedor_id, status, subtotal, cashback, itens, pagamento, pagamento_em, entrega_previsao, entrega_saiu_em, entrega_lat, entrega_lng, entrega_precisao, entrega_posicao_em, entregue_em, cancelado_motivo, cancelado_por, criado_em, atualizado_em';
+  'id, codigo, fornecedor_id, status, subtotal, cashback, itens, pagamento, pagamento_em, forma_pagamento, prazo_dias, vencimento, entrega_previsao, entrega_saiu_em, entrega_lat, entrega_lng, entrega_precisao, entrega_posicao_em, entregue_em, cancelado_motivo, cancelado_por, criado_em, atualizado_em';
 
 const esquemaParteDaOficina = z.object({
   id: numero,
@@ -31,6 +31,9 @@ const esquemaParteDaOficina = z.object({
   itens: z.unknown(),
   pagamento: z.enum(['pendente', 'informado', 'confirmado']),
   pagamento_em: textoOuNulo,
+  forma_pagamento: z.enum(['pix', 'faturado']).nullish().catch(null),
+  prazo_dias: numeroOuNulo.optional().transform((v) => v ?? null),
+  vencimento: textoOuNulo.optional().transform((v) => v ?? null),
   entrega_previsao: textoOuNulo,
   entrega_saiu_em: textoOuNulo,
   entrega_lat: numeroOuNulo,

@@ -11,7 +11,7 @@ import { Folha } from '@/components/Folha';
 import { QrCode } from '@/components/QrCode';
 import { useToast } from '@/components/Toasts';
 import { Botao, Chip, Secao } from '@/components/ui';
-import { dataLocal, formatarData, formatarDiaHora } from '@/lib/datas';
+import { dataLocal, formatarData, formatarDiaHora, hojeISO } from '@/lib/datas';
 import {
   aCaminho,
   DIAS_DO_LINK,
@@ -27,6 +27,7 @@ import {
   SITUACOES_PARA_OFICINA,
   textoDaMudanca,
   textoDoCancelamento,
+  textoDoFaturado,
   type ParteAcompanhada,
   type PedidoAcompanhado
 } from '@/lib/entregas-dados';
@@ -34,6 +35,7 @@ import { formatarMoeda, plural } from '@/lib/formatos';
 import { useOficina } from '@/lib/store';
 import type { PedidoEnviado } from '@/lib/tipos';
 import { linkWhatsApp } from '@/lib/whatsapp';
+import { Denunciar } from '@/components/suporte/Denunciar';
 import { faseVisivel, resumoDoAlerta } from './Alertas';
 import { pedidoAcompanhavel, useAndamento } from './andamento';
 import { BotaoEntrar } from './comum';
@@ -346,6 +348,11 @@ function ParteDoPedido({
         ))}
       </ul>
 
+      {parte.faturado && parte.status !== 'cancelado' && parte.pagamento !== 'confirmado' ? (
+        <p className="rounded-xl bg-caneta-claro/70 px-4 py-3 text-[14.5px] text-caneta">
+          <strong>{textoDoFaturado(parte.faturado, hojeISO(new Date()))}.</strong> A loja vendeu no prazo que deu para a sua oficina; pague direto para ela até o vencimento.
+        </p>
+      ) : null}
       {parte.status !== 'cancelado' ? <Pagamento parte={parte} /> : null}
 
       {aoPedirDevolucao ? <DevolucoesDaParte parte={parte} codigo={codigo} aoAbrir={aoPedirDevolucao} /> : null}
@@ -364,6 +371,8 @@ function ParteDoPedido({
       </div>
 
       <HistoricoDaParte parte={parte} />
+      {/* a loja não fica sabendo quem denunciou; a equipe olha (só vale para loja de quem a oficina comprou) */}
+      <Denunciar key={`loja-${parte.fornecedorId}`} fornecedorId={parte.fornecedorId} alvo="esta loja" />
     </section>
   );
 }
