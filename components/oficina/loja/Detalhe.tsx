@@ -4,6 +4,7 @@
 
 import { ShoppingCart } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { useConta } from '@/components/conta/ProvedorConta';
 import { Folha } from '@/components/Folha';
 import { Botao, Chip } from '@/components/ui';
 import { desconto, embalagem, melhorOferta, nomeCategoria, patrocinado, precoNaQuantidade, promocoesAtivas, quantidadeComUnidade, type Produto } from '@/lib/catalogo';
@@ -16,8 +17,9 @@ import { precoDeVitrine } from '@/lib/vitrine';
 import { useCatalogo } from '../catalogo';
 import { FotoProduto } from '../FotoProduto';
 import { useReferencias } from '../referencias';
-import { especificacoes, minuscula, nomeComMarca, Passo, SeloDestaque, SeloPatrocinado } from './comum';
+import { BotaoEntrar, especificacoes, minuscula, nomeComMarca, Passo, SeloDestaque, SeloPatrocinado } from './comum';
 import { ComparaPreco } from './precos';
+import { SeloDaLoja } from './reputacao';
 
 export function DetalheProduto({
   produto: p,
@@ -36,7 +38,8 @@ export function DetalheProduto({
   /** O botão de pedir preço menor às lojas, embaixo da comparação. */
   acaoPreco?: (p: Produto, quantidade: number) => React.ReactNode;
 }) {
-  const { catalogo } = useCatalogo();
+  const { catalogo, comPrecos } = useCatalogo();
+  const { conta } = useConta();
   const { referencias } = useReferencias();
   const hoje = useHoje();
   const [qtd, setQtd] = useState(1);
@@ -81,25 +84,32 @@ export function DetalheProduto({
       titulo={nomeComMarca(p)}
       descricao={`${nomeCategoria(p.categoria)}, ${minuscula(embalagem(p))}`}
       rodape={
-        <div className="flex w-full flex-wrap items-center justify-between gap-3">
-          <p>
-            {promocao ? <span className="num mr-2 text-[14px] text-tinta-3 line-through">{formatarMoeda(p.preco)}</span> : null}
-            <strong className="largo num text-[21px]">{formatarMoeda(preco)}</strong>
-            <span className="text-[13px] text-tinta-3"> cada</span>
-          </p>
-          <div className="flex items-center gap-2">
-            <Passo valor={qtd} aoMudar={setQtd} rotulo={p.nome} />
-            <Botao
-              variante="primario"
-              onClick={() => {
-                aoPor(p, qtd);
-                aoFechar();
-              }}
-            >
-              <ShoppingCart size={17} /> Pôr no pedido
-            </Botao>
+        conta && comPrecos ? (
+          <div className="flex w-full flex-wrap items-center justify-between gap-3">
+            <p>
+              {promocao ? <span className="num mr-2 text-[14px] text-tinta-3 line-through">{formatarMoeda(p.preco)}</span> : null}
+              <strong className="largo num text-[21px]">{formatarMoeda(preco)}</strong>
+              <span className="text-[13px] text-tinta-3"> cada</span>
+            </p>
+            <div className="flex items-center gap-2">
+              <Passo valor={qtd} aoMudar={setQtd} rotulo={p.nome} />
+              <Botao
+                variante="primario"
+                onClick={() => {
+                  aoPor(p, qtd);
+                  aoFechar();
+                }}
+              >
+                <ShoppingCart size={17} /> Pôr no pedido
+              </Botao>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="flex w-full flex-wrap items-center justify-between gap-3">
+            <p className="max-w-[38ch] text-[14px] text-tinta-2">{conta ? 'Os preços ainda não carregaram. Confira a internet.' : 'O preço e o pedido são para quem tem conta no Revisaí.'}</p>
+            {conta ? null : <BotaoEntrar />}
+          </div>
+        )
       }
     >
       <div ref={topo} className="flex flex-col gap-5">
@@ -152,7 +162,7 @@ export function DetalheProduto({
           </div>
         ) : null}
 
-        <ComparaPreco produto={p} quantidade={qtd} hoje={hoje} aoAbrir={aoAbrir} acao={acaoPreco?.(p, qtd)} />
+        {comPrecos ? <ComparaPreco produto={p} quantidade={qtd} hoje={hoje} aoAbrir={aoAbrir} acao={acaoPreco?.(p, qtd)} /> : null}
 
         {prazo ? (
           <div className="rounded-xl bg-papel-2 px-4 py-3 text-[14px]">
@@ -171,6 +181,7 @@ export function DetalheProduto({
                 {fornecedor.nome} {fornecedor.destaque ? <SeloDestaque /> : null}
               </p>
               <p className="text-[13.5px] text-tinta-3">{[fornecedor.cidade, fornecedor.uf].filter(Boolean).join(', ')}</p>
+              <SeloDaLoja fornecedorId={fornecedor.id} />
               {fornecedor.descricao ? <p className="mt-1 text-[14px] text-tinta-2">{fornecedor.descricao}</p> : null}
             </div>
           </div>
@@ -188,7 +199,7 @@ export function DetalheProduto({
                       <FotoProduto produto={x} tamanhos="152px" className="aspect-[4/3] w-full" />
                       <span className="flex flex-col gap-1 p-2.5">
                         <span className="line-clamp-2 text-[13px] leading-snug font-semibold">{nomeComMarca(x)}</span>
-                        <span className="largo num text-[15px] font-extrabold">{formatarMoeda(v)}</span>
+                        {comPrecos ? <span className="largo num text-[15px] font-extrabold">{formatarMoeda(v)}</span> : null}
                         {patrocinado(x.id, catalogo.patrocinios, uf, hoje) ? (
                           <span className="self-start">
                             <SeloPatrocinado />

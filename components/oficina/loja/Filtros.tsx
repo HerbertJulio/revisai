@@ -13,7 +13,8 @@ import type { Facetas, FiltrosLoja, Opcao } from '@/lib/vitrine';
 const VISIVEIS = 6;
 const CATEGORIAS_VISIVEIS = 8;
 
-export function PainelFiltros({ filtros, facetas, aoMudar }: { filtros: FiltrosLoja; facetas: Facetas; aoMudar: (f: FiltrosLoja) => void }) {
+/** `comPrecos` falso (quem não entrou na conta): sem os filtros de promoção e de preço. */
+export function PainelFiltros({ filtros, facetas, aoMudar, comPrecos = true }: { filtros: FiltrosLoja; facetas: Facetas; aoMudar: (f: FiltrosLoja) => void; comPrecos?: boolean }) {
   const [todasCategorias, setTodasCategorias] = useState(false);
   // a categoria escolhida fica sempre à vista, mesmo fora das primeiras
   const categorias = todasCategorias
@@ -52,10 +53,12 @@ export function PainelFiltros({ filtros, facetas, aoMudar }: { filtros: FiltrosL
         ) : null}
       </Grupo>
 
-      <Grupo titulo="Ofertas">
-        <Caixa marcada={filtros.promocao} n={facetas.promocao} aoMudar={(v) => aoMudar({ ...filtros, promocao: v })}>
-          Em promoção
-        </Caixa>
+      <Grupo titulo={comPrecos ? 'Ofertas' : 'Lojas'}>
+        {comPrecos ? (
+          <Caixa marcada={filtros.promocao} n={facetas.promocao} aoMudar={(v) => aoMudar({ ...filtros, promocao: v })}>
+            Em promoção
+          </Caixa>
+        ) : null}
         <Caixa marcada={filtros.destaque} n={facetas.destaque} aoMudar={(v) => aoMudar({ ...filtros, destaque: v })}>
           Lojas destaque
         </Caixa>
@@ -105,9 +108,11 @@ export function PainelFiltros({ filtros, facetas, aoMudar }: { filtros: FiltrosL
         </Grupo>
       ) : null}
 
-      <Grupo titulo="Preço por unidade">
-        <FaixaDePreco filtros={filtros} faixa={facetas.faixa} aoMudar={aoMudar} />
-      </Grupo>
+      {comPrecos ? (
+        <Grupo titulo="Preço por unidade">
+          <FaixaDePreco filtros={filtros} faixa={facetas.faixa} aoMudar={aoMudar} />
+        </Grupo>
+      ) : null}
     </div>
   );
 }

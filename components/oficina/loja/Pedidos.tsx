@@ -3,7 +3,7 @@
 // Os pedidos depois de enviados, como nos apps de entrega: a situação da parte de cada loja, o Pix
 // direto para a loja e o entregador no mapa. E o que está andando (alertas e pedidos) no topo da Loja.
 
-import { BellRing, Check, ChevronRight, Copy, ExternalLink, MessageCircle, PackageCheck, RefreshCw, Truck } from 'lucide-react';
+import { BellRing, Check, ChevronRight, Copy, ExternalLink, History, MessageCircle, PackageCheck, RefreshCw, TriangleAlert, Truck } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { avisarQuePaguei, codigoDoPix } from '@/app/oficina/acoes-loja';
@@ -22,8 +22,11 @@ import {
   mapaEmbutido,
   pedidoEmAndamento,
   pixLiberado,
+  pixTrocadoHaPouco,
   posicaoRecente,
   SITUACOES_PARA_OFICINA,
+  textoDaMudanca,
+  textoDoCancelamento,
   type ParteAcompanhada,
   type PedidoAcompanhado
 } from '@/lib/entregas-dados';
@@ -33,6 +36,8 @@ import type { PedidoEnviado } from '@/lib/tipos';
 import { linkWhatsApp } from '@/lib/whatsapp';
 import { faseVisivel, resumoDoAlerta } from './Alertas';
 import { pedidoAcompanhavel, useAndamento } from './andamento';
+import { BotaoEntrar } from './comum';
+import { SeloDaLoja } from './reputacao';
 
 /** A situação do pedido numa linha: a da loja, ou um resumo quando são várias. */
 function resumoDoPedido(p: PedidoAcompanhado): { texto: string; tom: 'oleo' | 'caneta' | 'ok' | 'atraso' | 'neutro' } {
@@ -120,14 +125,39 @@ export function EmAndamento({ aoAbrirAlerta, aoAbrirPedido }: { aoAbrirAlerta: (
 
 // ---------------------------------------------------------------- lista
 
+/** O que a lista de pedidos mostra de cada um (o guardado no aparelho, ou só o que veio do banco). */
+interface LinhaDePedido {
+  codigo: string;
+  quando: string;
+  itens: number;
+  total: number;
+  combinado: boolean;
+  recebido: boolean;
+}
+
 export function PedidosEnviados({ aoAbrir }: { aoAbrir: (codigo: string) => void }) {
   const enviados = useOficina((s) => s.pedidos);
   const { pedidos } = useAndamento();
-  if (!enviados.length) return null;
+  // os pedidos da oficina feitos em outro aparelho (que a sincronia ainda não trouxe) também entram
+  const locais = new Set(enviados.map((p) => p.codigo));
+  const linhas: LinhaDePedido[] = [
+    ...enviados.map((p) => ({ codigo: p.codigo, quando: p.quando, itens: p.itens.length, total: p.total, combinado: !!p.alertaId, recebido: !!p.recebidoEm })),
+    ...Object.values(pedidos)
+      .filter((p) => !locais.has(p.codigo))
+      .map((p) => ({
+        codigo: p.codigo,
+        quando: p.criadoEm,
+        itens: p.partes.reduce((n, x) => n + x.itens.length, 0),
+        total: p.total,
+        combinado: p.partes.some((x) => x.itens.some((i) => i.combinado)),
+        recebido: false
+      }))
+  ].sort((a, b) => (a.quando < b.quando ? 1 : a.quando > b.quando ? -1 : 0));
+  if (!linhas.length) return null;
   return (
     <Secao titulo="Pedidos">
       <ul className="divide-y divide-linha rounded-2xl bg-papel ring-1 ring-linha">
-        {enviados.map((p) => {
+        {linhas.map((p) => {
           const acompanhado = pedidos[p.codigo];
           const r = acompanhado ? resumoDoPedido(acompanhado) : null;
           return (
@@ -136,10 +166,10 @@ export function PedidosEnviados({ aoAbrir }: { aoAbrir: (codigo: string) => void
                 <Truck size={18} className="text-tinta-3" aria-hidden="true" />
                 <span className="largo num font-extrabold tracking-wider">{p.codigo}</span>
                 <span className="text-[14px] text-tinta-2">{formatarData(dataLocal(p.quando))}</span>
-                <span className="text-[14px] text-tinta-2">{plural(p.itens.length, 'item', 'itens')}</span>
-                {p.alertaId ? <Chip tom="caneta">Preço combinado</Chip> : null}
+                <span className="text-[14px] text-tinta-2">{plural(p.itens, 'item', 'itens')}</span>
+                {p.combinado ? <Chip tom="caneta">Preço combinado</Chip> : null}
                 <span className="num ml-auto font-semibold">{formatarMoeda(p.total)}</span>
-                {p.recebidoEm ? <Chip tom="ok">No estoque</Chip> : r ? <Chip tom={r.tom}>{r.texto}</Chip> : null}
+                {p.recebido ? <Chip tom="ok">No estoque</Chip> : r ? <Chip tom={r.tom}>{r.texto}</Chip> : null}
               </button>
             </li>
           );
@@ -153,18 +183,13 @@ export function PedidosEnviados({ aoAbrir }: { aoAbrir: (codigo: string) => void
 
 export function FolhaPedido({ codigo, aoFechar }: { codigo: string | null; aoFechar: () => void }) {
   const enviado = useOficina((s) => s.pedidos.find((p) => p.codigo === codigo));
-  // o pedido entra na busca do acompanhamento (os 30 mais novos dos últimos 45 dias)
-  const acompanhavel = useOficina((s) =>
-    s.pedidos
-      .filter((p) => pedidoAcompanhavel(p))
-      .slice(0, 30)
-      .some((p) => p.codigo === codigo)
-  );
-  const { pedidos, atualizar, pronto, buscados, erro } = useAndamento();
+  // o pedido entra na busca do acompanhamento (os dos últimos 45 dias)
+  const acompanhavel = useOficina((s) => s.pedidos.some((p) => p.codigo === codigo && pedidoAcompanhavel(p)));
+  const { pedidos, atualizar, pronto, buscados, erro, comConta } = useAndamento();
   const [atualizando, iniciar] = useTransition();
   const acompanhado = codigo ? pedidos[codigo] : undefined;
   // pedido que a última busca ainda não consultou (acabou de sair): carregando, não "pedido antigo"
-  const carregando = !!codigo && !acompanhado && acompanhavel && (!pronto || !buscados.has(codigo)) && !erro;
+  const carregando = comConta && !!codigo && !acompanhado && acompanhavel && (!pronto || !buscados.has(codigo)) && !erro;
   const pediuBusca = useRef<string | null>(null);
   useEffect(() => {
     if (carregando && pronto && codigo && pediuBusca.current !== codigo) {
@@ -172,18 +197,24 @@ export function FolhaPedido({ codigo, aoFechar }: { codigo: string | null; aoFec
       void atualizar();
     }
   }, [carregando, pronto, codigo, atualizar]);
-  if (!codigo || !enviado) return <Folha aberta={false} aoFechar={aoFechar} titulo="">{null}</Folha>;
+  if (!codigo || (!enviado && !acompanhado)) return <Folha aberta={false} aoFechar={aoFechar} titulo="">{null}</Folha>;
+  const quando = enviado?.quando ?? acompanhado!.criadoEm;
+  const total = acompanhado?.total ?? enviado!.total;
   return (
     <Folha
       aberta
       aoFechar={aoFechar}
       titulo={`Pedido ${codigo}`}
-      descricao={`Feito ${formatarDiaHora(enviado.quando)}, ${formatarMoeda(enviado.total)}.`}
+      descricao={`Feito ${formatarDiaHora(quando)}, ${formatarMoeda(total)}.`}
       rodape={
         <div className="flex w-full items-center justify-between gap-2">
-          <Botao variante="fantasma" tamanho="pequeno" onClick={() => iniciar(atualizar)} disabled={atualizando}>
-            <RefreshCw size={15} aria-hidden="true" className={atualizando ? 'animate-spin' : ''} /> Atualizar
-          </Botao>
+          {comConta ? (
+            <Botao variante="fantasma" tamanho="pequeno" onClick={() => iniciar(atualizar)} disabled={atualizando}>
+              <RefreshCw size={15} aria-hidden="true" className={atualizando ? 'animate-spin' : ''} /> Atualizar
+            </Botao>
+          ) : (
+            <span />
+          )}
           <Botao variante="primario" onClick={aoFechar}>
             Fechar
           </Botao>
@@ -193,20 +224,24 @@ export function FolhaPedido({ codigo, aoFechar }: { codigo: string | null; aoFec
       {acompanhado ? (
         <div className="flex flex-col gap-6">
           {acompanhado.partes.map((parte) => (
-            <ParteDoPedido key={parte.fornecedorId} codigo={codigo} parte={parte} enviado={enviado} varias={acompanhado.partes.length > 1} />
+            <ParteDoPedido key={parte.id} codigo={codigo} parte={parte} recebido={!!enviado?.recebidoEm} varias={acompanhado.partes.length > 1} />
           ))}
         </div>
       ) : carregando ? (
         <div className="min-h-40" aria-busy="true" />
-      ) : (
-        <SemAcompanhamento enviado={enviado} motivo={acompanhavel && erro ? `Não deu para ver a situação deste pedido agora. ${erro} Toque em Atualizar para tentar de novo.` : undefined} />
-      )}
+      ) : enviado ? (
+        <SemAcompanhamento
+          enviado={enviado}
+          semConta={!comConta}
+          motivo={comConta && acompanhavel && erro ? `Não deu para ver a situação deste pedido agora. ${erro} Toque em Atualizar para tentar de novo.` : undefined}
+        />
+      ) : null}
     </Folha>
   );
 }
 
-/** Pedido de antes do acompanhamento (ou de outro aparelho, ou sem conexão): mostra o que o app guardou. */
-function SemAcompanhamento({ enviado, motivo }: { enviado: PedidoEnviado; motivo?: string }) {
+/** Pedido sem acompanhamento (feito antes da conta, de fora da oficina, ou sem conexão): mostra o que o app guardou. */
+function SemAcompanhamento({ enviado, motivo, semConta }: { enviado: PedidoEnviado; motivo?: string; semConta: boolean }) {
   return (
     <div className="flex flex-col gap-4">
       <ul className="flex flex-col gap-1 rounded-xl bg-papel-2 px-3 py-2.5 text-[14px]">
@@ -223,8 +258,13 @@ function SemAcompanhamento({ enviado, motivo }: { enviado: PedidoEnviado; motivo
         <p className="rounded-xl bg-atraso-claro px-4 py-3 text-[14.5px] text-atraso" role="alert">
           {motivo}
         </p>
+      ) : semConta ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-papel-2 px-4 py-3">
+          <p className="max-w-[44ch] text-[14.5px] text-tinta-2">Para acompanhar os pedidos e pagar por Pix aqui, entre na sua conta. Os pedidos feitos sem conta a loja combina pelo WhatsApp.</p>
+          <BotaoEntrar rotulo="Entrar" pequeno />
+        </div>
       ) : (
-        <p className="text-[14.5px] text-tinta-2">Este pedido foi feito antes do acompanhamento pelo app (ou em outro aparelho). A loja combina a entrega e o pagamento pelo WhatsApp.</p>
+        <p className="text-[14.5px] text-tinta-2">Este pedido foi feito antes do acompanhamento pela conta. A loja combina a entrega e o pagamento pelo WhatsApp.</p>
       )}
       {!enviado.recebidoEm ? (
         <Link href="/oficina/estoque" className="self-start text-[14.5px] font-semibold text-caneta hover:underline">
@@ -235,7 +275,7 @@ function SemAcompanhamento({ enviado, motivo }: { enviado: PedidoEnviado; motivo
   );
 }
 
-function ParteDoPedido({ codigo, parte, enviado, varias }: { codigo: string; parte: ParteAcompanhada; enviado: PedidoEnviado; varias: boolean }) {
+function ParteDoPedido({ codigo, parte, recebido, varias }: { codigo: string; parte: ParteAcompanhada; recebido: boolean; varias: boolean }) {
   const nomeOficina = useOficina((s) => s.oficina.nome);
   const situacao = SITUACOES_PARA_OFICINA[parte.status];
   const passo = etapa(parte.status);
@@ -249,6 +289,7 @@ function ParteDoPedido({ codigo, parte, enviado, varias }: { codigo: string; par
           <p className="num text-[14px] text-tinta-3">
             {varias ? `${formatarMoeda(parte.subtotal)}, ` : ''}atualizado {haQuantoTempo(parte.atualizadoEm, agora)}
           </p>
+          <SeloDaLoja fornecedorId={parte.fornecedorId} compacto />
         </div>
         <Chip tom={situacao.tom}>{situacao.nome}</Chip>
       </div>
@@ -263,7 +304,9 @@ function ParteDoPedido({ codigo, parte, enviado, varias }: { codigo: string; par
           ))}
         </ol>
       ) : (
-        <p className="rounded-xl bg-atraso-claro px-4 py-3 text-[14px] text-atraso">A loja cancelou esta parte do pedido. Fale com ela se precisar.</p>
+        <p className="rounded-xl bg-atraso-claro px-4 py-3 text-[14px] text-atraso">
+          {parte.cancelamento ? textoDoCancelamento(parte.cancelamento) : 'A loja cancelou esta parte do pedido.'} Fale com a loja se precisar.
+        </p>
       )}
 
       {parte.status === 'saiu_entrega' ? <Entrega parte={parte} /> : null}
@@ -285,7 +328,7 @@ function ParteDoPedido({ codigo, parte, enviado, varias }: { codigo: string; par
         ))}
       </ul>
 
-      {parte.status !== 'cancelado' ? <Pagamento codigo={codigo} parte={parte} /> : null}
+      {parte.status !== 'cancelado' ? <Pagamento parte={parte} /> : null}
 
       <div className="flex flex-wrap gap-2">
         {zap ? (
@@ -293,13 +336,36 @@ function ParteDoPedido({ codigo, parte, enviado, varias }: { codigo: string; par
             <MessageCircle size={15} aria-hidden="true" /> Falar com a loja
           </a>
         ) : null}
-        {(parte.status === 'entregue' || (parte.status === 'saiu_entrega' && !aCaminho(parte, agora))) && !enviado.recebidoEm ? (
+        {(parte.status === 'entregue' || (parte.status === 'saiu_entrega' && !aCaminho(parte, agora))) && !recebido ? (
           <Link href="/oficina/estoque" className="inline-flex h-9 items-center gap-1.5 rounded-[10px] bg-tinta px-3 text-sm font-semibold text-papel hover:opacity-90">
             <PackageCheck size={15} aria-hidden="true" /> Dar entrada no estoque
           </Link>
         ) : null}
       </div>
+
+      <HistoricoDaParte parte={parte} />
     </section>
+  );
+}
+
+/** As mudanças da parte (quem confirmou, quando saiu, o pagamento), da mais nova para a mais antiga. */
+function HistoricoDaParte({ parte }: { parte: ParteAcompanhada }) {
+  if (!parte.historico.length) return null;
+  const lista = [...parte.historico].reverse();
+  return (
+    <details className="group rounded-xl text-[14px]">
+      <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 font-semibold text-tinta-2 hover:text-tinta">
+        <History size={15} aria-hidden="true" /> Histórico ({lista.length})
+      </summary>
+      <ol className="mt-2 flex flex-col gap-1.5 border-l-2 border-linha pl-3">
+        {lista.map((m, i) => (
+          <li key={`${m.quando}-${i}`} className="flex flex-wrap gap-x-2">
+            <span className="num text-tinta-3">{formatarDiaHora(m.quando)}</span>
+            <span className="text-tinta-2">{textoDaMudanca(m)}</span>
+          </li>
+        ))}
+      </ol>
+    </details>
   );
 }
 
@@ -349,11 +415,10 @@ function Entrega({ parte }: { parte: ParteAcompanhada }) {
   );
 }
 
-function Pagamento({ codigo, parte }: { codigo: string; parte: ParteAcompanhada }) {
+function Pagamento({ parte }: { parte: ParteAcompanhada }) {
   const toast = useToast();
-  const garantirAparelhoId = useOficina((s) => s.garantirAparelhoId);
   const { atualizar, ajustarParte } = useAndamento();
-  const [pix, setPix] = useState<{ codigo: string; valor: number; recebedor: string } | null>(null);
+  const [pix, setPix] = useState<{ codigo: string; valor: number; recebedor: string; trocadaEm: string | null } | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, iniciar] = useTransition();
 
@@ -377,9 +442,9 @@ function Pagamento({ codigo, parte }: { codigo: string; parte: ParteAcompanhada 
     setErro(null);
     iniciar(async () => {
       try {
-        const r = await codigoDoPix({ aparelhoId: garantirAparelhoId(), codigo, fornecedorId: parte.fornecedorId });
+        const r = await codigoDoPix({ parteId: parte.id });
         if (!r.ok) return setErro(r.erro);
-        setPix(r);
+        setPix({ codigo: r.codigo, valor: r.valor, recebedor: r.recebedor, trocadaEm: r.trocadaEm });
       } catch {
         setErro('Sem conexão com o servidor. Tente de novo.');
       }
@@ -389,11 +454,11 @@ function Pagamento({ codigo, parte }: { codigo: string; parte: ParteAcompanhada 
   function paguei() {
     iniciar(async () => {
       try {
-        const r = await avisarQuePaguei({ aparelhoId: garantirAparelhoId(), codigo, fornecedorId: parte.fornecedorId });
+        const r = await avisarQuePaguei({ parteId: parte.id });
         if (!r.ok) return toast({ texto: r.erro, tom: 'erro' });
         toast({ texto: 'Avisamos a loja que você pagou.' });
         setPix(null);
-        ajustarParte(codigo, parte.fornecedorId, { pagamento: 'informado', pagamentoEm: new Date().toISOString() });
+        ajustarParte(parte.id, { pagamento: 'informado', pagamentoEm: new Date().toISOString() });
         void atualizar();
       } catch {
         toast({ texto: 'Sem conexão. Tente de novo.', tom: 'erro' });
@@ -430,6 +495,14 @@ function Pagamento({ codigo, parte }: { codigo: string; parte: ParteAcompanhada 
       <p className="text-[14.5px]">
         Pix de <strong className="num">{formatarMoeda(pix.valor)}</strong> para <strong>{pix.recebedor}</strong>
       </p>
+      {pixTrocadoHaPouco(pix.trocadaEm, Date.now()) ? (
+        <p className="flex max-w-[40ch] items-start gap-2 rounded-xl bg-oleo-claro px-3 py-2 text-left text-[13.5px] text-oleo-tinta">
+          <TriangleAlert size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <span>
+            A {parte.fornecedor} trocou a chave Pix {pix.trocadaEm ? formatarDiaHora(pix.trocadaEm) : 'há pouco'}. Confira se quem recebe é a loja antes de pagar e, na dúvida, fale com ela.
+          </span>
+        </p>
+      ) : null}
       <QrCode texto={pix.codigo} rotulo={`QR Code do Pix de ${formatarMoeda(pix.valor)} para ${pix.recebedor}`} className="h-56 w-56 rounded-xl bg-white p-1" />
       <p className="max-w-[34ch] text-[13px] text-tinta-3">Abra o app do banco e leia o QR Code, ou copie o código e use o Pix copia e cola.</p>
       <div className="flex flex-wrap justify-center gap-2">

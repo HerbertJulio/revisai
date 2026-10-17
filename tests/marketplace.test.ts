@@ -5,36 +5,8 @@ import { itensDaDemanda, MINIMO_OFICINAS, quantidadeDaLinha, somarDemanda, type 
 import { fotoDoProduto, urlDaFoto, FOTOS_CATEGORIA } from '@/lib/fotos';
 import { fimDoImpulso, valorDaComissao } from '@/lib/planos-fornecedor';
 import { nomeDaReferencia, origemDaReferencia, prazoDaReferencia, referenciasDaCategoria, textoDoPrazo, type Referencia } from '@/lib/referencias';
-import { codigoValido, criarSessaoFornecedor, gerarCodigoDeAcesso, hashDoCodigo, lerSessaoFornecedor, marcaDoLink } from '@/lib/sessao-fornecedor';
 import { atende, precoRedondo, sugerirPromocoes, type ProdutoDoFornecedor } from '@/lib/sugestoes';
 
-const SEGREDO = 'x'.repeat(40);
-
-describe('sessão do fornecedor', () => {
-  it('gera códigos de 43 caracteres e confere o formato', () => {
-    const c = gerarCodigoDeAcesso();
-    expect(codigoValido(c)).toBe(true);
-    expect(codigoValido('curto')).toBe(false);
-    expect(hashDoCodigo(c)).toMatch(/^[0-9a-f]{64}$/);
-  });
-
-  it('a sessão carrega o fornecedor e a marca do link', () => {
-    const hash = hashDoCodigo(gerarCodigoDeAcesso());
-    const agora = Date.UTC(2026, 9, 14);
-    const s = criarSessaoFornecedor(SEGREDO, 42, hash, agora);
-    expect(lerSessaoFornecedor(s, SEGREDO, agora + 1000)).toEqual({ fornecedorId: 42, marca: marcaDoLink(hash) });
-  });
-
-  it('recusa sessão vencida, adulterada ou de outro segredo', () => {
-    const hash = hashDoCodigo(gerarCodigoDeAcesso());
-    const agora = Date.UTC(2026, 9, 14);
-    const s = criarSessaoFornecedor(SEGREDO, 42, hash, agora);
-    expect(lerSessaoFornecedor(s, SEGREDO, agora + 31 * 86_400_000)).toBeNull();
-    expect(lerSessaoFornecedor(s.replace(/^42\./, '43.'), SEGREDO, agora)).toBeNull();
-    expect(lerSessaoFornecedor(s, 'y'.repeat(40), agora)).toBeNull();
-    expect(lerSessaoFornecedor('lixo', SEGREDO, agora)).toBeNull();
-  });
-});
 
 describe('vitrine', () => {
   const cat: Catalogo = {

@@ -84,7 +84,7 @@ export function Inicio() {
               Testar do zero
             </Botao>
           </div>
-          <p className="text-[13px] text-tinta-3 sm:col-span-2">Os clientes de exemplo são fictícios e saem com um toque em Ajustes. Sem conta, a voz com IA e a loja ficam fechadas; quando criar a conta, o que estiver aqui vai junto.</p>
+          <p className="text-[13px] text-tinta-3 sm:col-span-2">Os clientes de exemplo são fictícios e saem com um toque em Ajustes. Sem conta, a voz com IA fica fechada e a loja mostra os produtos sem preço; quando criar a conta, o que estiver aqui vai junto.</p>
         </form>
       </div>
       <div className="hidden items-center justify-center lg:flex" aria-hidden="true">

@@ -9,8 +9,9 @@ import { formatarMoeda } from '@/lib/formatos';
 import { descontoDeVitrine, precoDeVitrine } from '@/lib/vitrine';
 import { useCatalogo } from '../catalogo';
 import { FotoProduto } from '../FotoProduto';
-import { BotaoPor, especificacoes, legendaDoPreco, minuscula, nomeComMarca, quantidadeInicial, SeloDestaque, SeloPatrocinado } from './comum';
+import { BotaoPor, especificacoes, legendaDoPreco, minuscula, nomeComMarca, quantidadeInicial, SeloDestaque, SeloPatrocinado, SemPreco } from './comum';
 import { SeloPrecoPago } from './precos';
+import { SeloDaLoja } from './reputacao';
 
 interface PropsProduto {
   produto: Produto;
@@ -22,9 +23,10 @@ interface PropsProduto {
 }
 
 function useVitrineDoProduto(p: Produto, uf: string, hoje: string) {
-  const { catalogo } = useCatalogo();
+  const { catalogo, comPrecos } = useCatalogo();
   const preco = precoDeVitrine(p, catalogo.promocoes, hoje);
   return {
+    comPrecos,
     preco,
     cheio: preco < p.preco ? p.preco : null,
     desconto: descontoDeVitrine(p, catalogo.promocoes, hoje),
@@ -86,12 +88,16 @@ export function CartaoGrade({ produto: p, fornecedor, uf, hoje, aoPor, aoAbrir }
           </div>
         ) : null}
         <div className="mt-auto flex flex-wrap items-end justify-between gap-2 pt-2">
-          <div className="min-w-0">
-            {v.cheio ? <p className="num text-[12.5px] text-tinta-3 line-through">{formatarMoeda(v.cheio)}</p> : null}
-            <p className="largo num text-[18px] leading-none font-extrabold sm:text-[20px]">{formatarMoeda(v.preco)}</p>
-            <p className="mt-1 text-[12px] text-tinta-3">{v.legenda}</p>
-            <SeloPrecoPago produto={p} preco={v.preco} />
-          </div>
+          {v.comPrecos ? (
+            <div className="min-w-0">
+              {v.cheio ? <p className="num text-[12.5px] text-tinta-3 line-through">{formatarMoeda(v.cheio)}</p> : null}
+              <p className="largo num text-[18px] leading-none font-extrabold sm:text-[20px]">{formatarMoeda(v.preco)}</p>
+              <p className="mt-1 text-[12px] text-tinta-3">{v.legenda}</p>
+              <SeloPrecoPago produto={p} preco={v.preco} />
+            </div>
+          ) : (
+            <SemPreco className="min-w-0 max-w-[14ch]" />
+          )}
           <BotaoPor produto={p} quantidade={v.quantidade} aoPor={aoPor} pequeno />
         </div>
       </div>
@@ -130,12 +136,16 @@ export function LinhaLista({ produto: p, fornecedor, uf, hoje, aoPor, aoAbrir }:
         {specs.length ? <p className="mt-0.5 hidden truncate text-[12.5px] font-semibold text-tinta-2 sm:block">{specs.join(', ')}</p> : null}
       </div>
       <div className="flex shrink-0 flex-col items-end gap-2 text-right sm:flex-row sm:items-center sm:gap-5">
-        <div className="sm:min-w-[118px]">
-          {v.cheio ? <p className="num text-[12px] text-tinta-3 line-through">{formatarMoeda(v.cheio)}</p> : null}
-          <p className="largo num text-[17px] leading-none font-extrabold sm:text-[19px]">{formatarMoeda(v.preco)}</p>
-          <p className="mt-0.5 hidden text-[12px] text-tinta-3 sm:block">{v.legenda}</p>
-          <SeloPrecoPago produto={p} preco={v.preco} />
-        </div>
+        {v.comPrecos ? (
+          <div className="sm:min-w-[118px]">
+            {v.cheio ? <p className="num text-[12px] text-tinta-3 line-through">{formatarMoeda(v.cheio)}</p> : null}
+            <p className="largo num text-[17px] leading-none font-extrabold sm:text-[19px]">{formatarMoeda(v.preco)}</p>
+            <p className="mt-0.5 hidden text-[12px] text-tinta-3 sm:block">{v.legenda}</p>
+            <SeloPrecoPago produto={p} preco={v.preco} />
+          </div>
+        ) : (
+          <SemPreco className="hidden max-w-[14ch] sm:block sm:min-w-[118px]" />
+        )}
         <div className="flex sm:w-[96px] sm:justify-end">
           <BotaoPor produto={p} quantidade={v.quantidade} aoPor={aoPor} pequeno />
         </div>
@@ -163,6 +173,7 @@ export function CartaoLojaDestaque({ loja, produtos, aoVer, emLinha = false }: {
           <div className="min-w-0">
             <p className="leading-snug font-bold">{loja.nome}</p>
             {local ? <p className="text-[13px] text-white/65">{local}</p> : null}
+            <SeloDaLoja fornecedorId={loja.id} escuro compacto />
           </div>
         </div>
         {loja.descricao ? <p className={`mt-3 text-[14px] text-white/80 ${emLinha ? 'max-w-[60ch]' : ''}`}>{loja.descricao}</p> : null}
