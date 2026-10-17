@@ -2,7 +2,9 @@ import type { Metadata } from 'next';
 import { AvisoErro, Quadro } from '@/components/fornecedor/comum';
 import { ErroDoPainel, MolduraFornecedor, SemLoja } from '@/components/fornecedor/Moldura';
 import { CartaoReputacao } from '@/components/fornecedor/Reputacao';
-import { CadastroDaLoja, ChavePixDaLoja, EquipeDaLoja } from '@/components/fornecedor/SuaLoja';
+import { CadastroDaLoja, CashbackDaLoja, ChavePixDaLoja, EquipeDaLoja } from '@/components/fornecedor/SuaLoja';
+import { cashbackDado, cashbackDaLoja } from '@/lib/loja/cashback';
+import { diaEmBrasilia, inicioDoMes } from '@/lib/loja/comum';
 import { equipeDaLoja } from '@/lib/loja/equipe';
 import { painelOuEntrada } from '@/lib/loja/painel';
 import { pixDaLoja } from '@/lib/loja/pix';
@@ -19,7 +21,14 @@ export default async function PaginaSuaLoja() {
   const { painel, sb } = r;
   const { loja } = painel;
   const dono = painel.papel === 'dono';
-  const [pix, equipe, reputacao] = await Promise.all([dono ? pixDaLoja(sb, loja.id) : Promise.resolve(null), equipeDaLoja(sb, loja.id, dono), reputacaoDaLoja(sb, loja.id)]);
+  const [pix, equipe, reputacao, cashback] = await Promise.all([
+    dono ? pixDaLoja(sb, loja.id) : Promise.resolve(null),
+    equipeDaLoja(sb, loja.id, dono),
+    reputacaoDaLoja(sb, loja.id),
+    cashbackDaLoja(sb, loja.id)
+  ]);
+  // o primeiro instante do mês em Brasília (UTC-3, sem horário de verão)
+  const comecoDoMes = `${inicioDoMes(diaEmBrasilia(Date.now()))}T03:00:00.000Z`;
   const config = configSupabase();
 
   return (
@@ -56,6 +65,18 @@ export default async function PaginaSuaLoja() {
           <EquipeDaLoja membros={equipe.membros} convites={equipe.convites} dono={dono} euId={painel.usuarioId} loja={loja.nome} config={config} email={painel.email} />
         ) : (
           <AvisoErro>Não deu para carregar a equipe agora. Atualize a página em instantes.</AvisoErro>
+        )}
+      </Quadro>
+
+      <Quadro
+        id="cashback"
+        titulo="Cashback para as oficinas"
+        descricao="A loja devolve uma parte do valor como crédito para a oficina usar em compras na própria loja. Entra quando o pedido é entregue e o pagamento confirmado; quem paga é a loja."
+      >
+        {cashback ? (
+          <CashbackDaLoja percentual={loja.cashback_percentual} dono={dono} movimentos={cashback} doMes={cashbackDado(cashback, comecoDoMes)} total={cashbackDado(cashback)} />
+        ) : (
+          <AvisoErro>Não deu para carregar o cashback agora. Atualize a página em instantes.</AvisoErro>
         )}
       </Quadro>
 

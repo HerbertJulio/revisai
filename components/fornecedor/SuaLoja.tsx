@@ -12,6 +12,7 @@ import {
   mudarPapel,
   sairDaLoja,
   salvarCadastroDaLoja,
+  salvarCashbackDaLoja,
   tirarPessoa,
   trocarChavePix
 } from '@/app/fornecedor/acoes';
@@ -21,7 +22,15 @@ import { formatarCnpj } from '@/lib/cnpj';
 import { formatarDiaHora } from '@/lib/datas';
 import { formatarMoeda, formatarTelefone, lerNumero } from '@/lib/formatos';
 import { dataCurta, diaEmBrasilia, FUSO, hojeEmBrasilia, quandoFoi } from '@/lib/loja/comum';
-import { PRAZOS_DE_ENTREGA, textoDoPrazoDeEntrega, type ConviteDaLoja, type LinhaLoja, type MembroDaLoja, type ResumoPix } from '@/lib/loja/dados';
+import {
+  PRAZOS_DE_ENTREGA,
+  textoDoPrazoDeEntrega,
+  type ConviteDaLoja,
+  type LinhaLoja,
+  type MembroDaLoja,
+  type MovimentoDeCashback,
+  type ResumoPix
+} from '@/lib/loja/dados';
 import { formatarChavePix, type TipoChavePix } from '@/lib/pix';
 import type { ConfigPublica } from '@/lib/supabase-navegador';
 import { ConfirmarEmail } from './ConfirmarEmail';
@@ -552,6 +561,93 @@ export function EquipeDaLoja({
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- cashback
+
+const TIPOS_CASHBACK = { credito: { nome: 'Crédito', tom: 'ok' }, uso: { nome: 'Usado', tom: 'caneta' }, estorno: { nome: 'Estorno', tom: 'atraso' } } as const;
+
+export function CashbackDaLoja({
+  percentual,
+  dono,
+  movimentos,
+  doMes,
+  total
+}: {
+  percentual: number;
+  dono: boolean;
+  movimentos: MovimentoDeCashback[];
+  doMes: number;
+  total: number;
+}) {
+  const toast = useToast();
+  const [valor, setValor] = useState(String(percentual).replace('.', ','));
+  const [erro, setErro] = useState<string | null>(null);
+  const [salvando, iniciar] = useTransition();
+  const agora = Date.now();
+
+  function salvar() {
+    setErro(null);
+    const n = lerNumero(valor);
+    if (n == null || n < 0 || n > 10) return setErro('O cashback vai de 0% a 10%.');
+    iniciar(async () => {
+      try {
+        const r = await salvarCashbackDaLoja(n);
+        if (!r.ok) return setErro(r.erro);
+        toast({ texto: n ? `Cashback de ${String(n).replace('.', ',')}% ligado. Vale para os próximos pedidos entregues e pagos.` : 'Cashback desligado.' });
+      } catch {
+        setErro(SEM_CONEXAO);
+      }
+    });
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      {dono ? (
+        <div className="flex flex-wrap items-end gap-2">
+          <Campo rotulo="Cashback (%)" htmlFor="loja-cashback" dica="De 0 a 10%. 0 desliga." className="w-40">
+            <input id="loja-cashback" className={`${classeEntrada} num`} value={valor} onChange={(e) => setValor(e.target.value)} inputMode="decimal" />
+          </Campo>
+          <Botao variante="escuro" onClick={salvar} disabled={salvando}>
+            {salvando ? 'Salvando…' : 'Salvar'}
+          </Botao>
+        </div>
+      ) : (
+        <p className="text-[14.5px] text-tinta-2">{percentual ? `A loja dá ${String(percentual).replace('.', ',')}% de cashback. Só o dono muda.` : 'A loja não dá cashback. Só o dono muda.'}</p>
+      )}
+      {erro ? <AvisoErro>{erro}</AvisoErro> : null}
+      <dl className="grid grid-cols-2 gap-3 sm:max-w-md">
+        <div className="rounded-xl bg-papel-2 px-3.5 py-3">
+          <dt className="text-[13px] text-tinta-3">Dado este mês</dt>
+          <dd className="num text-[19px] font-extrabold">{formatarMoeda(doMes)}</dd>
+        </div>
+        <div className="rounded-xl bg-papel-2 px-3.5 py-3">
+          <dt className="text-[13px] text-tinta-3">Desde o começo</dt>
+          <dd className="num text-[19px] font-extrabold">{formatarMoeda(total)}</dd>
+        </div>
+      </dl>
+      {movimentos.length ? (
+        <ul className="divide-y divide-linha rounded-xl ring-1 ring-linha">
+          {movimentos.slice(0, 20).map((m) => (
+            <li key={m.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-[14px]">
+              <span className="min-w-0">
+                <span className="font-semibold">{m.oficina ?? 'Oficina'}</span>
+                <span className="text-tinta-3">
+                  {m.codigo ? `, pedido ${m.codigo}` : ''}, {quandoFoi(m.criadoEm, agora)}
+                </span>
+              </span>
+              <span className="flex items-center gap-2">
+                <Chip tom={TIPOS_CASHBACK[m.tipo].tom}>{TIPOS_CASHBACK[m.tipo].nome}</Chip>
+                <span className="num font-semibold">{formatarMoeda(m.valor)}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-[14px] text-tinta-3">Nenhum cashback dado ainda. O crédito entra quando o pedido é entregue e o pagamento confirmado.</p>
+      )}
     </div>
   );
 }

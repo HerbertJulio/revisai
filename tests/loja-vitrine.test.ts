@@ -221,3 +221,36 @@ describe('anúncios da loja', async () => {
   });
 });
 
+describe('cashback da loja', async () => {
+  const { cashbackDado, cashbackDaLoja, salvarCashback } = await import('@/lib/loja/cashback');
+
+  it('grava o percentual de 0 a 10 e soma o que foi dado, menos os estornos', async () => {
+    const b = bancoFalso({ 'fornecedores.update': { data: { id: 9 } } });
+    expect(await salvarCashback(b.sb, 9, 2.555)).toEqual({ ok: true });
+    expect(b.chamadas[0]).toMatchObject({ nome: 'fornecedores', op: 'update', dados: { cashback_percentual: 2.56 }, filtros: [['eq', 'id', 9]] });
+    expect((await salvarCashback(b.sb, 9, 11)).ok).toBe(false);
+    expect((await salvarCashback(b.sb, 9, -1)).ok).toBe(false);
+    expect((await salvarCashback(b.sb, 9, Number.NaN)).ok).toBe(false);
+    expect(b.chamadas).toHaveLength(1);
+    // vendedor: o banco não muda nada e não devolve a linha
+    expect((await salvarCashback(bancoFalso().sb, 9, 3)).ok).toBe(false);
+
+    const l = bancoFalso({
+      cashback_movimentos: {
+        data: [
+          { id: 3, tipo: 'estorno', valor: '1.50', criado_em: '2026-10-10T15:00:00+00:00', parte: { codigo: 'ABC123', oficina_nome: 'Oficina do Zé' } },
+          { id: 2, tipo: 'credito', valor: '1.50', criado_em: '2026-10-09T15:00:00+00:00', parte: { codigo: 'ABC123', oficina_nome: 'Oficina do Zé' } },
+          { id: 1, tipo: 'credito', valor: '4.20', criado_em: '2026-09-20T15:00:00+00:00', parte: null }
+        ]
+      }
+    });
+    const movimentos = (await cashbackDaLoja(l.sb, 9))!;
+    expect(l.chamadas[0].filtros).toEqual([['eq', 'fornecedor_id', 9]]);
+    expect(movimentos[0]).toEqual({ id: 3, tipo: 'estorno', valor: 1.5, criadoEm: '2026-10-10T15:00:00+00:00', codigo: 'ABC123', oficina: 'Oficina do Zé' });
+    expect(movimentos[2]).toMatchObject({ codigo: null, oficina: null });
+    expect(cashbackDado(movimentos)).toBe(4.2);
+    expect(cashbackDado(movimentos, '2026-10-01T03:00:00.000Z')).toBe(0);
+    expect(await cashbackDaLoja(bancoFalso({ cashback_movimentos: { error: { message: 'x' } } }).sb, 9)).toBeNull();
+  });
+});
+

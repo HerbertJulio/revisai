@@ -49,11 +49,12 @@ const esquemaLoja = z.object({
   prazo_entrega_horas: numeroOuNulo.optional().transform((v) => v ?? null),
   avisar_whatsapp: z.boolean().optional().default(true),
   pedido_minimo: numeroOuNulo.optional().transform((v) => v ?? null),
+  cashback_percentual: numeroOuNulo.optional().transform((v) => v ?? 0),
   criado_em: z.string()
 });
 export type LinhaLoja = z.infer<typeof esquemaLoja>;
 export const COLUNAS_LOJA =
-  'id, nome, cidade, uf, whatsapp, descricao, email, cnpj, ativo, destaque, destaque_ate, demonstracao, verificacao, verificacao_obs, prazo_entrega_horas, avisar_whatsapp, pedido_minimo, criado_em';
+  'id, nome, cidade, uf, whatsapp, descricao, email, cnpj, ativo, destaque, destaque_ate, demonstracao, verificacao, verificacao_obs, prazo_entrega_horas, avisar_whatsapp, pedido_minimo, cashback_percentual, criado_em';
 
 /** Os prazos de entrega que a loja escolhe (em horas). */
 export const PRAZOS_DE_ENTREGA: { horas: number; nome: string }[] = [
@@ -504,6 +505,33 @@ export function lerCondicoes(d: unknown): CondicaoDaOficina[] {
     z.object({ id: numero, oficina_id: z.string(), produto_id: numeroOuNulo, desconto_percentual: numeroOuNulo, preco: numeroOuNulo, atualizado_em: z.string() }),
     d
   ).map((c) => ({ id: c.id, oficinaId: c.oficina_id, produtoId: c.produto_id, descontoPercentual: c.desconto_percentual, preco: c.preco, atualizadoEm: c.atualizado_em }));
+}
+
+// ---------------------------------------------------------------- cashback
+
+export interface MovimentoDeCashback {
+  id: number;
+  tipo: 'credito' | 'uso' | 'estorno';
+  valor: number;
+  criadoEm: string;
+  /** Código do pedido e a oficina (da parte do pedido). */
+  codigo: string | null;
+  oficina: string | null;
+}
+
+export const COLUNAS_CASHBACK = 'id, tipo, valor, criado_em, parte:pedidos_fornecedores(codigo, oficina_nome)';
+
+export function lerMovimentosDeCashback(d: unknown): MovimentoDeCashback[] {
+  return ler(
+    z.object({
+      id: numero,
+      tipo: z.enum(['credito', 'uso', 'estorno']),
+      valor: numero,
+      criado_em: z.string(),
+      parte: z.object({ codigo: texto, oficina_nome: texto }).nullish()
+    }),
+    d
+  ).map((m) => ({ id: m.id, tipo: m.tipo, valor: m.valor, criadoEm: m.criado_em, codigo: m.parte?.codigo ?? null, oficina: m.parte?.oficina_nome ?? null }));
 }
 
 // ---------------------------------------------------------------- equipe

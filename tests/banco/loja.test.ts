@@ -501,3 +501,48 @@ d('anúncio por clique', () => {
     }));
 });
 
+d('cashback pago pela loja', () => {
+  it('credita quando entregue e pago, estorna se o pagamento é desfeito; cada lado vê o seu', () =>
+    emTransacao(async (b) => {
+      const x = await pedidos(b, 2);
+      const [p1, p2] = x.partes;
+      const [{ oficina_id: oficina }] = (await b.query('select oficina_id from public.pedidos_fornecedores where id = $1', [p1])).rows;
+      expect((await tentar(b, x.lojista, 'update public.fornecedores set cashback_percentual = 5 where id = $1', [x.loja.fornecedorId])).erro).toBeNull();
+      expect((await tentar(b, x.lojista, 'update public.fornecedores set cashback_percentual = 12 where id = $1', [x.loja.fornecedorId])).codigo).toBe('23514');
+      const subtotal = Number((await b.query('select subtotal from public.pedidos_fornecedores where id = $1', [p1])).rows[0].subtotal);
+      const saldo = async (p: Parameters<typeof linhas>[1], loja: number | null = x.loja.fornecedorId) => Number((await linhas(b, p, 'select public.saldo_cashback($1, $2) as s', [oficina, loja]))[0].s);
+      expect((await muda(b, x.lojista, p1, `status = 'confirmado'`)).erro).toBeNull();
+      expect((await muda(b, x.lojista, p1, `status = 'entregue'`)).erro).toBeNull();
+      expect(await saldo(x.dono)).toBe(0);
+      // pago: crédito de 5%
+      expect((await muda(b, x.lojista, p1, `pagamento = 'confirmado'`)).erro).toBeNull();
+      expect(await saldo(x.dono)).toBeCloseTo(Math.round(subtotal * 5) / 100, 2);
+      expect(await saldo(x.lojista)).toBeCloseTo(Math.round(subtotal * 5) / 100, 2);
+      expect(await saldo(x.dono, null)).toBeCloseTo(Math.round(subtotal * 5) / 100, 2);
+      // desfeito: estorno; confirmado de novo: crédito de novo
+      expect((await muda(b, x.lojista, p1, `pagamento = 'pendente'`)).erro).toBeNull();
+      expect(await saldo(x.dono)).toBe(0);
+      expect((await muda(b, x.lojista, p1, `pagamento = 'confirmado'`)).erro).toBeNull();
+      expect(await saldo(x.dono)).toBeCloseTo(Math.round(subtotal * 5) / 100, 2);
+      const movimentos = await linhas(b, x.dono, 'select tipo, valor, percentual from public.cashback_movimentos order by id');
+      expect(movimentos.map((m) => m.tipo)).toEqual(['credito', 'estorno', 'credito']);
+      expect(await linhas(b, x.lojista, 'select id from public.cashback_movimentos')).toHaveLength(3);
+      // pago antes de entregar não credita; com 0% nada
+      expect((await muda(b, x.lojista, p2, `status = 'confirmado', pagamento = 'confirmado'`)).erro).toBeNull();
+      expect(await linhas(b, x.dono, 'select id from public.cashback_movimentos where parte_id = $1', [p2])).toHaveLength(0);
+      await linhas(b, x.lojista, 'update public.fornecedores set cashback_percentual = 0 where id = $1', [x.loja.fornecedorId]);
+      expect((await muda(b, x.lojista, p2, `status = 'entregue'`)).erro).toBeNull();
+      expect(await linhas(b, x.dono, 'select id from public.cashback_movimentos where parte_id = $1', [p2])).toHaveLength(0);
+      // ninguém escreve no livro direto; quem é de fora não vê o saldo
+      expect((await tentar(b, x.dono, `insert into public.cashback_movimentos (oficina_id, fornecedor_id, valor, tipo) values ($1, $2, 1000, 'credito')`, [oficina, x.loja.fornecedorId])).erro).toBeTruthy();
+      const rival = await criarPessoa(b, pessoa('rival'));
+      const outra = await criarLoja(b, rival, { nome: 'Outra' });
+      expect(await linhas(b, rival, 'select id from public.cashback_movimentos')).toHaveLength(0);
+      expect((await tentar(b, rival, 'select public.saldo_cashback($1, $2)', [oficina, x.loja.fornecedorId])).codigo).toBe('42501');
+      expect((await tentar(b, rival, 'select public.saldo_cashback($1, $2)', [oficina, outra.fornecedorId])).erro).toBeNull();
+      const estranha = await criarPessoa(b, pessoa('estranha'));
+      await criarOficina(b, estranha);
+      expect((await tentar(b, estranha, 'select public.saldo_cashback($1, $2)', [oficina, x.loja.fornecedorId])).codigo).toBe('42501');
+    }));
+});
+

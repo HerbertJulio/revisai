@@ -9,6 +9,7 @@ import { after } from 'next/server';
 import { acessoDaLoja } from '@/lib/conta';
 import { permitido } from '@/lib/limite';
 import { responderAlerta } from '@/lib/loja/alertas';
+import { salvarCashback } from '@/lib/loja/cashback';
 import { removerCondicao, salvarCondicao } from '@/lib/loja/clientes';
 import { avisarTrocaDePix, lojaParaAviso } from '@/lib/loja/avisos';
 import { cancelarConviteDaLoja, convidarParaLoja, mudarPapelNaLoja, tirarDaLoja, type ResultadoConvite, type ResultadoPapel } from '@/lib/loja/equipe';
@@ -174,6 +175,16 @@ export async function salvarCadastroDaLoja(entrada: unknown): Promise<Gravacao> 
   if (!a.ok) return a;
   if (a.loja.papel !== 'dono') return SO_DONO;
   const r = await salvarCadastro(a.sb, a.loja.id, entrada);
+  if (r.ok) atualizar();
+  return r;
+}
+
+/** O cashback que a loja dá às oficinas (0 a 10%): decisão de dinheiro, só o dono. */
+export async function salvarCashbackDaLoja(percentual: number): Promise<Gravacao> {
+  const a = await acesso('cashback', 30);
+  if (!a.ok) return a;
+  if (a.loja.papel !== 'dono') return SO_DONO;
+  const r = await salvarCashback(a.sb, a.loja.id, Number(percentual));
   if (r.ok) atualizar();
   return r;
 }
