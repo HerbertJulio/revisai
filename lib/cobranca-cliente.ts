@@ -92,7 +92,9 @@ export const esquemaDadosDoPagamento = z.object({
   membroId: z.string().max(100).nullish().transform((v) => v ?? null),
   competencia: z.string().regex(/^\d{4}-\d{2}$/).nullish().transform((v) => v ?? null),
   pago: z.boolean().default(false),
-  pagoEm: z.string().max(40).nullish().transform((v) => v ?? null)
+  pagoEm: z.string().max(40).nullish().transform((v) => v ?? null),
+  /** A oficina conferiu e o Pix ainda não tinha caído (o cliente pode avisar de novo). */
+  naoCaiuEm: z.string().max(40).nullish().transform((v) => v ?? null)
 });
 export type DadosDoPagamento = z.infer<typeof esquemaDadosDoPagamento>;
 
@@ -140,8 +142,21 @@ export function dadosDoPagamento(c: NovaCobranca): DadosDoPagamento {
     membroId: c.membroId ?? null,
     competencia: c.competencia ?? null,
     pago: false,
-    pagoEm: null
+    pagoEm: null,
+    naoCaiuEm: null
   };
+}
+
+/**
+ * O aviso do cliente ainda vale na página? Depois que a oficina marca "ainda não caiu", a página
+ * volta a mostrar o botão "Já paguei".
+ */
+export function avisoAindaVale(respondidoEm: string | null | undefined, naoCaiuEm: string | null | undefined): boolean {
+  if (!respondidoEm) return false;
+  if (!naoCaiuEm) return true;
+  const r = new Date(respondidoEm).getTime();
+  const n = new Date(naoCaiuEm).getTime();
+  return !(Number.isFinite(r) && Number.isFinite(n) && n > r);
 }
 
 /** Uma referência nova para cada cobrança da ordem (o aviso de uma não apaga o da outra). */

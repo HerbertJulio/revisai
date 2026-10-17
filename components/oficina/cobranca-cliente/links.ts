@@ -18,10 +18,18 @@ import {
   recebimentoPorPix,
   type LinkDeCobranca
 } from '@/lib/cobranca-cliente';
-import { publicarLink } from '@/lib/links-publicos';
 import { useOficina } from '@/lib/store';
 import type { Id } from '@/lib/tipos';
 import { cartaoMudou } from '../clube/cartao';
+
+/**
+ * Troca só o que o cliente vê num link que já existe (o endereço continua o mesmo). Aqui não se
+ * sabe o endereço: o publicador comum geraria um endereço novo, e o do cliente pararia de valer.
+ */
+async function trocarDadosDoLink(sb: SupabaseClient, oficinaId: string, l: LinkDeCobranca, dados: object): Promise<void> {
+  const { error } = await sb.rpc('publicar_link', { p_oficina: oficinaId, p_tipo: l.tipo, p_ref: l.ref, p_dados: dados, p_dias: l.tipo === 'clube' ? 400 : 30, p_placa: null, p_novo: false });
+  if (error) throw error;
+}
 
 export async function lerLinksDeCobranca(sb: SupabaseClient, oficinaId: string, filtro: { documentoId?: Id; pendentes?: boolean } = {}): Promise<LinkDeCobranca[]> {
   let q = sb.from('links_publicos').select(COLUNAS_DO_LINK).eq('oficina_id', oficinaId).in('tipo', ['pagamento', 'clube']).eq('revogado', false);
@@ -158,7 +166,7 @@ export async function confirmarPagamento(l: LinkDeCobranca, sb: SupabaseClient, 
   if (!r.ok) return r;
   if (l.tipo === 'pagamento') {
     try {
-      await publicarLink(sb, window.location.origin, { oficinaId, tipo: 'pagamento', ref: l.ref, dados: { ...l.dados, pago: true, pagoEm: hoje }, dias: 30 });
+      await trocarDadosDoLink(sb, oficinaId, l, { ...l.dados, pago: true, pagoEm: hoje });
     } catch {
       // a página do cliente continua sem o "pago"; o dinheiro já está lançado
     }
@@ -166,8 +174,14 @@ export async function confirmarPagamento(l: LinkDeCobranca, sb: SupabaseClient, 
   return { ok: true };
 }
 
-/** O Pix ainda não caiu: o aviso sai da lista e o cliente pode avisar de novo pela página. */
-export async function avisoNaoConfere(l: LinkDeCobranca, sb: SupabaseClient): Promise<Confirmacao> {
+/** O Pix ainda não caiu: o aviso sai da lista e a página do cliente volta a mostrar o "Já paguei". */
+export async function avisoNaoConfere(l: LinkDeCobranca, sb: SupabaseClient, oficinaId: string): Promise<Confirmacao> {
   const { error } = await sb.rpc('link_processado', { p_id: l.id });
-  return error ? { ok: false, erro: 'Não deu para tirar o aviso agora. Tente de novo.' } : { ok: true };
+  if (error) return { ok: false, erro: 'Não deu para tirar o aviso agora. Tente de novo.' };
+  try {
+    await trocarDadosDoLink(sb, oficinaId, l, { ...l.dados, naoCaiuEm: new Date().toISOString() });
+  } catch {
+    // o aviso já saiu da lista; a página só demora a mostrar o botão de novo
+  }
+  return { ok: true };
 }

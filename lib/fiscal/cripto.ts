@@ -1,5 +1,8 @@
-// Os tokens de cada empresa no emissor ficam cifrados no banco (AES-256-GCM, chave do servidor):
-// quem lesse a tabela não conseguiria emitir nem cancelar nota em nome da oficina.
+// Os tokens de acesso que o emissor dá a cada empresa (Focus NFe: um de produção e um de
+// homologação, para emitir as notas dela) ficam cifrados no banco (AES-256-GCM, chave do
+// servidor): quem lesse a tabela não conseguiria emitir nem cancelar nota em nome da oficina.
+// O certificado A1 e a senha dele nunca passam por aqui: vão do formulário direto para o emissor
+// (lib/fiscal/servidor.ts) e o Revisaí não guarda nenhum dos dois.
 
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import type { AmbienteFiscal, CredenciaisFiscais } from './tipos';

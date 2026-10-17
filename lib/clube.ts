@@ -225,7 +225,9 @@ export const esquemaDadosDoCartao = z.object({
       pix: z.string().min(20).max(600)
     })
     .nullish()
-    .transform((v) => v ?? null)
+    .transform((v) => v ?? null),
+  /** A oficina conferiu e o Pix ainda não tinha caído (o cliente pode avisar de novo). */
+  naoCaiuEm: z.string().max(40).nullish().transform((v) => v ?? null)
 });
 export type DadosDoCartao = z.infer<typeof esquemaDadosDoCartao>;
 
@@ -275,7 +277,8 @@ export function dadosDoCartao(ctx: {
     aberta:
       aberta && ctx.recebedor && membro.situacao === 'ativo'
         ? { competencia: aberta.competencia, valor: aberta.valor, vencimento: aberta.vencimento, pix: pixDaMensalidade(ctx.recebedor, aberta, plano) }
-        : null
+        : null,
+    naoCaiuEm: null
   };
 }
 
