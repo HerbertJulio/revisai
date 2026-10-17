@@ -1,7 +1,9 @@
 'use client';
 
 // Estado da oficina, guardado no próprio aparelho (IndexedDB, com localStorage de reserva).
-// Quando o login chegar, este é o conteúdo que sobe para a nuvem no primeiro acesso.
+// Com a conta, este estado é a cópia local da oficina: cada mudança fica marcada como pendente
+// até subir para o banco (components/oficina/sincronia), e o que os outros aparelhos mudaram
+// chega por lá. Sem conta, os dados ficam só aqui, como antes.
 
 import { del as idbDel, get as idbGet, set as idbSet } from 'idb-keyval';
 import { create } from 'zustand';
@@ -14,6 +16,7 @@ import { normalizarPlaca } from './formatos';
 import { OFICINA_VAZIA, PREFERENCIAS_PADRAO } from './padroes';
 import type { OrdemServico } from './agente/ordem';
 import { contarMontagem, juntarPlanos, PLANO_INICIAL, type EstadoPlano } from './plano';
+import { mudancas, todasAsChaves, valorAtual, type Chave } from './sincronia-dados';
 import type { ProdutoProprio } from './referencias';
 import type {
   Atendimento,
@@ -73,7 +76,19 @@ export interface DadosGuardados {
   ultimoBackup: string | null;
   /** Quando esta cópia foi gravada (a mais nova vence entre IndexedDB e localStorage). */
   salvoEm?: number;
+  /** A oficina da conta de quem estes dados são (null: só deste aparelho, sem conta). */
+  contaOficinaId: string | null;
+  /** Até onde o aparelho já buscou (marca do banco) e o que mudou aqui e ainda não subiu. */
+  sinc: EstadoSincronia;
 }
+
+export interface EstadoSincronia {
+  marca: number | null;
+  pendentes: Record<Chave, true>;
+  ultimaEm: string | null;
+}
+
+export const SINC_INICIAL: EstadoSincronia = { marca: null, pendentes: {}, ultimaEm: null };
 
 export interface AlvoContato {
   veiculoId: Id;
@@ -131,6 +146,14 @@ interface Acoes {
   carregarExemplo(): void;
   removerExemplo(): void;
   apagarTudo(): void;
+  /** Liga os dados deste aparelho à oficina da conta (levando o que já tem, ou começando limpo). */
+  vincularConta(oficinaId: string, levarDados: boolean): void;
+  /** Tira os dados da conta do aparelho (ao sair ou trocar de oficina). */
+  esquecerConta(): void;
+  /** Os itens subiram: tira dos pendentes os que não mudaram de novo enquanto subiam. */
+  marcarEnviados(enviados: { chave: Chave; valor: unknown }[]): void;
+  /** Aplica o que veio do banco (sem marcar como mudança local) e guarda a marca. */
+  aplicarDoBanco(parte: Partial<DadosGuardados>, marca: number | null): void;
 }
 
 export type EstadoOficina = DadosGuardados & Acoes;
@@ -158,8 +181,15 @@ const VAZIO: DadosGuardados = {
   documentos: {},
   contadores: {},
   resumoMostradoEm: null,
-  ultimoBackup: null
+  ultimoBackup: null,
+  contaOficinaId: null,
+  sinc: SINC_INICIAL
 };
+
+/** O que é do aparelho e não da oficina: fica ao trocar de conta. */
+function doAparelho(s: DadosGuardados): Partial<DadosGuardados> {
+  return { aparelhoId: s.aparelhoId, preferencias: { ...PREFERENCIAS_PADRAO, tema: s.preferencias.tema } };
+}
 
 function novoId(): Id {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
@@ -620,6 +650,9 @@ export const useOficina = create<EstadoOficina>()(
           // os alertas são deste aparelho, não do backup
           alertasDesde: get().alertasDesde,
           carrinho: get().carrinho,
+          // a conta continua a mesma: o que veio do backup sobe para ela
+          contaOficinaId: get().contaOficinaId,
+          sinc: get().sinc,
           estoque: dados.estoque ?? {},
           movimentos: dados.movimentos ?? {},
           documentos: dados.documentos ?? {},
@@ -651,7 +684,34 @@ export const useOficina = create<EstadoOficina>()(
 
       apagarTudo() {
         // o plano é da oficina, não dos dados: continua valendo depois de apagar
-        set({ ...VAZIO, plano: get().plano });
+        set({ ...VAZIO, plano: get().plano, contaOficinaId: get().contaOficinaId, sinc: get().sinc, configurado: !!get().contaOficinaId, oficina: get().contaOficinaId ? get().oficina : OFICINA_VAZIA });
+      },
+
+      vincularConta(oficinaId, levarDados) {
+        const s = get();
+        if (levarDados) {
+          const pendentes: Record<Chave, true> = {};
+          for (const k of todasAsChaves(s)) pendentes[k] = true;
+          semMarcar(() => set({ contaOficinaId: oficinaId, configurado: true, sinc: { marca: null, pendentes, ultimaEm: null } }));
+        } else {
+          semMarcar(() => set({ ...VAZIO, ...doAparelho(s), contaOficinaId: oficinaId, configurado: true, sinc: SINC_INICIAL }));
+        }
+      },
+
+      esquecerConta() {
+        semMarcar(() => set({ ...VAZIO, ...doAparelho(get()) }));
+      },
+
+      marcarEnviados(enviados) {
+        const s = get();
+        const pendentes = { ...s.sinc.pendentes };
+        for (const e of enviados) if (valorAtual(s, e.chave) === e.valor) delete pendentes[e.chave];
+        semMarcar(() => set({ sinc: { ...s.sinc, pendentes, ultimaEm: new Date().toISOString() } }));
+      },
+
+      aplicarDoBanco(parte, marca) {
+        const s = get();
+        semMarcar(() => set({ ...parte, configurado: true, sinc: { ...s.sinc, marca: marca ?? s.sinc.marca, ultimaEm: new Date().toISOString() } }));
       }
     }),
     {
@@ -682,7 +742,9 @@ export const useOficina = create<EstadoOficina>()(
         contadores: s.contadores,
         resumoMostradoEm: s.resumoMostradoEm,
         ultimoBackup: s.ultimoBackup,
-        salvoEm: Date.now()
+        salvoEm: Date.now(),
+        contaOficinaId: s.contaOficinaId,
+        sinc: s.sinc
       }),
       merge: (guardado, atual) => {
         const g = (guardado ?? {}) as Partial<DadosGuardados>;
@@ -695,12 +757,47 @@ export const useOficina = create<EstadoOficina>()(
           estoque: g.estoque ?? {},
           movimentos: g.movimentos ?? {},
           documentos: g.documentos ?? {},
-          contadores: g.contadores ?? {}
+          contadores: g.contadores ?? {},
+          contaOficinaId: g.contaOficinaId ?? null,
+          sinc: { ...SINC_INICIAL, ...g.sinc, pendentes: { ...(g.sinc?.pendentes ?? {}) } }
         };
       }
     }
   )
 );
+
+// ---------------------------------------------------------------- mudanças para subir
+
+let semRegistrar = 0;
+let hidratando = false;
+
+/** Muda o estado sem marcar como mudança local (o que veio do banco, a troca de conta). */
+export function semMarcar<T>(fn: () => T): T {
+  semRegistrar++;
+  try {
+    return fn();
+  } finally {
+    semRegistrar--;
+  }
+}
+
+if (noNavegador) {
+  useOficina.persist.onHydrate(() => {
+    hidratando = true;
+  });
+  useOficina.persist.onFinishHydration(() => {
+    hidratando = false;
+  });
+  // cada mudança dos dados da oficina vira pendente até subir (só com a conta ligada)
+  useOficina.subscribe((s, antes) => {
+    if (semRegistrar > 0 || hidratando || !s.contaOficinaId || s.contaOficinaId !== antes.contaOficinaId) return;
+    const chaves = mudancas(antes, s);
+    if (!chaves.length) return;
+    const pendentes = { ...s.sinc.pendentes };
+    for (const k of chaves) pendentes[k] = true;
+    semMarcar(() => useOficina.setState({ sinc: { ...s.sinc, pendentes } }));
+  });
+}
 
 // Outra aba (ou o app instalado) gravou: recarrega para não sobrescrever com dados velhos.
 if (noNavegador) {

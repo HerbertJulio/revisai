@@ -4,16 +4,21 @@ import { Bell, ClipboardList, Mic, Package, Plus, Settings, Store, Users } from 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, type ReactNode } from 'react';
+import { ProvedorConta, useConta } from '@/components/conta/ProvedorConta';
 import { Logo } from '@/components/marca';
 import { Toasts } from '@/components/Toasts';
+import { classeBotao } from '@/components/ui';
+import type { Conta } from '@/lib/conta-dados';
 import { useGrupos, useHidratado } from '@/lib/ganchos';
 import { notificar, registrarServiceWorker } from '@/lib/notificacao';
 import { armazenamentoComProblema, pedirArmazenamentoPersistente, useOficina } from '@/lib/store';
+import type { ConfigPublica } from '@/lib/supabase-navegador';
 import { ProvedorCatalogo } from './catalogo';
 import { useEnvioDeDemanda } from './demanda';
 import { Inicio } from './Inicio';
 import { ProvedorDeAndamento, useAndamento } from './loja/andamento';
 import { LinhaDoPlano, ProvedorDoPro } from './plano';
+import { IndicadorDaSincronia, ProvedorDaSincronia } from './sincronia/ProvedorDaSincronia';
 
 const ITENS = [
   { href: '/oficina', rotulo: 'Avisos', lateral: 'Avisos', Icone: Bell },
@@ -26,11 +31,36 @@ const ITENS = [
   { href: '/oficina/ajustes', rotulo: 'Ajustes', lateral: 'Ajustes', Icone: Settings, soNaLateral: true }
 ] as const;
 
-export function AppOficina({ children }: { children: ReactNode }) {
+export function AppOficina({ children, conta, oficinaId, config }: { children: ReactNode; conta: Conta | null; oficinaId: string | null; config: ConfigPublica | null }) {
+  return (
+    <ProvedorConta conta={conta} oficinaId={oficinaId} config={config}>
+      <ProvedorDaSincronia>
+        <Conteudo>{children}</Conteudo>
+      </ProvedorDaSincronia>
+    </ProvedorConta>
+  );
+}
+
+function Conteudo({ children }: { children: ReactNode }) {
   const hidratado = useHidratado();
+  const { conta, oficina } = useConta();
   const configurado = useOficina((s) => s.configurado);
+  const contaOficinaId = useOficina((s) => s.contaOficinaId);
 
   if (!hidratado) {
+    return (
+      <div className="grid min-h-dvh place-items-center" aria-busy="true">
+        <Logo className="animate-pulse opacity-60" />
+      </div>
+    );
+  }
+
+  // entrou, mas ainda não tem oficina: cria ou aceita o convite na conta
+  if (conta && !oficina) return <SemOficina />;
+  // os dados deste aparelho são de uma conta, e a sessão terminou: não mostra nada até entrar de novo
+  if (!conta && contaOficinaId) return <SessaoTerminou />;
+  // com a conta, espera ligar os dados do aparelho à oficina
+  if (oficina && contaOficinaId !== oficina.id) {
     return (
       <div className="grid min-h-dvh place-items-center" aria-busy="true">
         <Logo className="animate-pulse opacity-60" />
@@ -52,6 +82,47 @@ export function AppOficina({ children }: { children: ReactNode }) {
         )}
       </ProvedorCatalogo>
     </Toasts>
+  );
+}
+
+function SemOficina() {
+  return (
+    <main className="grid min-h-dvh place-items-center px-4">
+      <div className="flex max-w-md flex-col items-start gap-4">
+        <Logo />
+        <h1 className="largo text-[26px]">Falta a oficina</h1>
+        <p className="text-tinta-2">Sua conta ainda não está em nenhuma oficina. Crie a sua, ou peça ao dono da oficina para convidar o seu e-mail.</p>
+        <Link href="/conta?ver=1" className={classeBotao('escuro', 'grande')}>
+          Abrir a conta
+        </Link>
+      </div>
+    </main>
+  );
+}
+
+function SessaoTerminou() {
+  return (
+    <main className="grid min-h-dvh place-items-center px-4">
+      <div className="flex max-w-md flex-col items-start gap-4">
+        <Logo />
+        <h1 className="largo text-[26px]">Entre de novo</h1>
+        <p className="text-tinta-2">Sua sessão terminou. Os dados da oficina estão guardados na conta: entre para continuar de onde parou.</p>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/entrar?para=/oficina" className={classeBotao('escuro', 'grande')}>
+            Entrar
+          </Link>
+          <button
+            type="button"
+            className={classeBotao('fantasma', 'grande')}
+            onClick={() => {
+              if (confirm('Usar sem conta apaga deste aparelho a cópia dos dados da conta (eles continuam na nuvem). Continuar?')) useOficina.getState().esquecerConta();
+            }}
+          >
+            Usar sem conta
+          </button>
+        </div>
+      </div>
+    </main>
   );
 }
 
@@ -121,9 +192,12 @@ function Moldura({ children }: { children: ReactNode }) {
             );
           })}
         </nav>
-        <div className="mt-auto border-t border-linha px-2 pt-4">
+        <div className="mt-auto flex flex-col gap-1 border-t border-linha px-2 pt-4">
           <p className="truncate font-bold">{nomeOficina || 'Minha oficina'}</p>
           <LinhaDoPlano />
+          <div className="mt-1">
+            <IndicadorDaSincronia />
+          </div>
         </div>
       </aside>
 
@@ -151,6 +225,9 @@ function Moldura({ children }: { children: ReactNode }) {
       <main
         className={`mx-auto w-full px-4 pt-5 pb-[calc(96px+env(safe-area-inset-bottom))] sm:px-6 lg:px-10 lg:pt-10 lg:pb-16 ${caminho.startsWith('/oficina/loja') ? 'max-w-7xl' : 'max-w-5xl'}`}
       >
+        <div className="mb-3 flex justify-end lg:hidden">
+          <IndicadorDaSincronia compacto />
+        </div>
         {armazenamentoComProblema() ? (
           <p className="mb-5 rounded-xl bg-atraso-claro px-4 py-3 text-[14px] text-atraso" role="alert">
             O navegador não deixou abrir os dados salvos neste aparelho. Feche o Revisaí e abra de novo antes de cadastrar algo. Se continuar, restaure um backup em Ajustes.

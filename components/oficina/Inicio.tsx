@@ -1,9 +1,10 @@
 'use client';
 
+import Link from 'next/link';
 import { useState } from 'react';
 import { Logo } from '@/components/marca';
 import { EtiquetaTroca } from '@/components/pecas';
-import { Botao, Campo, classeEntrada } from '@/components/ui';
+import { Botao, Campo, classeBotao, classeEntrada } from '@/components/ui';
 import { somarDias } from '@/lib/datas';
 import { normalizarTelefone } from '@/lib/formatos';
 import { useHoje } from '@/lib/ganchos';
@@ -39,9 +40,17 @@ export function Inicio() {
         <div>
           <h1 className="largo text-[32px] sm:text-[40px]">Vamos montar a sua oficina</h1>
           <p className="mt-3 max-w-[52ch] text-[17px] text-tinta-2">
-            A cada serviço que você registrar, o Revisaí calcula quando o carro precisa voltar e avisa você antes. Sem cadastro e sem senha nesta versão: os dados ficam guardados neste aparelho.
+            A cada serviço que você registrar, o Revisaí calcula quando o carro precisa voltar e avisa você antes.
           </p>
         </div>
+        <div className="flex max-w-xl flex-col gap-3 rounded-2xl bg-papel p-5 ring-1 ring-linha">
+          <p className="font-bold">Crie a conta da oficina</p>
+          <p className="text-[15px] text-tinta-2">Com a conta, tudo fica guardado na nuvem e aparece no celular e no computador de quem trabalha com você. Entre com o Google ou com um código no e-mail, sem senha.</p>
+          <Link href="/entrar?para=/oficina" className={classeBotao('escuro', 'grande', 'self-start')}>
+            Entrar ou criar a conta
+          </Link>
+        </div>
+        <p className="text-[15px] font-semibold text-tinta-2">Ou teste sem conta, só neste aparelho:</p>
         <form
           className="grid max-w-xl gap-4 sm:grid-cols-2"
           onSubmit={(e) => {
@@ -69,13 +78,13 @@ export function Inicio() {
           </div>
           <div className="flex flex-wrap gap-3 pt-2 sm:col-span-2">
             <Botao variante="primario" tamanho="grande" type="submit">
-              Começar com clientes de exemplo
+              Testar com clientes de exemplo
             </Botao>
             <Botao tamanho="grande" onClick={() => comecar(false)}>
-              Começar do zero
+              Testar do zero
             </Botao>
           </div>
-          <p className="text-[13px] text-tinta-3 sm:col-span-2">Os clientes de exemplo são fictícios e saem com um toque em Ajustes.</p>
+          <p className="text-[13px] text-tinta-3 sm:col-span-2">Os clientes de exemplo são fictícios e saem com um toque em Ajustes. Sem conta, a voz com IA e a loja ficam fechadas; quando criar a conta, o que estiver aqui vai junto.</p>
         </form>
       </div>
       <div className="hidden items-center justify-center lg:flex" aria-hidden="true">
