@@ -87,7 +87,8 @@ export async function transcreverAudio(dados: FormData): Promise<RespostaTexto> 
   const g = await gastar(a.sb, a.oficina.id, 'transcricao', null);
   if (!g.ok) return g;
   const r = await transcreverComIA(audios);
-  if (!r.ok && g.gastou) await devolver(a.oficina.id, 'transcricao', null);
+  // a cota volta só quando a IA falhou; áudio sem fala foi ouvido (e cobrado) do mesmo jeito
+  if (!r.ok && g.gastou && !r.usouModelo) await devolver(a.oficina.id, 'transcricao', null);
   return r;
 }
 

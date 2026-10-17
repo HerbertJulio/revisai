@@ -103,18 +103,18 @@ describe('lote e canais', () => {
   });
 
   it('e-mails e navegadores sem repetir, só de quem deixou ligado', () => {
-    const i = { endpoint: 'https://push.teste/1', p256dh: 'p'.repeat(20), auth: 'a'.repeat(8) };
+    const i = { endpoint: 'https://fcm.googleapis.com/fcm/send/1', p256dh: 'p'.repeat(20), auth: 'a'.repeat(8) };
     const pessoas = lerLote([
       {
         id: 1,
         tipo: 'pedido_novo',
         para: {
-          pessoas: [pessoa({ email: 'A@B.dev', inscricoes: [i] }), pessoa({ email: 'a@b.dev', inscricoes: [i] }), pessoa({ email: 'c@d.dev', emailLigado: false, push: false, inscricoes: [{ ...i, endpoint: 'https://push.teste/2' }] }), pessoa({ email: 'invalido' })]
+          pessoas: [pessoa({ email: 'A@B.dev', inscricoes: [i] }), pessoa({ email: 'a@b.dev', inscricoes: [i] }), pessoa({ email: 'c@d.dev', emailLigado: false, push: false, inscricoes: [{ ...i, endpoint: 'https://fcm.googleapis.com/fcm/send/2' }] }), pessoa({ email: 'invalido' })]
         }
       }
     ])[0].para.pessoas;
     expect(emailsDoAviso(pessoas)).toEqual(['a@b.dev']);
-    expect(pushesDoAviso(pessoas).map((x) => x.endpoint)).toEqual(['https://push.teste/1']);
+    expect(pushesDoAviso(pessoas).map((x) => x.endpoint)).toEqual(['https://fcm.googleapis.com/fcm/send/1']);
   });
 
   it('concluído quando algum canal entregou ou quando não há o que repetir', () => {
@@ -205,7 +205,7 @@ describe('processador da fila', () => {
     vi.stubEnv('WHATSAPP_MODELO_LOJA_PEDIDO', '');
     vi.stubEnv('SITE_URL', 'https://revisai.teste');
     const nav = navegador();
-    const pedidos = servicos({ 'https://push.teste/ok': 201, 'https://push.teste/sumiu': 410, 'https://resend.teste/emails': 200, 'https://graph.teste/v23.0/123/messages': 200 });
+    const pedidos = servicos({ 'https://fcm.googleapis.com/fcm/send/ok': 201, 'https://fcm.googleapis.com/fcm/send/sumiu': 410, 'https://resend.teste/emails': 200, 'https://graph.teste/v23.0/123/messages': 200 });
     lotes = [
       [
         {
@@ -222,8 +222,8 @@ describe('processador da fila', () => {
                 emailLigado: true,
                 whatsapp: true,
                 inscricoes: [
-                  { endpoint: 'https://push.teste/ok', p256dh: nav.p256dh, auth: nav.auth },
-                  { endpoint: 'https://push.teste/sumiu', p256dh: nav.p256dh, auth: nav.auth }
+                  { endpoint: 'https://fcm.googleapis.com/fcm/send/ok', p256dh: nav.p256dh, auth: nav.auth },
+                  { endpoint: 'https://fcm.googleapis.com/fcm/send/sumiu', p256dh: nav.p256dh, auth: nav.auth }
                 ]
               }
             ],
@@ -234,10 +234,10 @@ describe('processador da fila', () => {
     ];
     const r = await processarAvisos();
     expect(r).toEqual({ lidos: 1, enviados: 1, paraDepois: 0, push: 1, emails: 1, whatsapps: 1 });
-    expect(chamadas.find((c) => c.fn === 'avisos_concluir')!.args).toMatchObject({ p_id: 1, p_ok: true, p_push_invalidos: ['https://push.teste/sumiu'], p_push_ok: ['https://push.teste/ok'] });
+    expect(chamadas.find((c) => c.fn === 'avisos_concluir')!.args).toMatchObject({ p_id: 1, p_ok: true, p_push_invalidos: ['https://fcm.googleapis.com/fcm/send/sumiu'], p_push_ok: ['https://fcm.googleapis.com/fcm/send/ok'] });
 
     // o push vai cifrado e assinado; só o navegador abre
-    const push = pedidos.find((p) => p.url === 'https://push.teste/ok')!;
+    const push = pedidos.find((p) => p.url === 'https://fcm.googleapis.com/fcm/send/ok')!;
     expect(push.headers['Content-Encoding']).toBe('aes128gcm');
     expect(push.headers.Authorization).toMatch(/^vapid t=[\w-]+\.[\w-]+\.[\w-]+, k=[\w-]+$/);
     expect(push.headers.Authorization).toContain(`k=${vapid!.publica}`);
@@ -256,10 +256,10 @@ describe('processador da fila', () => {
     vi.stubEnv('RESEND_API_KEY', '');
     vi.stubEnv('WHATSAPP_TOKEN', '');
     const nav = navegador();
-    servicos({ 'https://push.teste/cheio': 503 });
+    servicos({ 'https://fcm.googleapis.com/fcm/send/cheio': 503 });
     lotes = [
       [
-        { id: 2, tipo: 'alerta_resposta', dados: {}, para: { pessoas: [{ userId: 'u', email: 'x@y.dev', inscricoes: [{ endpoint: 'https://push.teste/cheio', p256dh: nav.p256dh, auth: nav.auth }] }], whatsapps: [] } },
+        { id: 2, tipo: 'alerta_resposta', dados: {}, para: { pessoas: [{ userId: 'u', email: 'x@y.dev', inscricoes: [{ endpoint: 'https://fcm.googleapis.com/fcm/send/cheio', p256dh: nav.p256dh, auth: nav.auth }] }], whatsapps: [] } },
         { id: 3, tipo: 'tipo_velho', dados: {}, para: { pessoas: [], whatsapps: [] } }
       ]
     ];

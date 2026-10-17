@@ -95,7 +95,7 @@ set search_path = ''
 as $$
 begin
   if not (
-    p_oficina in (select privado.minhas_oficinas())
+    coalesce(p_oficina in (select privado.minhas_oficinas()), false)
     or (p_fornecedor is not null and p_fornecedor in (select privado.meus_fornecedores()))
     or privado.eh_equipe()
     or privado.sistema_autorizado()

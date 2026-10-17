@@ -59,9 +59,34 @@ function assunto(): string {
 
 export type ResultadoPush = 'ok' | 'sumiu' | 'tentar' | 'erro';
 
+/**
+ * Só os serviços de push dos navegadores (Chrome, Firefox, Safari, Edge): o endereço vem do
+ * navegador da pessoa, e o servidor não pode ser usado para chamar qualquer endereço da internet.
+ */
+export function servicoDePushValido(endpoint: string, local = process.env.NODE_ENV !== 'production'): boolean {
+  let u: URL;
+  try {
+    u = new URL(endpoint);
+  } catch {
+    return false;
+  }
+  if (local && u.protocol === 'http:' && (u.hostname === '127.0.0.1' || u.hostname === 'localhost')) return true;
+  if (u.protocol !== 'https:' || u.port !== '' || u.username || u.password) return false;
+  const h = u.hostname.toLowerCase();
+  return (
+    h === 'fcm.googleapis.com' ||
+    h === 'android.googleapis.com' ||
+    h === 'updates.push.services.mozilla.com' ||
+    h === 'web.push.apple.com' ||
+    h.endsWith('.push.apple.com') ||
+    h.endsWith('.notify.windows.com')
+  );
+}
+
 /** Manda um aviso para um navegador. 'sumiu' = a inscrição não existe mais (apagar). */
 export async function enviarPush(inscricao: InscricaoPush, carga: string, chaves: ChavesVapid, ttlSegundos = 86_400): Promise<ResultadoPush> {
   let pedido: { endpoint: string; method: string; headers: Record<string, string | number>; body: Buffer | null };
+  if (!servicoDePushValido(inscricao.endpoint)) return 'sumiu';
   try {
     pedido = webpush.generateRequestDetails(
       { endpoint: inscricao.endpoint, keys: { p256dh: inscricao.p256dh, auth: inscricao.auth } },
@@ -79,6 +104,7 @@ export async function enviarPush(inscricao: InscricaoPush, carga: string, chaves
       method: pedido.method,
       headers,
       body: pedido.body ? new Uint8Array(pedido.body) : undefined,
+      redirect: 'error',
       signal: AbortSignal.timeout(8000)
     });
     if (r.status >= 200 && r.status < 300) return 'ok';

@@ -8,13 +8,28 @@ import { IconeServico } from '@/components/icones';
 import { lerNumero } from '@/lib/formatos';
 import { servicosDaCategoria } from '@/lib/manutencao';
 import type { Categoria } from '@/lib/tipos';
-import type { Facetas, FiltrosLoja, Opcao } from '@/lib/vitrine';
+import { rotuloDoCarro, type CarroDoFiltro, type Facetas, type FiltrosLoja, type Opcao } from '@/lib/vitrine';
 
 const VISIVEIS = 6;
 const CATEGORIAS_VISIVEIS = 8;
 
-/** `comPrecos` falso (quem não entrou na conta): sem os filtros de promoção e de preço. */
-export function PainelFiltros({ filtros, facetas, aoMudar, comPrecos = true }: { filtros: FiltrosLoja; facetas: Facetas; aoMudar: (f: FiltrosLoja) => void; comPrecos?: boolean }) {
+/**
+ * `comPrecos` falso (quem não entrou na conta): sem os filtros de promoção e de preço. `carros`: os
+ * carros dos clientes, para o filtro "Serve no carro" (sem carro cadastrado, o filtro não aparece).
+ */
+export function PainelFiltros({
+  filtros,
+  facetas,
+  aoMudar,
+  comPrecos = true,
+  carros = []
+}: {
+  filtros: FiltrosLoja;
+  facetas: Facetas;
+  aoMudar: (f: FiltrosLoja) => void;
+  comPrecos?: boolean;
+  carros?: (CarroDoFiltro & { placa?: string })[];
+}) {
   const [todasCategorias, setTodasCategorias] = useState(false);
   // a categoria escolhida fica sempre à vista, mesmo fora das primeiras
   const categorias = todasCategorias
@@ -26,6 +41,38 @@ export function PainelFiltros({ filtros, facetas, aoMudar, comPrecos = true }: {
 
   return (
     <div className="flex flex-col gap-6">
+      {carros.length || filtros.carro ? (
+        <Grupo titulo="Serve no carro">
+          <label className="flex flex-col gap-1.5">
+            <span className="sr-only">Carro do cliente</span>
+            <select
+              value={filtros.carro?.id ?? ''}
+              onChange={(e) => {
+                const c = carros.find((x) => x.id === e.target.value);
+                aoMudar({ ...filtros, carro: c ? { id: c.id, marca: c.marca, modelo: c.modelo, motor: c.motor ?? null, ano: c.ano } : null });
+              }}
+              className="h-10 w-full min-w-0 rounded-[10px] border border-linha bg-papel px-2.5 text-[16px] outline-none focus:border-caneta focus:ring-3 focus:ring-caneta/20 sm:text-[14px]"
+            >
+              <option value="">Qualquer carro</option>
+              {filtros.carro && !carros.some((c) => c.id === filtros.carro!.id) ? <option value={filtros.carro.id}>{rotuloDoCarro(filtros.carro)}</option> : null}
+              {carros.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {rotuloDoCarro(c)}
+                  {c.placa ? ` (${c.placa})` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+          {filtros.carro ? (
+            <p className="text-[12.5px] leading-snug text-tinta-3">
+              {facetas.carro === 1 ? '1 peça com' : `${facetas.carro} peças com`} a aplicação desse carro primeiro. As que a loja não informou vêm depois; as que não servem saem.
+            </p>
+          ) : (
+            <p className="text-[12.5px] leading-snug text-tinta-3">Escolha um carro de cliente para ver primeiro as peças que servem nele.</p>
+          )}
+        </Grupo>
+      ) : null}
+
       <Grupo titulo="Categoria">
         <ul className="-mx-2 flex flex-col">
           <li>

@@ -86,7 +86,8 @@ describe('IA em dois passos', () => {
 
   it('áudio sem fala volta como erro claro', async () => {
     respostaDoTexto = '[sem fala]';
-    expect(await transcreverComIA([audio])).toEqual({ ok: false, erro: SEM_FALA });
+    // o modelo ouviu e respondeu: a chamada foi cobrada (a cota não volta)
+    expect(await transcreverComIA([audio])).toEqual({ ok: false, erro: SEM_FALA, usouModelo: true });
   });
 
   it('resposta cortada pelo modelo não vira sem fala: dá para tentar de novo', async () => {
@@ -127,7 +128,7 @@ describe('IA em dois passos', () => {
     const r = await interpretarComIA({ oficina: '', hoje: '2026-10-14', anotacao: 'troquei o óleo do Gol', quantidadeFotos: 0 }, [audio], []);
     expect(r.ok).toBe(true);
     const sem = await interpretarComIA({ oficina: '', hoje: '2026-10-14', quantidadeFotos: 0 }, [audio], []);
-    expect(sem).toEqual({ ok: false, erro: SEM_FALA });
+    expect(sem).toMatchObject({ ok: false, erro: SEM_FALA });
   });
 
   it('modelo cheio passa a vez ao próximo da lista', async () => {

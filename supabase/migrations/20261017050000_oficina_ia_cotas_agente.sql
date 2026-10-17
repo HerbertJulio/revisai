@@ -92,9 +92,19 @@ set search_path = ''
 as $$
 declare
   v_mes text := to_char(now() at time zone 'America/Sao_Paulo', 'YYYY-MM');
+  v_dia bigint := floor(extract(epoch from now()) / 86400)::bigint;
+  v_n integer;
 begin
   if not privado.sistema_autorizado() then
     raise exception 'Sem permissão' using errcode = '42501';
+  end if;
+  -- até 30 devoluções por dia por oficina: depois disso a falha conta (áudio vazio em série não sai de graça)
+  insert into privado.limites as l (chave, janela, n, expira)
+  values ('devolucao:' || p_oficina::text, v_dia, 1, to_timestamp((v_dia + 1) * 86400))
+  on conflict (chave, janela) do update set n = l.n + 1
+  returning n into v_n;
+  if v_n > 30 then
+    return false;
   end if;
   if p_chave is not null then
     delete from privado.uso_chaves where oficina_id = p_oficina and mes = v_mes and recurso = p_recurso and chave = left(p_chave, 120);

@@ -37,6 +37,7 @@ import { linkWhatsApp } from '@/lib/whatsapp';
 import { faseVisivel, resumoDoAlerta } from './Alertas';
 import { pedidoAcompanhavel, useAndamento } from './andamento';
 import { BotaoEntrar } from './comum';
+import { DevolucoesDaParte, type AberturaDaDevolucao } from './Devolucoes';
 import { SeloDaLoja } from './reputacao';
 
 /** A situação do pedido numa linha: a da loja, ou um resumo quando são várias. */
@@ -181,9 +182,9 @@ export function PedidosEnviados({ aoAbrir }: { aoAbrir: (codigo: string) => void
 
 // ---------------------------------------------------------------- acompanhar
 
-export function FolhaPedido({ codigo, aoFechar }: { codigo: string | null; aoFechar: () => void }) {
+export function FolhaPedido({ codigo, aoFechar, aoPedirDevolucao }: { codigo: string | null; aoFechar: () => void; aoPedirDevolucao?: (a: AberturaDaDevolucao) => void }) {
   const enviado = useOficina((s) => s.pedidos.find((p) => p.codigo === codigo));
-  // o pedido entra na busca do acompanhamento (os dos últimos 45 dias)
+  // o pedido entra na busca do acompanhamento (os dos últimos 120 dias)
   const acompanhavel = useOficina((s) => s.pedidos.some((p) => p.codigo === codigo && pedidoAcompanhavel(p)));
   const { pedidos, atualizar, pronto, buscados, erro, comConta } = useAndamento();
   const [atualizando, iniciar] = useTransition();
@@ -224,7 +225,7 @@ export function FolhaPedido({ codigo, aoFechar }: { codigo: string | null; aoFec
       {acompanhado ? (
         <div className="flex flex-col gap-6">
           {acompanhado.partes.map((parte) => (
-            <ParteDoPedido key={parte.id} codigo={codigo} parte={parte} recebido={!!enviado?.recebidoEm} varias={acompanhado.partes.length > 1} />
+            <ParteDoPedido key={parte.id} codigo={codigo} parte={parte} recebido={!!enviado?.recebidoEm} varias={acompanhado.partes.length > 1} aoPedirDevolucao={aoPedirDevolucao} />
           ))}
         </div>
       ) : carregando ? (
@@ -275,7 +276,19 @@ function SemAcompanhamento({ enviado, motivo, semConta }: { enviado: PedidoEnvia
   );
 }
 
-function ParteDoPedido({ codigo, parte, recebido, varias }: { codigo: string; parte: ParteAcompanhada; recebido: boolean; varias: boolean }) {
+function ParteDoPedido({
+  codigo,
+  parte,
+  recebido,
+  varias,
+  aoPedirDevolucao
+}: {
+  codigo: string;
+  parte: ParteAcompanhada;
+  recebido: boolean;
+  varias: boolean;
+  aoPedirDevolucao?: (a: AberturaDaDevolucao) => void;
+}) {
   const nomeOficina = useOficina((s) => s.oficina.nome);
   const situacao = SITUACOES_PARA_OFICINA[parte.status];
   const passo = etapa(parte.status);
@@ -289,6 +302,11 @@ function ParteDoPedido({ codigo, parte, recebido, varias }: { codigo: string; pa
           <p className="num text-[14px] text-tinta-3">
             {varias ? `${formatarMoeda(parte.subtotal)}, ` : ''}atualizado {haQuantoTempo(parte.atualizadoEm, agora)}
           </p>
+          {parte.cashback > 0 ? (
+            <p className="num text-[13.5px] font-semibold text-ok">
+              {formatarMoeda(parte.cashback)} de cashback usado{parte.status === 'cancelado' ? ', que voltou para o seu saldo' : ''}
+            </p>
+          ) : null}
           <SeloDaLoja fornecedorId={parte.fornecedorId} compacto />
         </div>
         <Chip tom={situacao.tom}>{situacao.nome}</Chip>
@@ -321,7 +339,7 @@ function ParteDoPedido({ codigo, parte, recebido, varias }: { codigo: string; pa
           <li key={n} className="flex justify-between gap-3">
             <span>
               <span className="num font-semibold">{i.quantidade}x</span> {i.nome}
-              {i.combinado ? <span className="text-caneta"> (preço combinado)</span> : null}
+              {i.combinado ? <span className="text-caneta"> (preço combinado)</span> : i.especial ? <span className="text-caneta"> (preço combinado com você)</span> : null}
             </span>
             <span className="num text-tinta-2">{formatarMoeda(Math.round(i.precoUnitario * i.quantidade * 100) / 100)}</span>
           </li>
@@ -329,6 +347,8 @@ function ParteDoPedido({ codigo, parte, recebido, varias }: { codigo: string; pa
       </ul>
 
       {parte.status !== 'cancelado' ? <Pagamento parte={parte} /> : null}
+
+      {aoPedirDevolucao ? <DevolucoesDaParte parte={parte} codigo={codigo} aoAbrir={aoPedirDevolucao} /> : null}
 
       <div className="flex flex-wrap gap-2">
         {zap ? (
@@ -434,6 +454,10 @@ function Pagamento({ parte }: { parte: ParteAcompanhada }) {
         Você avisou que pagou{parte.pagamentoEm ? ` ${formatarDiaHora(parte.pagamentoEm)}` : ''}. A loja confere no extrato e confirma.
       </p>
     );
+  // o cashback usado sai do valor a pagar; quando cobre tudo, não tem Pix
+  const aPagar = Math.max(0, Math.round((parte.subtotal - parte.cashback) * 100) / 100);
+  if (aPagar <= 0)
+    return <p className="rounded-xl bg-ok-claro px-4 py-3 text-[14.5px] font-semibold text-ok">O seu cashback cobriu esta compra. Não tem Pix para pagar.</p>;
   if (!parte.pix) return <p className="text-[14px] text-tinta-3">Esta loja ainda não aceita Pix pelo app. Combine o pagamento com ela.</p>;
   // só paga depois que a loja confirma que tem o produto e o preço
   if (!pixLiberado(parte.status)) return <p className="text-[14px] text-tinta-3">O Pix aparece aqui quando a loja confirmar o pedido.</p>;
@@ -479,7 +503,7 @@ function Pagamento({ parte }: { parte: ParteAcompanhada }) {
     return (
       <div className="flex flex-col items-start gap-2">
         <Botao variante="escuro" onClick={abrir} disabled={carregando}>
-          {carregando ? 'Gerando o Pix…' : `Pagar ${formatarMoeda(parte.subtotal)} com Pix`}
+          {carregando ? 'Gerando o Pix…' : `Pagar ${formatarMoeda(aPagar)} com Pix`}
         </Botao>
         <p className="text-[13px] text-tinta-3">O dinheiro vai direto para a conta da loja. O Revisaí não passa pelo pagamento.</p>
         {erro ? (

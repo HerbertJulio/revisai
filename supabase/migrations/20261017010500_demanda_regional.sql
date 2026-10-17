@@ -15,18 +15,21 @@ declare
   v_oficinas integer;
   v_res jsonb;
 begin
-  if not (exists (select 1 from public.fornecedor_membros m where m.user_id = auth.uid()) or privado.eh_equipe()) then
+  -- só loja aprovada e ativa (uma loja recém-criada, ainda em análise, não vê a região)
+  if not (exists (select 1 from public.fornecedor_membros m join public.fornecedores f on f.id = m.fornecedor_id
+                   where m.user_id = auth.uid() and f.ativo and f.verificacao = 'aprovada')
+          or privado.eh_equipe()) then
     raise exception 'Sem permissão' using errcode = '42501';
   end if;
   if p_uf !~ '^[A-Z]{2}$' then
     return null;
   end if;
   select count(*) into v_oficinas
-    from public.demandas d join public.oficinas o on o.id = d.oficina_id and o.ativa
+    from public.demandas d join public.oficinas o on o.id = d.oficina_id and o.ativa and o.criado_em < now() - interval '30 days'
    where d.uf = p_uf and d.atualizado_em > now() - interval '10 days';
   with recentes as (
     select d.oficina_id, d.itens
-      from public.demandas d join public.oficinas o on o.id = d.oficina_id and o.ativa
+      from public.demandas d join public.oficinas o on o.id = d.oficina_id and o.ativa and o.criado_em < now() - interval '30 days'
      where d.uf = p_uf and d.atualizado_em > now() - interval '10 days'
   ),
   itens as (

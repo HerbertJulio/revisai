@@ -52,7 +52,21 @@ describe('pedidos da oficina (partes do banco)', () => {
     ]);
     expect(k7.partes[1].whatsapp).toBeNull();
     expect(k7.partes[1].historico.map((h) => h.para)).toEqual(['em_contato', 'confirmado']);
-    expect(k7.partes[0].itens).toEqual([{ nome: 'Óleo 5W30 1L', quantidade: 4, precoUnitario: 30, combinado: false }]);
+    expect(k7.partes[0].itens).toEqual([{ produtoId: 5, nome: 'Óleo 5W30 1L', quantidade: 4, precoUnitario: 30, combinado: false, especial: false }]);
+    // sem o produto no item (pedido antigo), o item fica sem o número; sem cashback, zero
+    expect(k7.partes[1].itens[0].produtoId).toBeNull();
+    expect(k7.partes.map((x) => x.cashback)).toEqual([0, 0]);
+  });
+
+  it('traz o cashback usado e o preço combinado com a oficina', () => {
+    const [p] = montarPedidos(
+      [parte({ cashback: 7.5, itens: [{ produto_id: 5, nome: 'Óleo', quantidade: 2, preco_unitario: 27, especial: true }] })],
+      [],
+      new Map(),
+      () => true
+    );
+    expect(p.partes[0].cashback).toBe(7.5);
+    expect(p.partes[0].itens[0]).toMatchObject({ produtoId: 5, especial: true, combinado: false });
   });
 
   it('mostra a posição do entregador só a caminho, e o motivo do cancelamento', () => {

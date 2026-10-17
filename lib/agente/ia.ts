@@ -23,7 +23,8 @@ export interface Midia {
 }
 
 export type ResultadoIA = { ok: true; ordem: OrdemIA; modelo: string } | { ok: false; erro: string };
-export type ResultadoTexto = { ok: true; texto: string; modelo: string } | { ok: false; erro: string };
+/** `usouModelo`: o modelo respondeu (áudio sem fala) e a chamada foi cobrada; a cota não volta. */
+export type ResultadoTexto = { ok: true; texto: string; modelo: string } | { ok: false; erro: string; usouModelo?: boolean };
 
 type Caminho = { tipo: 'google' | 'gateway'; modelo: LanguageModel; nome: string };
 
@@ -185,7 +186,7 @@ export async function transcreverComIA(audios: Midia[]): Promise<ResultadoTexto>
     // no Gateway sobra um tempo para o Whisper, se o modelo recusar o formato do áudio
     const prazo = l[0].tipo === 'gateway' ? PRAZO_TEXTO - 15_000 : PRAZO_TEXTO;
     const { valor: texto, caminho } = await comOsModelos(l, prazo, (c, tempo, n) => transcrever(c, audios, tempo, n));
-    return texto ? { ok: true, texto, modelo: caminho.nome } : { ok: false, erro: SEM_FALA };
+    return texto ? { ok: true, texto, modelo: caminho.nome } : { ok: false, erro: SEM_FALA, usouModelo: true };
   } catch (e) {
     ultimo = e;
     console.error('[agente] transcrição', motivoDoErro(e, 'ouvir').tecnico);
@@ -204,7 +205,7 @@ export async function transcreverComIA(audios: Midia[]): Promise<ResultadoTexto>
         partes.push(t.text);
       }
       const texto = limparTranscricao(partes.join('\n\n'));
-      return texto ? { ok: true, texto, modelo: 'openai/whisper-1' } : { ok: false, erro: SEM_FALA };
+      return texto ? { ok: true, texto, modelo: 'openai/whisper-1' } : { ok: false, erro: SEM_FALA, usouModelo: true };
     } catch (e2) {
       ultimo = e2;
       console.error('[agente] transcrição pelo Whisper', motivoDoErro(e2, 'ouvir').tecnico);

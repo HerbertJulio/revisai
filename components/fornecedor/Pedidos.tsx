@@ -148,6 +148,7 @@ function CartaoDoPedido({ pedido: p, loja, temPix, mudarOtimista }: { pedido: Pe
         </div>
         <div className="text-right">
           <p className="num text-[18px] font-extrabold">{formatarMoeda(p.subtotal)}</p>
+          {p.cashback > 0 ? <p className="num text-[12.5px] font-semibold text-ok">{formatarMoeda(p.cashback)} de cashback; Pix de {formatarMoeda(p.subtotal - p.cashback)}</p> : null}
           <p className="text-[12.5px] text-tinta-3">comissão {formatarMoeda(valorDaComissao(p.subtotal, p.comissaoPercentual))}</p>
         </div>
       </div>

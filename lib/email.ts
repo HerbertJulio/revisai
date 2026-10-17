@@ -7,9 +7,10 @@
 import { headers } from 'next/headers';
 import { z } from 'zod';
 import { aparelhoDoAgente, codigoDeConferencia } from './aprovacao';
+import { textoSeguro } from './avisos/texto-seguro';
 import { acessoDaOficina } from './conta';
 import { emailDaAprovacao, enviarEmail } from './email-envio';
-import { permitido } from './limite';
+import { permitido, permitidoPara } from './limite';
 
 const esquema = z.object({
   para: z.email().max(160),
@@ -63,7 +64,10 @@ export async function enviarCopiaDaAprovacao(entrada: EntradaDaCopia): Promise<{
   const acesso = await acessoDaOficina();
   if (!acesso.ok) return { ok: false, erro: acesso.erro };
   if (!(await permitido(`copia-aprovacao:${acesso.oficina.id}`, 40, 60))) return { ok: false, erro: 'Muitos e-mails seguidos. Tente daqui a pouco.' };
+  if (!(await permitidoPara(`copia-aprovacao-dia:${acesso.oficina.id}`, 80, 1440))) return { ok: false, erro: 'A oficina já mandou muitas cópias hoje. Tente amanhã.' };
   const para = d.para.trim().toLowerCase();
+  // o e-mail exato do cadastro (no ilike, % e _ valeriam como curinga)
+  const exato = para.replace(/[\\%_]/g, (c) => `\\${c}`);
   // só para um cliente cadastrado nesta oficina (as regras do banco mostram só os dela)
   const { data: clientes, error } = await acesso.sb
     .from('registros')
@@ -71,21 +75,22 @@ export async function enviarCopiaDaAprovacao(entrada: EntradaDaCopia): Promise<{
     .eq('oficina_id', acesso.oficina.id)
     .eq('colecao', 'clientes')
     .eq('apagado', false)
-    .ilike('dados->>email', para)
+    .ilike('dados->>email', exato)
     .limit(1);
   if (error) {
     console.error('[email] cliente', error);
     return { ok: false, erro: 'Não deu para conferir o cliente agora.' };
   }
   if (!clientes?.length) return { ok: false, erro: 'Este e-mail não é de um cliente da oficina (ou o cadastro ainda não subiu).' };
+  // o texto que a oficina escreveu sai sem link, e-mail ou telefone (o e-mail sai com o nome do Revisaí)
   const email = emailDaAprovacao({
-    oficina: acesso.oficina.nome,
-    cliente: d.cliente,
+    oficina: textoSeguro(acesso.oficina.nome, 120),
+    cliente: textoSeguro(d.cliente, 80),
     numero: d.numero,
-    carro: d.carro,
+    carro: textoSeguro(d.carro, 100),
     placa: d.placa,
-    itens: d.itens,
-    recusados: d.recusados,
+    itens: d.itens.map((i) => ({ ...i, descricao: textoSeguro(i.descricao, 160) })),
+    recusados: d.recusados.map((x) => textoSeguro(x, 160)),
     total: d.total,
     validade: d.validade,
     canal: CANAIS[d.canal],

@@ -1,6 +1,7 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { configWhatsApp } from '../agente/whatsapp-cloud';
+import { textoSeguro } from '../avisos/texto-seguro';
 import { formatarMoeda } from '../formatos';
 
 // Avisos para a loja pelo WhatsApp, para quando o painel está fechado: pedido novo, alerta de preço
@@ -45,7 +46,7 @@ export async function mandarModelo(para: string | null | undefined, modelo: Mode
         template: {
           name: nome,
           language: { code: process.env.WHATSAPP_MODELO_IDIOMA?.trim() || 'pt_BR' },
-          components: [{ type: 'body', parameters: parametros.map((t) => ({ type: 'text', text: t.replace(/\s+/g, ' ').trim().slice(0, 120) || '-' })) }]
+          components: [{ type: 'body', parameters: parametros.map((t) => ({ type: 'text', text: textoSeguro(t, 120) })) }]
         }
       }),
       signal: AbortSignal.timeout(8000)
@@ -67,7 +68,8 @@ export interface LojaParaAviso {
 
 async function lojas(sb: SupabaseClient, ids: number[]): Promise<LojaParaAviso[]> {
   if (!ids.length) return [];
-  const { data, error } = await sb.from('fornecedores').select('id, nome, whatsapp, avisar_whatsapp').in('id', ids);
+  // só loja ativa e aprovada pela equipe (o número dela foi conferido na aprovação)
+  const { data, error } = await sb.from('fornecedores').select('id, nome, whatsapp, avisar_whatsapp').in('id', ids).eq('ativo', true).eq('verificacao', 'aprovada');
   if (error) {
     console.error('[loja] lojas para avisar', error);
     return [];

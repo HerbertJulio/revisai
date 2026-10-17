@@ -1,21 +1,20 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { dentroDoLimite, lerJson, marcaDoIp, mesmaOrigem } from '@/lib/avisos/http';
+import { servicoDePushValido } from '@/lib/avisos/push';
 import { clienteDoUsuario, sessaoAtual } from '@/lib/supabase-servidor';
 
 export const dynamic = 'force-dynamic';
 
 // Inscreve (POST) ou tira (DELETE) este navegador dos avisos de quem está na conta.
-
-// em desenvolvimento, aceita um serviço de push local (testes de ponta a ponta)
-const local = process.env.NODE_ENV !== 'production';
+// Só aceita os serviços de push dos navegadores (em desenvolvimento, também um local, para os testes).
 
 const inscricao = z.object({
   endpoint: z
     .string()
     .url()
     .max(1000)
-    .refine((u) => u.startsWith('https://') || (local && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//.test(u)), 'endereço do push inválido'),
+    .refine((u) => servicoDePushValido(u), 'endereço do push inválido'),
   keys: z.object({
     p256dh: z.string().regex(/^[A-Za-z0-9_-]{40,200}={0,2}$/),
     auth: z.string().regex(/^[A-Za-z0-9_-]{8,64}={0,2}$/)

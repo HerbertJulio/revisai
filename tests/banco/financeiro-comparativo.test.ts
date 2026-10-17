@@ -35,7 +35,8 @@ async function oficinaCom(b: Banco, s: Semente): Promise<{ id: string; nome: str
   const dono = await criarPessoa(b, pessoa('cmp'));
   const nome = `Oficina Comparativo ${Math.random().toString(36).slice(2, 8)}`;
   const id = await criarOficina(b, dono, nome, { uf: UF });
-  await b.query(`update public.oficinas set cidade = $2 where id = $1`, [id, s.cidade]);
+  // só oficina com mais de 30 dias entra no comparativo
+  await b.query(`update public.oficinas set cidade = $2, criado_em = now() - interval '60 days' where id = $1`, [id, s.cidade]);
   const docs: object[] = [];
   const n = s.ordens ?? 4;
   for (let i = 0; i < n; i++) {
@@ -74,6 +75,15 @@ describe.skipIf(!temBanco)('comparativo da região', () => {
       expect(await comparativo(b, null)).toBeNull();
       // UF que não existe também não quebra
       expect(await comparativo(b, 'Boa Vista', 'R1')).toBeNull();
+    }));
+
+  it('oficina com menos de 30 dias não conta para o mínimo de 5', () =>
+    emTransacao(async (b) => {
+      await isolar(b);
+      for (let k = 0; k < 4; k++) await oficinaCom(b, { cidade: 'Boa Vista', ticket: 300 + 30 * k, oleo: 100 });
+      const nova = await oficinaCom(b, { cidade: 'Boa Vista', ticket: 900, oleo: 100 });
+      await b.query(`update public.oficinas set criado_em = now() - interval '3 days' where id = $1`, [nova.id]);
+      expect(await comparativo(b, 'Boa Vista')).toBeNull();
     }));
 
   it('5 na cidade: a faixa da cidade, com ruído leve e sem nada que identifique', () =>

@@ -201,6 +201,7 @@ const esquemaParte = z.object({
   codigo: z.string().nullish().transform((v) => v ?? '------'),
   status: z.enum(['novo', 'em_contato', 'confirmado', 'saiu_entrega', 'entregue', 'cancelado']),
   subtotal: numero,
+  cashback: numeroOuNulo.optional().transform((v) => v ?? 0),
   comissao_percentual: numero,
   criado_em: z.string(),
   oficina_nome: z.string().nullish().transform((v) => v ?? 'Oficina'),
@@ -224,7 +225,7 @@ const esquemaParte = z.object({
 });
 
 export const COLUNAS_PARTE_DA_LOJA =
-  'id, pedido_id, codigo, status, subtotal, comissao_percentual, criado_em, oficina_nome, oficina_whatsapp, oficina_cidade, oficina_uf, oficina_endereco, observacao, itens, pagamento, pagamento_em, entrega_previsao, entrega_saiu_em, entrega_posicao_em, entregue_em, cancelado_motivo, cancelado_por, forma_pagamento, prazo_dias, vencimento';
+  'id, pedido_id, codigo, status, subtotal, cashback, comissao_percentual, criado_em, oficina_nome, oficina_whatsapp, oficina_cidade, oficina_uf, oficina_endereco, observacao, itens, pagamento, pagamento_em, entrega_previsao, entrega_saiu_em, entrega_posicao_em, entregue_em, cancelado_motivo, cancelado_por, forma_pagamento, prazo_dias, vencimento';
 
 const esquemaHistorico = z.object({
   parte_id: numero,
@@ -252,6 +253,8 @@ export interface PedidoDaLoja {
   criadoEm: string;
   status: SituacaoParte;
   subtotal: number;
+  /** Cashback da loja que a oficina usou nesta compra: o Pix dela vem com esse valor a menos. */
+  cashback: number;
   comissaoPercentual: number;
   oficina: { nome: string; whatsapp: string; cidade: string | null; uf: string | null; endereco: string | null };
   observacao: string | null;
@@ -273,6 +276,7 @@ export function lerPedidosDaLoja(partes: unknown, historico: unknown, fornecedor
     criadoEm: p.criado_em,
     status: p.status,
     subtotal: p.subtotal,
+    cashback: p.cashback,
     comissaoPercentual: p.comissao_percentual,
     oficina: { nome: p.oficina_nome, whatsapp: p.oficina_whatsapp, cidade: p.oficina_cidade, uf: p.oficina_uf, endereco: p.oficina_endereco },
     observacao: p.observacao,
@@ -541,7 +545,7 @@ export function lerCondicoes(d: unknown): CondicaoDaOficina[] {
 
 export interface MovimentoDeCashback {
   id: number;
-  tipo: 'credito' | 'uso' | 'estorno';
+  tipo: 'credito' | 'uso' | 'estorno' | 'uso_desfeito';
   valor: number;
   criadoEm: string;
   /** Código do pedido e a oficina (da parte do pedido). */
@@ -555,7 +559,7 @@ export function lerMovimentosDeCashback(d: unknown): MovimentoDeCashback[] {
   return ler(
     z.object({
       id: numero,
-      tipo: z.enum(['credito', 'uso', 'estorno']),
+      tipo: z.enum(['credito', 'uso', 'estorno', 'uso_desfeito']),
       valor: numero,
       criado_em: z.string(),
       parte: z.object({ codigo: texto, oficina_nome: texto }).nullish()

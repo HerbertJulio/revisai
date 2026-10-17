@@ -226,6 +226,17 @@ alter table public.pedidos_fornecedores
   add column if not exists cancelado_por text check (cancelado_por in ('loja', 'oficina', 'equipe'));
 create index if not exists pedidos_fornecedores_oficina_idx on public.pedidos_fornecedores (oficina_id, criado_em desc);
 
+-- as partes dos pedidos que já existiam ganham o código, o contato da oficina e os próprios itens
+-- (antes ficavam só no pedido), antes de as regras das partes passarem a valer
+update public.pedidos_fornecedores pf
+   set codigo = p.codigo, oficina_nome = p.oficina_nome, oficina_whatsapp = p.oficina_whatsapp,
+       oficina_endereco = p.oficina_endereco, oficina_cidade = p.oficina_cidade, oficina_uf = p.oficina_uf,
+       observacao = p.observacao,
+       itens = coalesce((select jsonb_agg(i) from jsonb_array_elements(p.itens) i
+                          where jsonb_typeof(i -> 'fornecedor_id') = 'number' and (i ->> 'fornecedor_id')::bigint = pf.fornecedor_id), '[]'::jsonb)
+  from public.pedidos p
+ where p.id = pf.pedido_id and pf.codigo is null;
+
 -- quem mandou é a oficina da conta: nome e contato vêm do cadastro dela, não do formulário
 create or replace function privado.preencher_pedido()
 returns trigger
@@ -366,6 +377,10 @@ declare
   v_quem text;
   v_ok boolean;
 begin
+  -- a oficina foi apagada: a parte fica com a loja, sem a oficina
+  if privado.so_desligou(to_jsonb(old), to_jsonb(new), array['oficina_id']) then
+    return new;
+  end if;
   -- o entregador (pelas funções entrega_*) só mexe na posição e no "entregue"
   if coalesce(current_setting('revisai.entregador', true), '') = 'sim' then
     if new.status is distinct from old.status and not (old.status = 'saiu_entrega' and new.status = 'entregue') then
@@ -635,7 +650,7 @@ security definer
 set search_path = ''
 as $$
 begin
-  if p_fornecedor not in (select privado.meus_fornecedores()) and not privado.eh_equipe(array['suporte']) then
+  if (p_fornecedor is null or p_fornecedor not in (select privado.meus_fornecedores())) and not privado.eh_equipe(array['suporte']) then
     raise exception 'Sem permissão' using errcode = '42501';
   end if;
   delete from public.fornecedores_pix_troca where fornecedor_id = p_fornecedor;
@@ -683,7 +698,7 @@ declare
   px public.fornecedores_pix%rowtype;
 begin
   select * into pf from public.pedidos_fornecedores where id = p_parte;
-  if not found or pf.oficina_id not in (select privado.minhas_oficinas()) then
+  if not found or pf.oficina_id is null or pf.oficina_id not in (select privado.minhas_oficinas()) then
     raise exception 'Pedido não encontrado' using errcode = '42501';
   end if;
   if pf.status not in ('confirmado', 'saiu_entrega', 'entregue') then
@@ -1110,7 +1125,7 @@ declare
   a public.assinaturas%rowtype;
   v_ate date;
 begin
-  if privado.papel_na_oficina(p_oficina) not in ('dono', 'gerente') then
+  if coalesce(privado.papel_na_oficina(p_oficina), '') not in ('dono', 'gerente') then
     raise exception 'Só o dono ativa o Pro' using errcode = '42501';
   end if;
   select * into a from public.assinaturas where codigo = upper(regexp_replace(p_codigo, '[^0-9A-Za-z]', '', 'g')) for update;
@@ -1142,7 +1157,7 @@ declare
   o public.oficinas%rowtype;
   v_hoje date := (now() at time zone 'America/Sao_Paulo')::date;
 begin
-  if privado.papel_na_oficina(p_oficina) not in ('dono', 'gerente') then
+  if coalesce(privado.papel_na_oficina(p_oficina), '') not in ('dono', 'gerente') then
     raise exception 'Só o dono começa o teste' using errcode = '42501';
   end if;
   select * into o from public.oficinas where id = p_oficina for update;

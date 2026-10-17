@@ -3,12 +3,13 @@
 // Peças pequenas da loja: selos, ficha técnica, o seletor de quantidade e o convite para entrar
 // (preços, pedidos e alertas são só para quem tem conta).
 
-import { BadgeCheck, LogIn, Minus, Plus, ShoppingCart } from 'lucide-react';
+import { BadgeCheck, CarFront, LogIn, Minus, Plus, ShoppingCart } from 'lucide-react';
 import Link from 'next/link';
 import { useConta } from '@/components/conta/ProvedorConta';
 import { embalagem, melhorOferta, quantidadeComUnidade, type Produto, type Promocao } from '@/lib/catalogo';
 import { nomeBase } from '@/lib/oleos';
 import { useOficina } from '@/lib/store';
+import { estoqueDaLoja } from '@/lib/vitrine';
 
 /** Para onde vai quem quer comprar sem ter entrado: o login, voltando para a Loja. */
 export const ENTRAR_NA_LOJA = '/entrar?para=/oficina/loja';
@@ -37,6 +38,27 @@ export function SeloPatrocinado({ escuro = false }: { escuro?: boolean }) {
       className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11.5px] font-bold tracking-wide ring-1 ${escuro ? 'bg-white/10 text-white/85 ring-white/20' : 'bg-papel text-tinta-2 ring-linha'}`}
     >
       Patrocinado
+    </span>
+  );
+}
+
+/** "Sem estoque" ou "Últimas unidades", quando a loja informa o estoque (sem informação, nada). */
+export function SeloEstoqueDaLoja({ estoque, pequeno = false }: { estoque: number | null | undefined; pequeno?: boolean }) {
+  const s = estoqueDaLoja(estoque);
+  if (!s) return null;
+  return (
+    <span className={`inline-flex shrink-0 items-center rounded-full font-semibold whitespace-nowrap ${pequeno ? 'px-2 py-0.5 text-[11.5px]' : 'px-2.5 py-0.5 text-[12.5px]'} ${s === 'sem' ? 'bg-atraso-claro text-atraso' : 'bg-oleo-claro text-oleo-tinta'}`}>
+      {s === 'sem' ? 'Sem estoque' : 'Últimas unidades'}
+    </span>
+  );
+}
+
+/** "Serve no Gol 1.6 2015", quando a loja informou que a peça serve no carro escolhido. */
+export function SeloServeNoCarro({ carro, pequeno = false }: { carro: string; pequeno?: boolean }) {
+  return (
+    <span className={`inline-flex max-w-full items-center gap-1 rounded-full bg-ok-claro font-semibold text-ok ${pequeno ? 'px-2 py-0.5 text-[11.5px]' : 'px-2.5 py-0.5 text-[12.5px]'}`}>
+      <CarFront size={pequeno ? 12 : 13} aria-hidden="true" className="shrink-0" />
+      <span className="truncate">Serve no {carro}</span>
     </span>
   );
 }

@@ -383,6 +383,10 @@ begin
   if privado.papel_na_oficina(p_oficina) is null then
     raise exception 'Você não é desta oficina' using errcode = '42501';
   end if;
+  -- cobrança do cliente e clube são dinheiro: só o dono e o gerente
+  if p_tipo in ('pagamento', 'clube') and coalesce(privado.papel_na_oficina(p_oficina), '') not in ('dono', 'gerente') then
+    raise exception 'Só o dono e o gerente cobram' using errcode = '42501';
+  end if;
   if (select count(*) from public.links_publicos where oficina_id = p_oficina and criado_em > now() - interval '1 hour') >= 200 then
     raise exception 'Muitos links seguidos' using errcode = 'P0001';
   end if;
@@ -418,6 +422,9 @@ as $$
 begin
   if privado.papel_na_oficina(p_oficina) is null then
     raise exception 'Você não é desta oficina' using errcode = '42501';
+  end if;
+  if p_tipo in ('pagamento', 'clube') and coalesce(privado.papel_na_oficina(p_oficina), '') not in ('dono', 'gerente') then
+    raise exception 'Só o dono e o gerente cobram' using errcode = '42501';
   end if;
   update public.links_publicos set revogado = true, atualizado_em = now() where oficina_id = p_oficina and tipo = p_tipo and ref = p_ref;
   return found;
@@ -482,7 +489,7 @@ set search_path = ''
 as $$
 declare
   l public.links_publicos%rowtype;
-  v_acao text := p_resposta ->> 'acao';
+  v_acao text := coalesce(p_resposta ->> 'acao', '');
 begin
   if p_token !~ '^[A-Za-z0-9_-]{43}$' or jsonb_typeof(p_resposta) is distinct from 'object' or pg_column_size(p_resposta) > 120000 then
     raise exception 'Resposta inválida' using errcode = '22023';
@@ -617,7 +624,9 @@ begin
     'lojas', coalesce((select jsonb_agg(jsonb_build_object('loja', f.nome, 'papel', m.papel, 'desde', m.criado_em)) from public.fornecedor_membros m join public.fornecedores f on f.id = m.fornecedor_id where m.user_id = v_user), '[]'::jsonb),
     'cadastros', coalesce((select jsonb_agg(to_jsonb(i) - 'id') from public.interessados i where lower(i.email) = v_email), '[]'::jsonb),
     'aceites', coalesce((select jsonb_agg(jsonb_build_object('documento', a.documento, 'versao', a.versao, 'em', a.aceito_em)) from public.aceites a where a.user_id = v_user), '[]'::jsonb),
-    'acessos', coalesce((select jsonb_agg(jsonb_build_object('quando', a.quando, 'ip', a.ip)) from (select * from privado.acessos where user_id = v_user order by quando desc limit 500) a), '[]'::jsonb)
+    -- os IPs de acesso ficam em sigilo (Marco Civil): só o admin, pela consulta com motivo
+    'acessos', jsonb_build_object('quantidade', (select count(*) from privado.acessos where user_id = v_user),
+                                  'aviso', 'Os registros de acesso (data, hora e IP) só saem por pedido formal, pela consulta da equipe com o motivo.')
   );
 end;
 $$;
@@ -639,6 +648,10 @@ begin
     raise exception 'Sem permissão' using errcode = '42501';
   end if;
   select id into v_user from auth.users where lower(email) = v_email;
+  -- alguém da equipe só sai pela mão de um admin
+  if v_user is not null and exists (select 1 from privado.equipe e where e.user_id = v_user) and not privado.eh_equipe(array['admin']) then
+    raise exception 'Só um admin apaga alguém da equipe' using errcode = '42501';
+  end if;
   if v_user is not null and (
        exists (select 1 from public.oficina_membros m where m.user_id = v_user and m.papel = 'dono'
                  and (select count(*) from public.oficina_membros x where x.oficina_id = m.oficina_id and x.papel = 'dono') = 1)
