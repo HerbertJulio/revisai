@@ -136,7 +136,9 @@ function ConteudoDaLoja() {
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="largo text-[30px] sm:text-[34px]">Loja</h1>
-          <p className="mt-1 max-w-[60ch] text-tinta-2">Peças e óleo para os serviços que estão vencendo, com o preço das promoções dos fornecedores.</p>
+          <p className="mt-1 max-w-[60ch] text-tinta-2">
+            {comPrecos ? 'Peças e óleo para os serviços que estão vencendo, com o preço das promoções dos fornecedores.' : 'Peças e óleo para os serviços que estão vencendo, das lojas da sua região.'}
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link href="/oficina/estoque" className={classeBotao('secundario')}>
@@ -155,7 +157,7 @@ function ConteudoDaLoja() {
 
       {!conta ? (
         <section className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-papel px-4 py-4 ring-1 ring-linha sm:px-5" aria-labelledby="t-entrar">
-          <div className="flex min-w-0 flex-1 items-start gap-3">
+          <div className="flex min-w-0 flex-1 basis-72 items-start gap-3">
             <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-oleo-claro text-oleo-tinta">
               <Lock size={20} aria-hidden="true" />
             </span>
