@@ -6,8 +6,8 @@ import 'server-only';
 
 import { createHmac } from 'node:crypto';
 import { textoDoResumo } from './resumo';
-import { anexarMidia, anexarTexto, contextoDoTelefone, descartarAberto, processarRascunho, rascunhoAberto, ultimaMontada, vincularTelefone } from './rascunhos';
-import { baixarMidia, comando, responder, type ConfigWhatsApp, type MensagemRecebida } from './whatsapp-cloud';
+import { anexarMidia, anexarTexto, contextoDoTelefone, descartarAberto, processarRascunho, rascunhoAberto, rascunhosComErro, ultimaMontada, vincularTelefone } from './rascunhos';
+import { baixarMidia, comando, configWhatsApp, responder, type ConfigWhatsApp, type MensagemRecebida } from './whatsapp-cloud';
 import { permitidoPara } from '../limite';
 import { chaveDoSistema } from '../supabase-servidor';
 
@@ -113,4 +113,27 @@ async function tratar(c: ConfigWhatsApp, m: MensagemRecebida) {
     return;
   }
   await responder(c, m.de, 'Por aqui eu entendo áudio, foto e texto. ' + AJUDA);
+}
+
+/**
+ * Rotina diária: tenta de novo as montagens que deram erro (cada rascunho até 3 vezes) enquanto
+ * houver tempo, e avisa o mecânico quando a ordem sai. Só para o número que continua na mesma
+ * oficina, e só com a oficina no Pro ou no teste.
+ */
+export async function refazerComErro(ate: number): Promise<{ tentados: number; montados: number }> {
+  const c = configWhatsApp();
+  let tentados = 0;
+  let montados = 0;
+  for (const r of await rascunhosComErro(10)) {
+    if (Date.now() > ate) break;
+    if (!r.telefone || !r.oficinaId) continue;
+    const ctx = await contextoDoTelefone(r.telefone);
+    if (!ctx || ctx.oficinaId !== r.oficinaId || ctx.plano === 'gratis') continue;
+    tentados++;
+    const res = await processarRascunho(r.id, ctx.oficina || r.oficina);
+    if (!res.ok) continue;
+    montados++;
+    if (c) await responder(c, r.telefone, `A ordem que tinha dado erro ficou pronta.\n\n${textoDoResumo(res.ordem)}\n\nConfira e confirme no app: ${SITE}/oficina/ordem`);
+  }
+  return { tentados, montados };
 }

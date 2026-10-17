@@ -222,10 +222,9 @@ export async function processarRascunho(id: string, oficina: string | null): Pro
     console.error('[agente] cota', cota.error);
     return { ok: false, erro: 'Não consegui montar agora.' };
   }
-  // só devolve o que esta montagem gastou
-  const gastou = (cota.data as { repetida?: boolean } | null)?.repetida !== true;
+  // o rascunho só fica pronto uma vez: se a chave dele está no banco, a cota gasta ainda não virou
+  // ordem (inclusive a de uma montagem que caiu no meio), e devolver a chave devolve a cota uma vez só
   const devolver = async () => {
-    if (!gastou) return;
     const { error } = await sb.rpc('devolver_cota', { p_oficina: antes.oficina_id, p_recurso: 'montagem', p_quantidade: 1, p_chave: chave });
     if (error) console.error('[agente] devolver cota', error);
   };
@@ -297,8 +296,29 @@ export async function ultimaMontada(telefone: string, oficinaId: string): Promis
   return o?.success ? o.data : null;
 }
 
+/** Montagens que caíram no meio (a função terminou antes da IA): viram erro, para tentar de novo. */
+export async function destravarParados(): Promise<number> {
+  const sb = clienteSistema();
+  if (!sb) return 0;
+  const { data, error } = await sb
+    .from('ordens_rascunho')
+    .select('id, tentativas')
+    .eq('status', 'processando')
+    .lt('atualizado_em', new Date(Date.now() - 10 * 60_000).toISOString())
+    .limit(100);
+  if (error) {
+    console.error('[agente] parados', error);
+    return 0;
+  }
+  let n = 0;
+  for (const r of (data ?? []) as { id: string; tentativas: number | null }[]) {
+    if (await mudar(r.id, { status: 'erro', erro: 'A montagem parou no meio.', tentativas: Math.min(100, (r.tentativas ?? 0) + 1) }, 'processando')) n++;
+  }
+  return n;
+}
+
 /** Rascunhos que deram erro e ainda têm tentativa (a rotina diária tenta de novo). */
-export async function rascunhosComErro(limite = 20): Promise<{ id: string; oficina: string | null; telefone: string | null }[]> {
+export async function rascunhosComErro(limite = 20): Promise<{ id: string; oficinaId: string | null; oficina: string | null; telefone: string | null }[]> {
   const sb = clienteSistema();
   if (!sb) return [];
   const { data, error } = await sb
@@ -316,7 +336,12 @@ export async function rascunhosComErro(limite = 20): Promise<{ id: string; ofici
   const ids = [...new Set((data ?? []).map((r: { oficina_id: string | null }) => r.oficina_id).filter((x): x is string => !!x))];
   const nomes = ids.length ? await sb.from('oficinas').select('id, nome').in('id', ids) : { data: [] };
   const mapa = new Map(((nomes.data ?? []) as { id: string; nome: string }[]).map((o) => [o.id, o.nome]));
-  return (data ?? []).map((r: { id: string; telefone: string | null; oficina_id: string | null }) => ({ id: r.id, telefone: r.telefone, oficina: r.oficina_id ? (mapa.get(r.oficina_id) ?? null) : null }));
+  return (data ?? []).map((r: { id: string; telefone: string | null; oficina_id: string | null }) => ({
+    id: r.id,
+    telefone: r.telefone,
+    oficinaId: r.oficina_id,
+    oficina: r.oficina_id ? (mapa.get(r.oficina_id) ?? null) : null
+  }));
 }
 
 // ---------------------------------------------------------------- para o app da oficina (pessoa)

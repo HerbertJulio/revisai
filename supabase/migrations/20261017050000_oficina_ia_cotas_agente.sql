@@ -137,6 +137,50 @@ grant execute on function public.devolver_cota(uuid, text, integer, text), publi
 alter table public.ordens_rascunho add column if not exists tentativas integer not null default 0 check (tentativas between 0 and 100);
 
 /**
+ * O código de 8 números que liga o WhatsApp do mecânico à oficina, sorteado com o gerador seguro
+ * do banco (o random() comum dá para prever). Vale 15 minutos e uma vez; cada código novo apaga o
+ * anterior da oficina.
+ */
+create or replace function public.whatsapp_gerar_codigo(p_oficina uuid)
+returns text
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  v_codigo text;
+  v_nome text;
+begin
+  if privado.papel_na_oficina(p_oficina) is null then
+    raise exception 'Você não é desta oficina' using errcode = '42501';
+  end if;
+  if (select count(*) from public.whatsapp_codigos where oficina_id = p_oficina and criado_em > now() - interval '1 hour') >= 10 then
+    raise exception 'Muitos códigos seguidos' using errcode = 'P0001';
+  end if;
+  select nome into v_nome from public.oficinas where id = p_oficina and ativa;
+  if v_nome is null then
+    raise exception 'Oficina não encontrada' using errcode = '42501';
+  end if;
+  delete from public.whatsapp_codigos where oficina_id = p_oficina;
+  loop
+    v_codigo := lpad(((('x' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 15))::bit(60)::bigint) % 100000000)::text, 8, '0');
+    begin
+      insert into public.whatsapp_codigos (codigo, oficina_id, oficina_nome, expira_em)
+      values (v_codigo, p_oficina, v_nome, now() + interval '15 minutes');
+      exit;
+    exception when unique_violation then
+      null;
+    end;
+  end loop;
+  return v_codigo;
+end;
+$$;
+
+revoke all on function public.whatsapp_gerar_codigo(uuid) from public, anon;
+grant execute on function public.whatsapp_gerar_codigo(uuid) to authenticated;
+
+/**
  * Liga o WhatsApp de quem mandou o código à oficina do código. O código é apagado na hora
  * (vale uma vez). Devolve a oficina, ou null quando o código não existe ou venceu.
  */
