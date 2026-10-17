@@ -203,6 +203,47 @@ d('cashback usado na compra', () => {
     }));
 });
 
+d('quem não é da oficina', () => {
+  it('uma conta sem oficina nem loja recebe 42501 em cada função; um NULL nunca passa da conferência', () =>
+    emTransacao(async (b) => {
+      const x = await cenario(b);
+      const parte = await compraCreditada(b, x);
+      const estranho = await criarPessoa(b, pessoa('cb-estranho'));
+      const chamadas: [string, unknown[]][] = [
+        ['select public.saldo_cashback($1, $2)', [x.o, x.loja.fornecedorId]],
+        ['select public.saldo_cashback($1, null)', [x.o]],
+        ['select public.saldo_cashback(null, $1)', [x.loja.fornecedorId]],
+        ['select * from public.saldos_de_cashback($1)', [x.o]],
+        ['select * from public.saldos_de_cashback(null)', []],
+        ['select public.pix_da_parte($1)', [parte]],
+        ['select public.lojas_com_pix($1::bigint[])', [[x.loja.fornecedorId]]]
+      ];
+      for (const [sql, params] of chamadas) {
+        const r = await tentar(b, estranho, sql, params);
+        expect([sql, r.codigo]).toEqual([sql, '42501']);
+      }
+      // quem é de outra oficina também não vê o saldo nem o Pix desta
+      const outro = await criarPessoa(b, pessoa('cb-outra-oficina'));
+      await criarOficina(b, outro, 'Outra Oficina do Cashback');
+      expect((await tentar(b, outro, 'select public.saldo_cashback($1, $2)', [x.o, x.loja.fornecedorId])).codigo).toBe('42501');
+      expect((await tentar(b, outro, 'select * from public.saldos_de_cashback($1)', [x.o])).codigo).toBe('42501');
+      expect((await tentar(b, outro, 'select public.pix_da_parte($1)', [parte])).codigo).toBe('42501');
+      // a loja vê o saldo da oficina nela, mas não sem dizer a oficina
+      expect((await tentar(b, x.lojista, 'select public.saldo_cashback(null, $1)', [x.loja.fornecedorId])).codigo).toBe('42501');
+
+      // uma compra sem oficina (de antes das contas): o NULL não abre o Pix para ninguém
+      await b.query('set local session_replication_role = replica');
+      const ped = await b.query(`insert into public.pedidos (codigo, oficina_nome, oficina_whatsapp, itens, total) values ($1, 'Antiga', '5521900000000', $2::jsonb, 10) returning id`, [
+        codigo(),
+        JSON.stringify([{ produto_id: x.loja.produtoId, quantidade: 1 }])
+      ]);
+      const solta = await b.query(`insert into public.pedidos_fornecedores (pedido_id, fornecedor_id, subtotal, status, codigo) values ($1, $2, 10, 'confirmado', 'ANTIGA') returning id`, [ped.rows[0].id, x.loja.fornecedorId]);
+      await b.query('set local session_replication_role = origin');
+      expect((await tentar(b, x.dono, 'select public.pix_da_parte($1)', [solta.rows[0].id])).codigo).toBe('42501');
+      expect((await tentar(b, estranho, 'select public.pix_da_parte($1)', [solta.rows[0].id])).codigo).toBe('42501');
+    }));
+});
+
 // Dois pedidos ao mesmo tempo, cada um na sua transação, querendo o mesmo saldo: aqui os dados são
 // gravados de verdade (e apagados no fim), porque uma transação só não mostra a espera de uma pela outra.
 d('cashback com dois pedidos ao mesmo tempo', () => {

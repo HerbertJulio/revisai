@@ -4,6 +4,7 @@
 
 import { z } from 'zod';
 import { formatarMoeda } from './formatos';
+import { aguardaQuem, type SituacaoDevolucao } from './loja/dados';
 import type { SituacaoParte } from './marketplace-dados';
 
 export type SituacaoPagamento = 'pendente' | 'informado' | 'confirmado';
@@ -362,3 +363,55 @@ export function tokenValido(t: string | null | undefined): t is string {
 
 /** A previsão que a loja escreve ("hoje até 16h"). */
 export const esquemaPrevisao = z.string().trim().max(40).optional().default('');
+
+// ---------------------------------------------------------------- garantia e devolução
+
+/** Até quantos dias depois da entrega a oficina pede garantia ou devolução pelo app (o banco confere). */
+export const DIAS_PARA_DEVOLVER = 90;
+/** Quantos pedidos de garantia ou devolução cada compra pode ter. */
+export const PEDIDOS_POR_COMPRA = 3;
+
+/**
+ * A oficina pode pedir garantia ou devolução desta compra agora? Só depois de entregue, até 90 dias,
+ * sem outro pedido em andamento e com menos de 3 pedidos. `motivo` explica quando não dá (null quando
+ * não há o que explicar: ainda não entregue, ou já tem um pedido andando, que aparece na lista).
+ */
+export function podePedirDevolucao(
+  parte: { status: SituacaoParte; entrega: { entregueEm: string | null } },
+  pedidos: { situacao: SituacaoDevolucao }[],
+  agora: number
+): { pode: true } | { pode: false; motivo: string | null } {
+  if (parte.status !== 'entregue') return { pode: false, motivo: null };
+  if (pedidos.some((d) => d.situacao === 'aberta' || d.situacao === 'aceita')) return { pode: false, motivo: null };
+  const entregue = parte.entrega.entregueEm ? Date.parse(parte.entrega.entregueEm) : NaN;
+  if (Number.isFinite(entregue) && agora - entregue > DIAS_PARA_DEVOLVER * 86_400_000)
+    return { pode: false, motivo: `O prazo de ${DIAS_PARA_DEVOLVER} dias depois da entrega para pedir pelo Revisaí passou. Fale com a loja.` };
+  if (pedidos.length >= PEDIDOS_POR_COMPRA) return { pode: false, motivo: `Esta compra já teve ${PEDIDOS_POR_COMPRA} pedidos de garantia ou devolução. Fale com o suporte do Revisaí.` };
+  return { pode: true };
+}
+
+/** Como a oficina lê a situação do pedido de garantia ou devolução, e o que ela faz agora. */
+export function situacaoDaDevolucao(d: { situacao: SituacaoDevolucao; respondidaEm: string | null; atualizadoEm: string; resposta: string | null }): {
+  nome: string;
+  tom: 'oleo' | 'caneta' | 'ok' | 'atraso' | 'neutro';
+  /** 'responder': a loja perguntou algo; 'confirmar': a loja aceitou e falta a troca ou o dinheiro chegar. */
+  acao: 'responder' | 'confirmar' | null;
+} {
+  if (d.situacao === 'aceita') return { nome: 'A loja aceitou', tom: 'caneta', acao: 'confirmar' };
+  if (d.situacao === 'recusada') return { nome: 'A loja recusou', tom: 'atraso', acao: null };
+  if (d.situacao === 'resolvida') return { nome: 'Resolvida', tom: 'ok', acao: null };
+  // aberta: a loja perguntou algo depois da última mudança da oficina (a mesma regra do painel da loja)
+  return aguardaQuem(d) === 'oficina' && d.resposta ? { nome: 'A loja perguntou', tom: 'oleo', acao: 'responder' } : { nome: 'Esperando a loja', tom: 'neutro', acao: null };
+}
+
+/** Os itens da compra que podem voltar (os com o produto conhecido), somados por produto. */
+export function itensParaDevolver(parte: Pick<ParteAcompanhada, 'itens'>): { produtoId: number; nome: string; quantidade: number }[] {
+  const porProduto = new Map<number, { produtoId: number; nome: string; quantidade: number }>();
+  for (const i of parte.itens) {
+    if (i.produtoId == null) continue;
+    const atual = porProduto.get(i.produtoId);
+    if (atual) atual.quantidade += i.quantidade;
+    else porProduto.set(i.produtoId, { produtoId: i.produtoId, nome: i.nome, quantidade: i.quantidade });
+  }
+  return [...porProduto.values()];
+}

@@ -93,7 +93,7 @@ export async function comprarAlertas(entrada: unknown): Promise<Resposta<{ pix: 
 }
 
 /**
- * Os pedidos da oficina (últimos 45 dias) com a situação e o histórico de cada loja, e os pedidos de
+ * Os pedidos da oficina (últimos 120 dias) com a situação e o histórico de cada loja, e os pedidos de
  * garantia ou devolução com as respostas das lojas (null quando não deu para buscar agora).
  */
 export async function acompanhar(): Promise<Resposta<{ pedidos: PedidoAcompanhado[]; devolucoes: Devolucao[] | null }>> {

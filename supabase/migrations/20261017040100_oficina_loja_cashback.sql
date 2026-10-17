@@ -18,6 +18,9 @@
 --   que talvez não tenha chegado. Com o saldo negativo, a oficina não usa cashback naquela loja até os
 --   próximos créditos cobrirem a diferença (o saldo é a soma do livro, então cobrem primeiro).
 -- Crédito, estorno, uso e uso desfeito da mesma oficina na mesma loja passam pelo mesmo cadeado.
+--
+-- As conferências de permissão usam coalesce: um NULL (oficina nula, pessoa sem oficina) nunca pula
+-- o "Sem permissão". lojas_com_pix (de 20261017040000) passa a exigir uma oficina na conta.
 
 -- ------------------------------------------------------------------ colunas
 
@@ -83,12 +86,13 @@ security definer
 set search_path = ''
 as $$
 begin
-  if not (
-    p_oficina in (select privado.minhas_oficinas())
-    or (p_fornecedor is not null and p_fornecedor in (select privado.meus_fornecedores()))
-    or privado.eh_equipe()
-    or privado.sistema_autorizado()
-  ) then
+  if p_oficina is null
+     or not (
+       coalesce(p_oficina in (select privado.minhas_oficinas()), false)
+       or coalesce(p_fornecedor in (select privado.meus_fornecedores()), false)
+       or coalesce(privado.eh_equipe(), false)
+       or coalesce(privado.sistema_autorizado(), false)
+     ) then
     raise exception 'Sem permissão' using errcode = '42501';
   end if;
   return privado.saldo_do_cashback(p_oficina, p_fornecedor);
@@ -98,19 +102,29 @@ $$;
 revoke all on function public.saldo_cashback(uuid, bigint) from public;
 grant execute on function public.saldo_cashback(uuid, bigint) to anon, authenticated;
 
-/** Os saldos da oficina em cada loja (só as lojas com movimento). Pelas regras de leitura do livro. */
-create or replace function public.saldos_de_cashback(p_oficina uuid)
+/**
+ * Os saldos da oficina em cada loja (só as lojas com movimento). Só para quem é da oficina (ou da
+ * equipe); a leitura do livro segue as regras dele.
+ */
+drop function if exists public.saldos_de_cashback(uuid);
+create function public.saldos_de_cashback(p_oficina uuid)
 returns table (fornecedor_id bigint, saldo numeric)
-language sql
+language plpgsql
 stable
 security invoker
 set search_path = ''
 as $$
-  select m.fornecedor_id, sum(case when m.tipo in ('credito', 'uso_desfeito') then m.valor else -m.valor end)
-    from public.cashback_movimentos m
-   where m.oficina_id = p_oficina
-   group by m.fornecedor_id
-   order by m.fornecedor_id;
+begin
+  if p_oficina is null or not (coalesce(p_oficina in (select privado.minhas_oficinas()), false) or coalesce(privado.eh_equipe(), false)) then
+    raise exception 'Sem permissão' using errcode = '42501';
+  end if;
+  return query
+    select m.fornecedor_id, sum(case when m.tipo in ('credito', 'uso_desfeito') then m.valor else -m.valor end)::numeric
+      from public.cashback_movimentos m
+     where m.oficina_id = p_oficina
+     group by m.fornecedor_id
+     order by m.fornecedor_id;
+end;
 $$;
 
 revoke all on function public.saldos_de_cashback(uuid) from public, anon;
@@ -142,12 +156,18 @@ begin
   if (select count(*) from jsonb_object_keys(new.cashback)) > 50 then
     raise exception 'O cashback do pedido não confere' using errcode = 'RV033';
   end if;
-  -- confere tudo antes de travar qualquer saldo
+  -- confere tudo antes de travar qualquer saldo (o número só é lido depois de saber que é número)
   for v_chave, v_valor in select key, value from jsonb_each(new.cashback)
   loop
-    if v_chave !~ '^[1-9][0-9]{0,17}$' or jsonb_typeof(v_valor) <> 'number'
-       or (v_valor #>> '{}')::numeric <= 0 or (v_valor #>> '{}')::numeric > 1000000
-       or (v_valor #>> '{}')::numeric <> round((v_valor #>> '{}')::numeric, 2) then
+    if v_chave !~ '^[1-9][0-9]{0,17}$' or coalesce(jsonb_typeof(v_valor), '') <> 'number' then
+      raise exception 'O cashback do pedido não confere' using errcode = 'RV033';
+    end if;
+    v_quanto := null;
+    if (v_valor #>> '{}')::numeric > 0 and (v_valor #>> '{}')::numeric <= 1000000
+       and (v_valor #>> '{}')::numeric = round((v_valor #>> '{}')::numeric, 2) then
+      v_quanto := (v_valor #>> '{}')::numeric;
+    end if;
+    if v_quanto is null then
       raise exception 'O cashback do pedido não confere' using errcode = 'RV033';
     end if;
   end loop;
@@ -298,7 +318,8 @@ declare
   px public.fornecedores_pix%rowtype;
 begin
   select * into pf from public.pedidos_fornecedores where id = p_parte;
-  if not found or pf.oficina_id not in (select privado.minhas_oficinas()) then
+  -- a parte sem oficina (ou de outra oficina) não é de quem pergunta: o NULL não passa
+  if not found or pf.oficina_id is null or not coalesce(pf.oficina_id in (select privado.minhas_oficinas()), false) then
     raise exception 'Pedido não encontrado' using errcode = '42501';
   end if;
   if pf.status not in ('confirmado', 'saiu_entrega', 'entregue') then
@@ -319,3 +340,32 @@ $$;
 
 revoke all on function public.pix_da_parte(bigint) from public, anon;
 grant execute on function public.pix_da_parte(bigint) to authenticated;
+
+-- ------------------------------------------------------------------ quais lojas aceitam Pix
+
+/**
+ * A oficina sabe, antes de tocar em "Pagar com Pix", quais lojas já cadastraram a chave Pix (só o sim
+ * ou não). Só para quem tem oficina na conta (ou é da equipe).
+ */
+create or replace function public.lojas_com_pix(p_ids bigint[])
+returns bigint[]
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+begin
+  if auth.uid() is null or not (coalesce(exists (select 1 from privado.minhas_oficinas()), false) or coalesce(privado.eh_equipe(), false)) then
+    raise exception 'Sem permissão' using errcode = '42501';
+  end if;
+  return (
+    select coalesce(array_agg(x.fornecedor_id order by x.fornecedor_id), '{}')
+      from public.fornecedores_pix x
+     where x.fornecedor_id = any (coalesce(p_ids, '{}'))
+       and cardinality(coalesce(p_ids, '{}')) <= 200
+  );
+end;
+$$;
+
+revoke all on function public.lojas_com_pix(bigint[]) from public, anon;
+grant execute on function public.lojas_com_pix(bigint[]) to authenticated;

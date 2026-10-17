@@ -54,8 +54,11 @@ const esquemaHistorico = z.object({
   motivo: textoOuNulo
 });
 
-/** Quantos dias de pedidos a oficina acompanha (os mais velhos já terminaram). */
-const DIAS_ACOMPANHADOS = 45;
+/**
+ * Quantos dias de pedidos a oficina acompanha: o bastante para pedir garantia ou devolução até 90
+ * dias depois da entrega (os mais velhos já terminaram).
+ */
+export const DIAS_ACOMPANHADOS = 120;
 
 function lerLinhas<T>(esquema: z.ZodType<T>, dados: unknown): T[] {
   return (Array.isArray(dados) ? dados : []).flatMap((x) => {
@@ -65,7 +68,7 @@ function lerLinhas<T>(esquema: z.ZodType<T>, dados: unknown): T[] {
 }
 
 /**
- * Os pedidos da oficina dos últimos 45 dias, com a situação de cada loja e o histórico. O banco só
+ * Os pedidos da oficina dos últimos 120 dias, com a situação de cada loja e o histórico. O banco só
  * devolve as partes da oficina de quem entrou; o filtro por oficina_id escolhe entre as oficinas
  * da conta.
  */

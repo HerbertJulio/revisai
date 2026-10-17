@@ -1,8 +1,10 @@
 'use client';
 
-// A ficha do produto: foto, promoções por quantidade, prazo de troca e a loja.
+// A ficha do produto: foto, promoções por quantidade, o preço combinado com a oficina, o estoque e
+// em que carros serve (pelo que a loja informou), prazo de troca e a loja (prazo de entrega, pedido
+// mínimo e cashback).
 
-import { ShoppingCart } from 'lucide-react';
+import { CarFront, ShoppingCart, Wallet } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useConta } from '@/components/conta/ProvedorConta';
 import { Folha } from '@/components/Folha';
@@ -12,14 +14,19 @@ import { formatarDataCurta } from '@/lib/datas';
 import { formatarMoeda } from '@/lib/formatos';
 import { fotoDoProduto, linkDaLicenca, paginaDaFoto } from '@/lib/fotos';
 import { useHoje } from '@/lib/ganchos';
+import { rotuloDaAplicacao } from '@/lib/loja/aplicacoes';
+import { textoDoPrazoDeEntrega } from '@/lib/loja/dados';
 import { origemDaReferencia, textoDoPrazo } from '@/lib/referencias';
-import { precoDeVitrine } from '@/lib/vitrine';
+import { infoDaLoja, infoDoProduto, precoDeVitrine, precoParaOficina, rotuloDoCarro, serveNoCarroDaVitrine, type CarroDoFiltro } from '@/lib/vitrine';
 import { useCatalogo } from '../catalogo';
 import { FotoProduto } from '../FotoProduto';
 import { useReferencias } from '../referencias';
-import { BotaoEntrar, especificacoes, minuscula, nomeComMarca, Passo, SeloDestaque, SeloPatrocinado } from './comum';
+import { BotaoEntrar, especificacoes, minuscula, nomeComMarca, Passo, SeloDestaque, SeloEstoqueDaLoja, SeloPatrocinado, SeloServeNoCarro } from './comum';
+import { saldoNaLoja, useCondicoes } from './condicoes';
 import { ComparaPreco } from './precos';
 import { SeloDaLoja } from './reputacao';
+
+const APLICACOES_VISIVEIS = 6;
 
 export function DetalheProduto({
   produto: p,
@@ -27,6 +34,7 @@ export function DetalheProduto({
   aoPor,
   aoAbrir,
   uf,
+  carro,
   acaoPreco
 }: {
   produto: Produto | null;
@@ -35,10 +43,14 @@ export function DetalheProduto({
   /** Troca a ficha por outro produto (as outras opções no fim da ficha). */
   aoAbrir: (p: Produto) => void;
   uf: string;
+  /** O carro do filtro "Serve no carro" (a ficha diz se a peça serve nele). */
+  carro?: CarroDoFiltro | null;
   /** O botão de pedir preço menor às lojas, embaixo da comparação. */
   acaoPreco?: (p: Produto, quantidade: number) => React.ReactNode;
 }) {
-  const { catalogo, comPrecos } = useCatalogo();
+  const { catalogo, comPrecos, extras } = useCatalogo();
+  const condicoes = useCondicoes();
+  const [todasAplicacoes, setTodasAplicacoes] = useState(false);
   const { conta } = useConta();
   const { referencias } = useReferencias();
   const hoje = useHoje();
@@ -52,6 +64,7 @@ export function DetalheProduto({
   if (p && aberto !== p.id) {
     setAberto(p.id);
     setQtd(melhorOferta(p, catalogo.promocoes, hoje)?.quantidadeMinima ?? 1);
+    setTodasAplicacoes(false);
   }
   if (!p) return <Folha aberta={false} aoFechar={aoFechar} titulo="">{null}</Folha>;
 
@@ -60,7 +73,14 @@ export function DetalheProduto({
   const ofertas = promocoesAtivas(catalogo.promocoes, p.id, hoje)
     .filter((x) => x.precoPromocional < p.preco)
     .sort((a, b) => a.quantidadeMinima - b.quantidadeMinima);
-  const { preco, promocao } = precoNaQuantidade(p, catalogo.promocoes, hoje, qtd);
+  const { preco, promocao, especial } = precoParaOficina(p, catalogo.promocoes, hoje, qtd, condicoes.condicoes);
+  const info = infoDoProduto(extras, p.id);
+  const loja = infoDaLoja(extras, p.fornecedorId);
+  const prazoEntrega = textoDoPrazoDeEntrega(loja?.prazoEntregaHoras);
+  const saldo = saldoNaLoja(condicoes, p.fornecedorId);
+  const serve = carro ? serveNoCarroDaVitrine(p.id, extras, carro) : null;
+  const aplicacoes = info?.aplicacoes ?? [];
+  const falta = info?.estoque != null && info.estoque > 0 && qtd > info.estoque ? info.estoque : null;
   const referencia = p.referenciaId != null ? referencias.find((r) => r.id === p.referenciaId) : undefined;
   const prazo = p.intervaloKm || p.intervaloMeses ? textoDoPrazo(p.intervaloKm, p.intervaloMeses) : referencia && !referencia.segueManual ? textoDoPrazo(referencia.intervaloKm, referencia.intervaloMeses) : null;
   const specs = especificacoes(p);
@@ -87,9 +107,10 @@ export function DetalheProduto({
         conta && comPrecos ? (
           <div className="flex w-full flex-wrap items-center justify-between gap-3">
             <p>
-              {promocao ? <span className="num mr-2 text-[14px] text-tinta-3 line-through">{formatarMoeda(p.preco)}</span> : null}
+              {promocao || especial ? <span className="num mr-2 text-[14px] text-tinta-3 line-through">{formatarMoeda(p.preco)}</span> : null}
               <strong className="largo num text-[21px]">{formatarMoeda(preco)}</strong>
               <span className="text-[13px] text-tinta-3"> cada</span>
+              {especial ? <span className="block text-[12.5px] font-semibold text-caneta">Preço combinado com você</span> : null}
             </p>
             <div className="flex items-center gap-2">
               <Passo valor={qtd} aoMudar={setQtd} rotulo={p.nome} />
@@ -132,6 +153,8 @@ export function DetalheProduto({
 
         <div className="flex flex-wrap gap-2">
           {patrocinado(p.id, catalogo.patrocinios, uf, hoje) ? <SeloPatrocinado /> : null}
+          {serve === 'sim' && carro ? <SeloServeNoCarro carro={rotuloDoCarro(carro)} /> : null}
+          <SeloEstoqueDaLoja estoque={info?.estoque} />
           {specs.map((e) => (
             <span key={e} className="rounded-md bg-papel-2 px-2 py-0.5 text-[13px] font-semibold text-tinta-2">
               {e}
@@ -140,6 +163,38 @@ export function DetalheProduto({
         </div>
 
         {p.descricao ? <p className="text-tinta-2">{p.descricao}</p> : null}
+
+        {serve === 'nao' && carro ? (
+          <p className="rounded-xl bg-atraso-claro px-4 py-3 text-[14px] text-atraso">Pela lista da loja, esta peça não serve no {rotuloDoCarro(carro)}. Confira a aplicação antes de comprar.</p>
+        ) : null}
+        {falta != null ? (
+          <p className="rounded-xl bg-oleo-claro px-4 py-3 text-[14px] text-oleo-tinta">
+            A loja informou {falta === 1 ? 'só 1 unidade' : `só ${falta} unidades`} no estoque. Ela confirma o que tem quando receber o pedido.
+          </p>
+        ) : info?.estoque != null && info.estoque <= 0 ? (
+          <p className="rounded-xl bg-atraso-claro px-4 py-3 text-[14px] text-atraso">A loja marcou sem estoque. Dá para pedir: ela confirma se consegue.</p>
+        ) : null}
+
+        {aplicacoes.length ? (
+          <div className="flex flex-col gap-2">
+            <p className="flex items-center gap-1.5 font-bold">
+              <CarFront size={17} aria-hidden="true" /> Serve em
+            </p>
+            <ul className="flex flex-wrap gap-1.5">
+              {(todasAplicacoes ? aplicacoes : aplicacoes.slice(0, APLICACOES_VISIVEIS)).map((a, i) => (
+                <li key={`${a.texto}-${i}`} className="rounded-md bg-papel-2 px-2 py-0.5 text-[13px] text-tinta-2">
+                  {rotuloDaAplicacao(a)}
+                </li>
+              ))}
+            </ul>
+            {aplicacoes.length > APLICACOES_VISIVEIS ? (
+              <button type="button" onClick={() => setTodasAplicacoes(!todasAplicacoes)} className="self-start text-[13.5px] font-semibold text-caneta hover:underline">
+                {todasAplicacoes ? 'Ver menos' : `Ver mais ${aplicacoes.length - APLICACOES_VISIVEIS}`}
+              </button>
+            ) : null}
+            <p className="text-[12.5px] text-tinta-3">Lista informada pela loja. Na dúvida, confira pelo código da peça.</p>
+          </div>
+        ) : null}
 
         {ofertas.length ? (
           <div className="flex flex-col gap-2">
@@ -183,6 +238,18 @@ export function DetalheProduto({
               <p className="text-[13.5px] text-tinta-3">{[fornecedor.cidade, fornecedor.uf].filter(Boolean).join(', ')}</p>
               <SeloDaLoja fornecedorId={fornecedor.id} />
               {fornecedor.descricao ? <p className="mt-1 text-[14px] text-tinta-2">{fornecedor.descricao}</p> : null}
+              {prazoEntrega || loja?.pedidoMinimo || loja?.cashbackPercentual ? (
+                <ul className="mt-1.5 flex flex-col gap-0.5 text-[13.5px] text-tinta-2">
+                  {prazoEntrega ? <li>{prazoEntrega}</li> : null}
+                  {comPrecos && loja?.pedidoMinimo ? <li>Pedido mínimo de {formatarMoeda(loja.pedidoMinimo)} nesta loja</li> : null}
+                  {loja?.cashbackPercentual ? <li>{String(loja.cashbackPercentual).replace('.', ',')}% de cashback nos pedidos entregues e pagos</li> : null}
+                </ul>
+              ) : null}
+              {comPrecos && saldo !== 0 ? (
+                <p className={`mt-1.5 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[13px] font-semibold ${saldo > 0 ? 'bg-ok-claro text-ok' : 'bg-atraso-claro text-atraso'}`}>
+                  <Wallet size={14} aria-hidden="true" /> Seu cashback aqui: <span className="num">{formatarMoeda(saldo)}</span>
+                </p>
+              ) : null}
             </div>
           </div>
         ) : null}

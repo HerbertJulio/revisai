@@ -1,10 +1,11 @@
 'use client';
 
-// O que está andando na loja: os alertas de preço com as respostas das lojas e os pedidos com a
-// situação de cada loja. Só com a conta (o banco mostra só o que é da oficina escolhida). Busca ao
-// abrir, ao voltar para o app e quando o banco avisa pelo tempo real que algo mudou (uma loja
-// confirmou, respondeu um alerta, o entregador andou). Com coisa andando, busca também a cada 2
-// minutos com o app aberto, para o caso de o tempo real cair.
+// O que está andando na loja: os alertas de preço com as respostas das lojas, os pedidos com a
+// situação de cada loja e os pedidos de garantia ou devolução com a resposta da loja. Só com a conta
+// (o banco mostra só o que é da oficina escolhida). Busca ao abrir, ao voltar para o app e quando o
+// banco avisa pelo tempo real que algo mudou (uma loja confirmou, respondeu um alerta ou uma
+// devolução, o entregador andou). Com coisa andando, busca também a cada 2 minutos com o app aberto,
+// para o caso de o tempo real cair.
 
 import { useRouter } from 'next/navigation';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -12,7 +13,8 @@ import { acompanhar, verAlertas } from '@/app/oficina/acoes-loja';
 import { useConta } from '@/components/conta/ProvedorConta';
 import { useToast } from '@/components/Toasts';
 import { faseDoAlerta, propostasEmOrdem, type AlertaDaOficina, type CotaAlertas } from '@/lib/alertas-dados';
-import { aCaminho, pedidoEmAndamento, type ParteAcompanhada, type PedidoAcompanhado } from '@/lib/entregas-dados';
+import { aCaminho, pedidoEmAndamento, situacaoDaDevolucao, type ParteAcompanhada, type PedidoAcompanhado } from '@/lib/entregas-dados';
+import type { Devolucao } from '@/lib/loja/dados';
 import { notificar } from '@/lib/notificacao';
 import { fotografar, novidades, type Visto } from '@/lib/novidades';
 import { useOficina } from '@/lib/store';
@@ -22,6 +24,8 @@ interface Andamento {
   alertas: AlertaDaOficina[];
   cota: CotaAlertas | null;
   pedidos: Record<string, PedidoAcompanhado>;
+  /** Os pedidos de garantia ou devolução da oficina (os mais novos primeiro). */
+  devolucoes: Devolucao[];
   /** Propostas para escolher e entregas a caminho (o número na aba da Loja). */
   pendencias: number;
   /** Já buscou pelo menos uma vez (ou não tem o que buscar, sem conta). */
@@ -40,15 +44,17 @@ interface Andamento {
   /** Muda na tela, antes da próxima busca, o que a oficina acabou de fazer (avisou que pagou). */
   ajustarParte(parteId: number, mudanca: Partial<ParteAcompanhada>): void;
   ajustarAlerta(id: string, mudanca: Partial<AlertaDaOficina>): void;
+  /** Muda ou tira (null) um pedido de garantia ou devolução na tela, antes da próxima busca. */
+  ajustarDevolucao(id: string, mudanca: Partial<Devolucao> | null): void;
 }
 
 const Contexto = createContext<Andamento | null>(null);
 
 const DIA = 86_400_000;
 
-/** O pedido entra no acompanhamento: dos últimos 45 dias (os mais velhos já terminaram). */
+/** O pedido entra no acompanhamento: dos últimos 120 dias (dá para pedir garantia até 90 dias depois da entrega). */
 export function pedidoAcompanhavel(p: { codigo: string; quando: string }, agora = Date.now()): boolean {
-  return agora - Date.parse(p.quando) < 45 * DIA && /^[A-Z0-9]{6}$/.test(p.codigo);
+  return agora - Date.parse(p.quando) < 120 * DIA && /^[A-Z0-9]{6}$/.test(p.codigo);
 }
 
 export function ProvedorDeAndamento({ children }: { children: ReactNode }) {
@@ -60,6 +66,7 @@ export function ProvedorDeAndamento({ children }: { children: ReactNode }) {
   const [alertas, setAlertas] = useState<AlertaDaOficina[]>([]);
   const [cota, setCota] = useState<CotaAlertas | null>(null);
   const [pedidos, setPedidos] = useState<Record<string, PedidoAcompanhado>>({});
+  const [devolucoes, setDevolucoes] = useState<Devolucao[]>([]);
   const [pronto, setPronto] = useState(false);
   const [buscados, setBuscados] = useState<ReadonlySet<string>>(() => new Set());
   const [erro, setErro] = useState<string | null>(null);
@@ -113,11 +120,12 @@ export function ProvedorDeAndamento({ children }: { children: ReactNode }) {
         if (p.ok) {
           setPedidos(Object.fromEntries(p.pedidos.map((x) => [x.codigo, x])));
           setBuscados(new Set([...codigos, ...p.pedidos.map((x) => x.codigo)]));
+          if (p.devolucoes) setDevolucoes(p.devolucoes);
         }
         // compara com a última olhada (só quando as duas buscas vieram, para não avisar o que só não carregou)
         if (a.ok && p.ok) {
-          avisar(novidades(visto.current, a.alertas, p.pedidos));
-          visto.current = fotografar(a.alertas, p.pedidos);
+          avisar(novidades(visto.current, a.alertas, p.pedidos, p.devolucoes));
+          visto.current = fotografar(a.alertas, p.pedidos, p.devolucoes);
         }
         setErro(!a.ok ? a.erro : !p.ok ? p.erro : null);
       } catch {
@@ -158,6 +166,7 @@ export function ProvedorDeAndamento({ children }: { children: ReactNode }) {
       setAlertas([]);
       setCota(null);
       setPedidos({});
+      setDevolucoes([]);
       setBuscados(new Set());
       setErro(null);
       setPronto(!oficinaId);
@@ -197,14 +206,19 @@ export function ProvedorDeAndamento({ children }: { children: ReactNode }) {
     return fase === 'esperando' || fase === 'escolher';
   });
   const andando = naoRecebidos.some(pedidoEmAndamento);
+  // garantia ou devolução esperando a loja (aberta ou aceita): a resposta chega pela busca de reserva também
+  const devolucaoAndando = devolucoes.some((d) => d.situacao === 'aberta' || d.situacao === 'aceita');
   const pendencias =
     alertas.filter((a) => {
       const fase = faseDoAlerta(a, propostasEmOrdem(a).length, agora);
       return (fase === 'esperando' || fase === 'escolher') && propostasEmOrdem(a).length > 0;
-    }).length + entregasACaminho;
+    }).length +
+    entregasACaminho +
+    // a loja perguntou algo num pedido de garantia ou devolução
+    devolucoes.filter((d) => situacaoDaDevolucao(d).acao === 'responder').length;
 
   // a reserva: com coisa andando e o app aberto, busca a cada 2 minutos (o tempo real pode ter caído)
-  const precisaOlhar = !!oficinaId && (entregasACaminho > 0 || esperando || andando);
+  const precisaOlhar = !!oficinaId && (entregasACaminho > 0 || esperando || andando || devolucaoAndando);
   useEffect(() => {
     if (!precisaOlhar) return;
     // confere a cada 15 s se já passaram 2 minutos desde a última busca (qualquer busca conta)
@@ -239,11 +253,15 @@ export function ProvedorDeAndamento({ children }: { children: ReactNode }) {
     mudancas.current++;
     setAlertas((lista) => lista.map((a) => (a.id === id ? { ...a, ...mudanca } : a)));
   }, []);
+  const ajustarDevolucao = useCallback((id: string, mudanca: Partial<Devolucao> | null) => {
+    mudancas.current++;
+    setDevolucoes((lista) => (mudanca ? lista.map((d) => (d.id === id ? { ...d, ...mudanca } : d)) : lista.filter((d) => d.id !== id)));
+  }, []);
 
   const comConta = !!oficinaId;
   const valor = useMemo(
-    () => ({ alertas, cota, pedidos, pendencias, pronto, buscados, erro, comConta, canal, atualizar, guardarAlerta, ajustarParte, ajustarAlerta }),
-    [alertas, cota, pedidos, pendencias, pronto, buscados, erro, comConta, canal, atualizar, guardarAlerta, ajustarParte, ajustarAlerta]
+    () => ({ alertas, cota, pedidos, devolucoes, pendencias, pronto, buscados, erro, comConta, canal, atualizar, guardarAlerta, ajustarParte, ajustarAlerta, ajustarDevolucao }),
+    [alertas, cota, pedidos, devolucoes, pendencias, pronto, buscados, erro, comConta, canal, atualizar, guardarAlerta, ajustarParte, ajustarAlerta, ajustarDevolucao]
   );
   return <Contexto.Provider value={valor}>{children}</Contexto.Provider>;
 }

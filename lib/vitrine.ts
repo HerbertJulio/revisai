@@ -114,6 +114,29 @@ export function anunciosDoProduto(produtoId: number, anuncios: Anuncio[], uf: st
     .sort((a, b) => Number(!!b.uf) - Number(!!a.uf) || a.impulsoId - b.impulsoId);
 }
 
+/** O que o aparelho já mandou hoje, pela oficina: anúncios vistos e clicados (cada um conta uma vez por dia). */
+export interface AnunciosDoDia {
+  oficina: string;
+  dia: string;
+  vistos: number[];
+  cliques: number[];
+}
+
+/** O registro de hoje: o guardado, se for da mesma oficina e do mesmo dia; senão, um vazio. */
+export function anunciosDoDia(guardado: unknown, oficina: string, dia: string): AnunciosDoDia {
+  const g = guardado && typeof guardado === 'object' ? (guardado as Partial<AnunciosDoDia>) : null;
+  const ids = (l: unknown) => (Array.isArray(l) ? l.filter((x): x is number => Number.isSafeInteger(x) && x > 0).slice(-500) : []);
+  if (!g || g.oficina !== oficina || g.dia !== dia) return { oficina, dia, vistos: [], cliques: [] };
+  return { oficina, dia, vistos: ids(g.vistos), cliques: ids(g.cliques) };
+}
+
+/** Os anúncios do produto que ainda não foram contados hoje como vistos. */
+export function anunciosParaContar(produtoId: number, anuncios: Anuncio[], uf: string, hoje: string, jaContados: readonly number[]): number[] {
+  return anunciosDoProduto(produtoId, anuncios, uf, hoje)
+    .map((a) => a.impulsoId)
+    .filter((id) => !jaContados.includes(id));
+}
+
 /** Os patrocínios que seguem valendo, sem os anúncios que esgotaram o teto do dia. */
 export function semAnunciosEsgotados(patrocinios: Patrocinio[], anuncios: Anuncio[], esgotados: ReadonlySet<number>): Patrocinio[] {
   if (!esgotados.size) return patrocinios;
