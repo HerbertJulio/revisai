@@ -4,7 +4,17 @@
 import { z } from 'zod';
 import { CATEGORIAS } from '../catalogo';
 import type { LinhaRegional } from '../demanda';
-import { COLUNAS_PRODUTO, lerProdutosCompletos, type ItemDoPedido, type LinhaProduto, type SituacaoPagamentoParte, type SituacaoParte } from '../marketplace-dados';
+import {
+  COLUNAS_IMPULSO,
+  COLUNAS_PRODUTO,
+  lerImpulsos,
+  lerProdutosCompletos,
+  type ItemDoPedido,
+  type LinhaImpulso,
+  type LinhaProduto,
+  type SituacaoPagamentoParte,
+  type SituacaoParte
+} from '../marketplace-dados';
 import type { TipoChavePix } from '../pix';
 import type { Categoria } from '../tipos';
 
@@ -111,6 +121,42 @@ export function lerProdutosDaLoja(d: unknown): LinhaProdutoDaLoja[] {
     const e = extras.get(p.id);
     return { ...p, codigo: e?.codigo ?? null, estoque: e?.estoque ?? null, aplicacoes: lerAplicacoes(e?.aplicacoes) };
   });
+}
+
+// ---------------------------------------------------------------- impulsos e anúncios por clique
+
+/** O impulso com o modelo por clique (cpc e teto do dia; vazios = impulso por período). */
+export type LinhaImpulsoDaLoja = LinhaImpulso & { cpc: number | null; orcamentoDiario: number | null };
+
+export const COLUNAS_IMPULSO_DA_LOJA = `${COLUNAS_IMPULSO}, cpc, orcamento_diario`;
+
+export function lerImpulsosDaLoja(d: unknown): LinhaImpulsoDaLoja[] {
+  const linhas = Array.isArray(d) ? d : [];
+  const extras = new Map(
+    linhas.flatMap((x) => {
+      const r = z.object({ id: numero, cpc: numeroOuNulo.optional(), orcamento_diario: numeroOuNulo.optional() }).safeParse(x);
+      return r.success ? [[r.data.id, r.data] as const] : [];
+    })
+  );
+  return lerImpulsos(linhas).itens.map((i) => ({ ...i, cpc: extras.get(i.id)?.cpc ?? null, orcamentoDiario: extras.get(i.id)?.orcamento_diario ?? null }));
+}
+
+export interface MetricaDoAnuncio {
+  impulsoId: number;
+  impressoes: number;
+  cliques: number;
+  custo: number;
+  impressoesHoje: number;
+  cliquesHoje: number;
+  custoHoje: number;
+}
+
+export function lerMetricasDosAnuncios(d: unknown): Map<number, MetricaDoAnuncio> {
+  const lista = ler(
+    z.object({ impulsoId: numero, impressoes: numero, cliques: numero, custo: numero, impressoesHoje: numero, cliquesHoje: numero, custoHoje: numero }),
+    d
+  );
+  return new Map(lista.map((m) => [m.impulsoId, m]));
 }
 
 // ---------------------------------------------------------------- pedidos

@@ -183,7 +183,7 @@ export function ProdutosFornecedor({
   const { referencias } = useReferencias();
   const [rascunho, setRascunho] = useState<Rascunho | null>(abrirNovo ? rascunhoDe() : null);
   const [erro, setErro] = useState<string | null>(null);
-  const [impulso, setImpulso] = useState<{ produto: LinhaProduto; dias: DiasImpulso; regiao: 'uf' | 'brasil' } | null>(null);
+  const [impulso, setImpulso] = useState<{ produto: LinhaProduto; dias: DiasImpulso; regiao: 'uf' | 'brasil'; modelo: 'periodo' | 'clique'; cpc: string; teto: string } | null>(null);
   const [ocupado, iniciar] = useTransition();
   const [enviandoFoto, setEnviandoFoto] = useState(false);
   const arquivo = useRef<HTMLInputElement>(null);
@@ -282,9 +282,10 @@ export function ProdutosFornecedor({
 
   function pedirImpulso() {
     if (!impulso) return;
+    const porClique = impulso.modelo === 'clique' ? { cpc: lerNumero(impulso.cpc) ?? 0, orcamentoDiario: lerNumero(impulso.teto) ?? 0 } : null;
     iniciar(async () => {
       try {
-        const r = await impulsionar(impulso.produto.id, impulso.dias, impulso.regiao === 'uf' && uf ? uf : '');
+        const r = await impulsionar(impulso.produto.id, impulso.dias, impulso.regiao === 'uf' && uf ? uf : '', porClique);
         if (!r.ok) return toast({ texto: r.erro, tom: 'erro' });
         toast({ texto: 'Pedido de impulso enviado. A equipe do Revisaí combina o pagamento e coloca no ar.' });
         setImpulso(null);
@@ -372,7 +373,7 @@ export function ProdutosFornecedor({
                       <p className="line-clamp-2 text-[14.5px] leading-snug font-bold sm:text-[15.5px]">{[p.marca, p.nome].filter(Boolean).join(' ')}</p>
                       <SelosDoProduto produto={p} promo={promo} impulso={imp} />
                       <p className="largo num mt-auto pt-1 text-[18px] font-extrabold sm:text-[19px]">{formatarMoeda(p.preco)}</p>
-                      <AcoesDoProduto produto={p} impulso={imp} aoEditar={() => abrir(p)} aoImpulsionar={() => setImpulso({ produto: p, dias: 7, regiao: uf ? 'uf' : 'brasil' })} podeImpulsionar={podeImpulsionar} />
+                      <AcoesDoProduto produto={p} impulso={imp} aoEditar={() => abrir(p)} aoImpulsionar={() => setImpulso({ produto: p, dias: 7, regiao: uf ? 'uf' : 'brasil', modelo: 'periodo', cpc: '0,50', teto: '10' })} podeImpulsionar={podeImpulsionar} />
                     </div>
                   </li>
                 );
@@ -397,7 +398,7 @@ export function ProdutosFornecedor({
                     </div>
                     <p className="largo num shrink-0 text-[17px] font-extrabold sm:w-28 sm:text-right sm:text-[18px]">{formatarMoeda(p.preco)}</p>
                     <div className="w-full sm:flex sm:w-[232px] sm:justify-end">
-                      <AcoesDoProduto produto={p} impulso={imp} aoEditar={() => abrir(p)} aoImpulsionar={() => setImpulso({ produto: p, dias: 7, regiao: uf ? 'uf' : 'brasil' })} podeImpulsionar={podeImpulsionar} />
+                      <AcoesDoProduto produto={p} impulso={imp} aoEditar={() => abrir(p)} aoImpulsionar={() => setImpulso({ produto: p, dias: 7, regiao: uf ? 'uf' : 'brasil', modelo: 'periodo', cpc: '0,50', teto: '10' })} podeImpulsionar={podeImpulsionar} />
                     </div>
                   </li>
                 );
@@ -584,9 +585,15 @@ export function ProdutosFornecedor({
         rodape={
           impulso ? (
             <div className="flex w-full flex-wrap items-center justify-between gap-3">
-              <p>
-                Total <strong className="largo num text-[19px]">{formatarMoeda(PRECO_IMPULSO[impulso.dias])}</strong>
-              </p>
+              {impulso.modelo === 'clique' ? (
+                <p>
+                  Até <strong className="largo num text-[19px]">{formatarMoeda(lerNumero(impulso.teto) ?? 0)}</strong> por dia
+                </p>
+              ) : (
+                <p>
+                  Total <strong className="largo num text-[19px]">{formatarMoeda(PRECO_IMPULSO[impulso.dias])}</strong>
+                </p>
+              )}
               <Botao variante="primario" onClick={pedirImpulso} disabled={ocupado}>
                 <Rocket size={17} /> Pedir impulso
               </Botao>
@@ -596,6 +603,38 @@ export function ProdutosFornecedor({
       >
         {impulso ? (
           <div className="flex flex-col gap-5">
+            <div>
+              <p className="mb-2 font-semibold">Como pagar</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {(
+                  [
+                    { id: 'periodo', nome: 'Por período', texto: 'Um valor fechado pelos dias no ar.' },
+                    { id: 'clique', nome: 'Por clique', texto: 'Paga só quando uma oficina clica, com teto por dia.' }
+                  ] as const
+                ).map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    aria-pressed={impulso.modelo === m.id}
+                    onClick={() => setImpulso({ ...impulso, modelo: m.id })}
+                    className={`rounded-xl border px-4 py-3 text-left ${impulso.modelo === m.id ? 'border-tinta bg-tinta text-papel' : 'border-linha bg-papel hover:border-tinta-3'}`}
+                  >
+                    <span className="block font-bold">{m.nome}</span>
+                    <span className={`block text-[13.5px] ${impulso.modelo === m.id ? 'text-papel/80' : 'text-tinta-3'}`}>{m.texto}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            {impulso.modelo === 'clique' ? (
+              <div className="grid grid-cols-2 gap-3">
+                <Campo rotulo="Por clique (R$)" htmlFor="imp-cpc" dica="Cada oficina conta um clique por dia.">
+                  <input id="imp-cpc" className={`${classeEntrada} num`} value={impulso.cpc} onChange={(e) => setImpulso({ ...impulso, cpc: e.target.value })} inputMode="decimal" />
+                </Campo>
+                <Campo rotulo="Teto por dia (R$)" htmlFor="imp-teto" dica="Passou do teto, o anúncio sai até amanhã.">
+                  <input id="imp-teto" className={`${classeEntrada} num`} value={impulso.teto} onChange={(e) => setImpulso({ ...impulso, teto: e.target.value })} inputMode="decimal" />
+                </Campo>
+              </div>
+            ) : null}
             <div>
               <p className="mb-2 font-semibold">Por quanto tempo</p>
               <div className="grid grid-cols-3 gap-2">
@@ -608,7 +647,7 @@ export function ProdutosFornecedor({
                     className={`rounded-xl border px-3 py-3 text-left ${impulso.dias === d ? 'border-tinta bg-tinta text-papel' : 'border-linha bg-papel hover:border-tinta-3'}`}
                   >
                     <span className="block font-bold">{d} dias</span>
-                    <span className={`num block text-[14px] ${impulso.dias === d ? 'text-papel/80' : 'text-tinta-3'}`}>{formatarMoeda(PRECO_IMPULSO[d])}</span>
+                    {impulso.modelo === 'periodo' ? <span className={`num block text-[14px] ${impulso.dias === d ? 'text-papel/80' : 'text-tinta-3'}`}>{formatarMoeda(PRECO_IMPULSO[d])}</span> : null}
                   </button>
                 ))}
               </div>

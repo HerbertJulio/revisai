@@ -193,3 +193,31 @@ describe('condições por oficina', async () => {
   });
 });
 
+describe('anúncios da loja', async () => {
+  const { pedirImpulso } = await import('@/lib/loja/produtos');
+  const { anunciosComOrcamento, registrarClique, registrarImpressoes } = await import('@/lib/loja/anuncios');
+  const produto = { id: 3, fornecedor_id: 9, categoria: 'vela', nome: 'Vela', marca: null, descricao: null, unidade: 'jogo', conteudo: null, preco: 80, especificacao: {}, intervalo_km: null, intervalo_meses: null, ativo: true, imagem_url: null, referencia_id: null };
+
+  it('pede o anúncio por clique com o teto do dia, sem valor de período', async () => {
+    const b = bancoFalso({ 'produtos.select': { data: produto }, 'impulsos.select': { count: 0 } });
+    expect(await pedirImpulso(b.sb, 9, 3, 30, 'RJ', { cpc: 0.5, orcamentoDiario: 15 })).toEqual({ ok: true });
+    expect(b.chamadas.find((c) => c.op === 'insert')!.dados).toMatchObject({ dias: 30, valor: 0, cpc: 0.5, orcamento_diario: 15, status: 'pedido' });
+    // período continua com o preço da tabela e sem clique
+    const p = bancoFalso({ 'produtos.select': { data: produto }, 'impulsos.select': { count: 0 } });
+    expect(await pedirImpulso(p.sb, 9, 3, 7, '')).toEqual({ ok: true });
+    expect(p.chamadas.find((c) => c.op === 'insert')!.dados).toMatchObject({ dias: 7, valor: 29, cpc: null, orcamento_diario: null });
+    // clique abaixo do mínimo ou teto menor que um clique não valem
+    expect((await pedirImpulso(b.sb, 9, 3, 30, 'RJ', { cpc: 0.1, orcamentoDiario: 15 })).ok).toBe(false);
+    expect((await pedirImpulso(b.sb, 9, 3, 30, 'RJ', { cpc: 5, orcamentoDiario: 2 })).ok).toBe(false);
+  });
+
+  it('a vitrine registra impressões e cliques pelas funções do banco', async () => {
+    const b = bancoFalso({ registrar_impressoes: { data: 2 }, registrar_clique: { data: { registrado: true, cobrado: 0.5, esgotado: false } }, anuncios_com_orcamento: { data: [4] } });
+    expect(await registrarImpressoes(b.sb, [4, 4, 5, -1])).toBe(2);
+    expect(b.chamadas[0].args).toEqual({ p_impulsos: [4, 5], p_oficina: null });
+    expect(await registrarClique(b.sb, 4)).toEqual({ registrado: true, cobrado: 0.5, esgotado: false });
+    expect([...(await anunciosComOrcamento(b.sb, [4, 5]))]).toEqual([4]);
+    expect(await registrarClique(b.sb, 0)).toBeNull();
+  });
+});
+

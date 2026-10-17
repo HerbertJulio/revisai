@@ -86,12 +86,13 @@ export async function salvarPromocao(entrada: unknown): Promise<Gravacao<{ id: n
 }
 
 /** Impulso é pago: só o dono pede. */
-export async function impulsionar(produtoId: number, dias: number, uf: string): Promise<Gravacao> {
+export async function impulsionar(produtoId: number, dias: number, uf: string, porClique?: { cpc: number; orcamentoDiario: number } | null): Promise<Gravacao> {
   if (!idValido(produtoId)) return { ok: false, erro: 'Produto inválido.' };
   const a = await acesso('impulso', 20);
   if (!a.ok) return a;
   if (a.loja.papel !== 'dono') return SO_DONO;
-  const r = await pedirImpulso(a.sb, a.loja.id, produtoId, Number(dias), String(uf ?? ''));
+  const clique = porClique && typeof porClique === 'object' ? { cpc: Number(porClique.cpc), orcamentoDiario: Number(porClique.orcamentoDiario) } : null;
+  const r = await pedirImpulso(a.sb, a.loja.id, produtoId, Number(dias), String(uf ?? ''), clique);
   if (r.ok) atualizar();
   return r;
 }

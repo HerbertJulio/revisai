@@ -203,15 +203,39 @@ export async function salvarPromocao(sb: SupabaseClient, fornecedorId: number, e
 }
 
 /** A loja pede para impulsionar um produto; a equipe ativa depois do pagamento. */
-export async function pedirImpulso(sb: SupabaseClient, fornecedorId: number, produtoId: number, dias: number, uf: string): Promise<Gravacao> {
+/** Anúncio por clique: quanto a loja paga por clique e o teto do dia. */
+export interface PorClique {
+  cpc: number;
+  orcamentoDiario: number;
+}
+
+export const CPC_MINIMO = 0.3;
+
+export async function pedirImpulso(sb: SupabaseClient, fornecedorId: number, produtoId: number, dias: number, uf: string, porClique: PorClique | null = null): Promise<Gravacao> {
   if (!diasImpulsoValido(dias)) return { ok: false, erro: 'Escolha 7, 15 ou 30 dias.' };
+  if (porClique) {
+    const { cpc, orcamentoDiario } = porClique;
+    if (!(cpc >= CPC_MINIMO) || cpc > 100) return { ok: false, erro: `O clique vai de R$ ${CPC_MINIMO.toFixed(2).replace('.', ',')} a R$ 100.` };
+    if (!(orcamentoDiario >= 1) || orcamentoDiario > 10000) return { ok: false, erro: 'O teto por dia vai de R$ 1 a R$ 10.000.' };
+    if (orcamentoDiario < cpc) return { ok: false, erro: 'O teto do dia precisa pagar pelo menos um clique.' };
+  }
   if (uf && !/^[A-Z]{2}$/.test(uf)) return { ok: false, erro: 'UF inválida.' };
   const produto = await produtoDaLoja(sb, fornecedorId, produtoId);
   if (!produto) return { ok: false, erro: 'Produto não encontrado.' };
   if (!produto.ativo) return { ok: false, erro: 'Ative o produto antes de impulsionar.' };
   const abertos = await sb.from('impulsos').select('id', { count: 'exact', head: true }).eq('fornecedor_id', fornecedorId).eq('status', 'pedido');
   if ((abertos.count ?? 0) >= 5) return { ok: false, erro: 'Você já tem pedidos de impulso esperando. Fale com a equipe.' };
-  const { error } = await sb.from('impulsos').insert({ produto_id: produtoId, fornecedor_id: fornecedorId, uf: uf || null, dias, valor: PRECO_IMPULSO[dias as keyof typeof PRECO_IMPULSO], status: 'pedido' });
+  const { error } = await sb.from('impulsos').insert({
+    produto_id: produtoId,
+    fornecedor_id: fornecedorId,
+    uf: uf || null,
+    dias,
+    // por clique, a loja paga pelos cliques (no teto do dia), não pelo período
+    valor: porClique ? 0 : PRECO_IMPULSO[dias as keyof typeof PRECO_IMPULSO],
+    cpc: porClique ? Math.round(porClique.cpc * 100) / 100 : null,
+    orcamento_diario: porClique ? Math.round(porClique.orcamentoDiario * 100) / 100 : null,
+    status: 'pedido'
+  });
   if (error) {
     console.error('[loja] pedir impulso', error);
     return { ok: false, erro: mensagemDaLoja(error, ERRO_GRAVACAO) };

@@ -4,20 +4,23 @@ import { cache } from 'react';
 import { contaAtual, lojaEscolhida } from '../conta';
 import type { LojaDaConta } from '../conta-dados';
 import { redirect } from 'next/navigation';
-import { COLUNAS_IMPULSO, COLUNAS_PROMOCAO, lerImpulsos, lerPromocoesCompletas, type LinhaImpulso, type LinhaPromocao } from '../marketplace-dados';
+import { COLUNAS_PROMOCAO, lerPromocoesCompletas, type LinhaPromocao } from '../marketplace-dados';
 import { clienteDoUsuario } from '../supabase-servidor';
 import { contarAlertasSemResposta } from './alertas';
 import { hojeEmBrasilia } from './comum';
 import {
   COLUNAS_CONTRATO_DA_LOJA,
+  COLUNAS_IMPULSO_DA_LOJA,
   COLUNAS_LOJA,
   COLUNAS_PARTE_DA_LOJA,
   COLUNAS_PRODUTO_DA_LOJA,
   lerContratoDaLoja,
+  lerImpulsosDaLoja,
   lerLoja,
   lerPedidosDaLoja,
   lerProdutosDaLoja,
   type ContratoDaLoja,
+  type LinhaImpulsoDaLoja,
   type LinhaLoja,
   type LinhaProdutoDaLoja,
   type PedidoDaLoja
@@ -36,7 +39,7 @@ export interface PainelDaLoja {
   contrato: ContratoDaLoja | null;
   produtos: LinhaProdutoDaLoja[];
   promocoes: LinhaPromocao[];
-  impulsos: LinhaImpulso[];
+  impulsos: LinhaImpulsoDaLoja[];
   pedidos: PedidoDaLoja[];
   /** Alertas de preço abertos que a loja ainda não respondeu. */
   alertasNovos: number;
@@ -76,7 +79,7 @@ export const painelDaLoja = cache(async (): Promise<ResultadoPainel> => {
       sb.from('fornecedores').select(COLUNAS_LOJA).eq('id', id).maybeSingle(),
       sb.from('fornecedores_contrato').select(COLUNAS_CONTRATO_DA_LOJA).eq('fornecedor_id', id).maybeSingle(),
       sb.from('produtos').select(COLUNAS_PRODUTO_DA_LOJA).eq('fornecedor_id', id).order('categoria').order('nome').limit(5000),
-      sb.from('impulsos').select(COLUNAS_IMPULSO).eq('fornecedor_id', id).order('criado_em', { ascending: false }).limit(100),
+      sb.from('impulsos').select(COLUNAS_IMPULSO_DA_LOJA).eq('fornecedor_id', id).order('criado_em', { ascending: false }).limit(100),
       sb.from('pedidos_fornecedores').select(COLUNAS_PARTE_DA_LOJA).eq('fornecedor_id', id).order('criado_em', { ascending: false }).limit(200),
       sb.rpc('termos_pendentes')
     ]);
@@ -112,7 +115,7 @@ export const painelDaLoja = cache(async (): Promise<ResultadoPainel> => {
         contrato: c.data ? lerContratoDaLoja(c.data) : null,
         produtos,
         promocoes: lerPromocoesCompletas(promos.data).itens,
-        impulsos: lerImpulsos(i.data).itens,
+        impulsos: lerImpulsosDaLoja(i.data),
         pedidos: lerPedidosDaLoja(pf.data, historico, id),
         alertasNovos,
         hoje: hojeEmBrasilia()

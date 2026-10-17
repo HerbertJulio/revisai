@@ -447,3 +447,57 @@ d('condições da loja: preço por oficina e pedido mínimo', () => {
     }));
 });
 
+d('anúncio por clique', () => {
+  it('um clique cobrado por oficina por dia, até o teto do dia; depois sai da vitrine', () =>
+    emTransacao(async (b) => {
+      const lojista = await criarPessoa(b, pessoa('lojista'));
+      const loja = await criarLoja(b, lojista);
+      const [{ id: impulso }] = (
+        await b.query(
+          `insert into public.impulsos (produto_id, fornecedor_id, uf, dias, valor, status, inicio, fim, cpc, orcamento_diario)
+           values ($1, $2, 'RJ', 7, 0, 'ativo', current_date - 1, current_date + 5, 0.5, 1) returning id`,
+          [loja.produtoId, loja.fornecedorId]
+        )
+      ).rows;
+      const [{ id: periodo }] = (
+        await b.query(`insert into public.impulsos (produto_id, fornecedor_id, uf, dias, valor, status, inicio, fim) values ($1, $2, 'RJ', 7, 29, 'ativo', current_date - 1, current_date + 5) returning id`, [
+          loja.produtoId,
+          loja.fornecedorId
+        ])
+      ).rows;
+      const oficinas: Awaited<ReturnType<typeof criarPessoa>>[] = [];
+      for (const nome of ['a', 'b', 'c']) {
+        const p = await criarPessoa(b, pessoa(`oficina-${nome}`));
+        await criarOficina(b, p);
+        oficinas.push(p);
+      }
+      const clicar = async (p: (typeof oficinas)[number], id = impulso) => (await linhas(b, p, 'select public.registrar_clique($1) as r', [id]))[0].r as { registrado: boolean; cobrado?: number; esgotado?: boolean; motivo?: string };
+      expect(await clicar(oficinas[0])).toEqual({ registrado: true, cobrado: 0.5, esgotado: false });
+      expect(await clicar(oficinas[0])).toEqual({ registrado: false, motivo: 'repetido' });
+      expect(await clicar(oficinas[1])).toEqual({ registrado: true, cobrado: 0.5, esgotado: true });
+      expect(await clicar(oficinas[2])).toEqual({ registrado: true, cobrado: 0, esgotado: true });
+      // o impulso por período continua: clique registrado, sem custo
+      expect(await clicar(oficinas[0], periodo)).toEqual({ registrado: true, cobrado: 0, esgotado: false });
+      // fora da vitrine o de clique (teto do dia gasto); o de período segue
+      const [v] = await linhas(b, null, 'select public.anuncios_com_orcamento($1) as ids', [[impulso, periodo]]);
+      expect((v.ids as number[]).map(Number)).toEqual([Number(periodo)]);
+      // impressões: uma por oficina por dia
+      expect((await linhas(b, oficinas[0], 'select public.registrar_impressoes($1) as n', [[impulso, periodo]]))[0].n).toBe(2);
+      expect((await linhas(b, oficinas[0], 'select public.registrar_impressoes($1) as n', [[impulso, periodo]]))[0].n).toBe(0);
+      // a loja vê só as somas
+      const [m] = await linhas(b, lojista, 'select public.metricas_dos_anuncios($1) as m', [loja.fornecedorId]);
+      const meu = (m.m as { impulsoId: number; impressoes: number; cliques: number; custo: number; cliquesHoje: number }[]).find((x) => Number(x.impulsoId) === Number(impulso))!;
+      expect(meu).toMatchObject({ impressoes: 1, cliques: 3, cliquesHoje: 3 });
+      expect(Number(meu.custo)).toBe(1);
+      expect(await linhas(b, lojista, 'select * from public.anuncios_cliques')).toHaveLength(0);
+      expect((await tentar(b, oficinas[0], 'select public.metricas_dos_anuncios($1)', [loja.fornecedorId])).codigo).toBe('42501');
+      // quem não é oficina não clica; anúncio fora do ar não conta
+      expect((await tentar(b, lojista, 'select public.registrar_clique($1)', [impulso])).codigo).toBe('42501');
+      await b.query(`update public.impulsos set status = 'encerrado' where id = $1`, [periodo]);
+      expect(await clicar(oficinas[1], periodo)).toEqual({ registrado: false, motivo: 'fora_do_ar' });
+      // a loja pede anúncio por clique (com teto) como pedido, nunca já no ar
+      expect((await tentar(b, lojista, `insert into public.impulsos (produto_id, fornecedor_id, dias, valor, status, cpc, orcamento_diario) values ($1, $2, 30, 0, 'pedido', 0.4, 20)`, [loja.produtoId, loja.fornecedorId])).erro).toBeNull();
+      expect((await tentar(b, lojista, `insert into public.impulsos (produto_id, fornecedor_id, dias, valor, status, cpc) values ($1, $2, 30, 0, 'pedido', 0.4)`, [loja.produtoId, loja.fornecedorId])).codigo).toBe('23514');
+    }));
+});
+
