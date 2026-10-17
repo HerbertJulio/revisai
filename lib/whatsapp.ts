@@ -15,8 +15,29 @@ export const VARIAVEIS_MENSAGEM = [
   { nome: '{veiculo}', descricao: 'modelo do carro' },
   { nome: '{placa}', descricao: 'placa do carro' },
   { nome: '{lista}', descricao: 'os serviços e quando vencem' },
-  { nome: '{data}', descricao: 'dia do vencimento mais próximo' }
+  { nome: '{data}', descricao: 'dia do vencimento mais próximo' },
+  { nome: '{agendar}', descricao: 'link para o cliente escolher o horário (sem o agendamento pelo link ligado, a frase com ele sai da mensagem)' }
 ];
+
+/** O endereço público para o cliente pedir um horário na oficina. */
+export function linkDeAgendamento(origem: string, slug: string | null | undefined): string | null {
+  if (!slug || !/^[a-z0-9]{6,40}$/.test(slug)) return null;
+  return `${origem.replace(/\/+$/, '')}/agendar/${slug}`;
+}
+
+/** Tira do texto a frase que tem a variável (quando ela não tem valor, a frase toda sai). */
+function semAFraseCom(texto: string, variavel: string): string {
+  if (!texto.includes(variavel)) return texto;
+  // as frases ficam nas posições pares e o espaço (ou a quebra de linha) entre elas nas ímpares
+  const partes = texto.split(/(?<=[.!?])(\s+)/);
+  const r: string[] = [];
+  for (let i = 0; i < partes.length; i += 2) {
+    if (partes[i].includes(variavel)) continue;
+    if (r.length) r.push(partes[i - 1] ?? ' ');
+    r.push(partes[i]);
+  }
+  return r.join('');
+}
 
 export function linkWhatsApp(telefone: string, texto: string): string | null {
   const numero = normalizarTelefone(telefone);
@@ -55,13 +76,21 @@ export function frasePrazo(itens: ItemAviso[], plural: boolean): string {
 
 export function montarMensagem(
   modelo: string,
-  ctx: { cliente: string; oficina: string; veiculo: Pick<Veiculo, 'modelo' | 'placa'>; itens: ItemAviso[] }
+  ctx: {
+    cliente: string;
+    oficina: string;
+    veiculo: Pick<Veiculo, 'modelo' | 'placa'>;
+    itens: ItemAviso[];
+    /** O link de agendamento da oficina (linkDeAgendamento), quando ela tem um ligado. */
+    agendar?: string | null;
+  }
 ): string {
   const { texto, quantidade } = listaDeServicos(ctx.itens.map((i) => i.servico));
   const carro = ctx.veiculo.modelo?.trim() || 'carro';
   const lista = `${texto} do seu ${carro} ${frasePrazo(ctx.itens, quantidade > 1)}`;
   const datas = ctx.itens.map((i) => i.venc.dataPrevista).filter(Boolean).sort() as string[];
-  return (modelo || MENSAGEM_PADRAO)
+  const base = modelo || MENSAGEM_PADRAO;
+  return (ctx.agendar ? base.replaceAll('{agendar}', ctx.agendar) : semAFraseCom(base, '{agendar}'))
     .replaceAll('{cliente}', primeiroNome(ctx.cliente) || 'tudo bem')
     .replaceAll('{oficina}', ctx.oficina.trim() || 'oficina')
     .replaceAll('{veiculo}', carro)

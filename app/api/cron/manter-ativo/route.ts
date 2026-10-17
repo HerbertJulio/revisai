@@ -4,7 +4,6 @@ import { destravarParados, limparRascunhosVelhos } from '@/lib/agente/rascunhos'
 import { refazerComErro } from '@/lib/agente/webhook';
 import { processarAvisos } from '@/lib/avisos/processar';
 import { agendarCobrancasRecorrentes, cancelarDeOficinasSaindo, reprocessarAvisos } from '@/lib/cobranca/servidor';
-import { limparEntregasVelhas } from '@/lib/entregas';
 import { clienteSistema } from '@/lib/supabase-servidor';
 
 export const dynamic = 'force-dynamic';
@@ -20,7 +19,7 @@ function autorizado(req: NextRequest, segredo: string): boolean {
 /**
  * A rotina diária, chamada pelo Vercel Cron (vercel.json) com o CRON_SECRET. Vence o que vence
  * no banco (rotina_diaria), solta as montagens do agente que caíram no meio e tenta de novo as
- * que deram erro, apaga a mídia dos rascunhos parados e encerra as entregas esquecidas. Também
+ * que deram erro, apaga a mídia dos rascunhos parados (a posição dos entregadores que ficou para trás sai na rotina do banco). Também
  * manda os avisos que ficaram na fila e apaga o que passou do prazo (erros, avisos enviados). Também
  * mantém ativo o projeto grátis do Supabase, que pausa depois de uma semana sem uso.
  */
@@ -55,7 +54,6 @@ export async function GET(req: NextRequest) {
   // deixa uns 40 segundos de folga para a última montagem e a limpeza
   const refeitos = await passo('montagens com erro', () => refazerComErro(inicio + 75_000));
   const rascunhos = await passo('rascunhos velhos', () => limparRascunhosVelhos());
-  const entregas = await passo('entregas', limparEntregasVelhas);
   // cobrança: cancela no gateway quem pediu para sair, agenda o Pix Automático do mês e refaz os
   // avisos dos gateways que falharam
   const cobrancaSaindo = await passo('cobrança de quem saiu', cancelarDeOficinasSaindo);
@@ -72,7 +70,6 @@ export async function GET(req: NextRequest) {
       montagensParadas: parados,
       montagensRefeitas: refeitos,
       rascunhosLimpos: rascunhos?.rascunhos ?? null,
-      entregasLimpas: entregas,
       plataforma,
       avisos,
       cobranca: { saindo: cobrancaSaindo, agenda: cobrancaAgenda, avisos: cobrancaAvisos },

@@ -4,6 +4,7 @@ import {
   ALERTAS,
   alertaConta,
   cotaAmostra,
+  cotaDaOficina,
   cotaPro,
   depoisDeGastar,
   embalagemComparavel,
@@ -13,6 +14,8 @@ import {
   esquemaResposta,
   faixaParaFechar,
   faseDoAlerta,
+  inicioDoMesEmBrasilia,
+  mensagemDoAlerta,
   mesEmBrasilia,
   pacoteValido,
   propostasEmOrdem,
@@ -21,6 +24,7 @@ import {
   resumoDaResposta,
   textoDoPedidoDeAlerta,
   textoDoPreco,
+  ufDoAlerta,
   type AlertaParaContar,
   type Embalagem,
   type RespostaDoAlerta
@@ -167,18 +171,30 @@ describe('a loja vê', () => {
 
 describe('entradas', () => {
   const base = {
-    aparelhoId: '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b',
-    oficina: { nome: 'Auto Center', whatsapp: '21987654321', cidade: 'Niterói', uf: 'RJ' },
+    uf: 'RJ',
+    cidade: 'Niterói',
     produtoId: 201,
     quantidade: 5,
     precoAlvo: 24
   };
-  it('o alerta precisa do estado da oficina', () => {
+  it('o alerta vai para o estado escrito no app ou para o do cadastro da oficina', () => {
     expect(esquemaNovoAlerta.safeParse(base).success).toBe(true);
-    const r = esquemaNovoAlerta.safeParse({ ...base, oficina: { ...base.oficina, uf: '' } });
+    // sem estado no app, vale o do cadastro (o servidor completa)
+    expect(esquemaNovoAlerta.safeParse({ ...base, uf: '' }).success).toBe(true);
+    const r = esquemaNovoAlerta.safeParse({ ...base, uf: 'Rio' });
     expect(r.success).toBe(false);
     expect(r.error?.issues[0].message).toMatch(/estado da oficina/);
-    expect(esquemaNovoAlerta.safeParse({ ...base, codigoPro: 'abc' }).success).toBe(false);
+    expect(ufDoAlerta('SP', 'RJ')).toBe('SP');
+    expect(ufDoAlerta('', 'RJ')).toBe('RJ');
+    expect(ufDoAlerta(null, null)).toBeNull();
+    expect(ufDoAlerta('', 'rj')).toBeNull();
+  });
+
+  it('quem manda o alerta não vai no pedido: nada de aparelho nem código do Pro', () => {
+    const r = esquemaNovoAlerta.safeParse({ ...base, aparelhoId: '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b', codigoPro: 'ABCD1234EFGH5678' });
+    expect(r.success).toBe(true);
+    expect(r.data).not.toHaveProperty('aparelhoId');
+    expect(r.data).not.toHaveProperty('codigoPro');
   });
 
   it('a resposta da loja', () => {
@@ -192,18 +208,45 @@ describe('entradas', () => {
 
   it('fechar exige a proposta que a oficina viu (produto, preço e mínimo)', () => {
     const base = {
-      aparelhoId: '7d3c2b1a-0f9e-4d8c-a7b6-5e4d3c2b1a09',
       alertaId: '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d',
       respostaId: '2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e',
       quantidade: 10,
-      oficina: { nome: 'Auto Center', whatsapp: '21987650000' }
+      contato: { whatsapp: '21987650000', endereco: 'Rua A, 1' }
     };
     const vista = { precoEsperado: 23.5, produtoEsperado: 201, minimoEsperado: 10 };
     expect(esquemaFechar.safeParse(base).success).toBe(false);
     expect(esquemaFechar.safeParse({ ...base, ...vista }).success).toBe(true);
+    // o contato é opcional: o banco usa o cadastro da oficina
+    const semContato = esquemaFechar.safeParse({ ...vista, alertaId: base.alertaId, respostaId: base.respostaId, quantidade: 10 });
+    expect(semContato.success).toBe(true);
+    expect(semContato.data?.contato).toEqual({ whatsapp: '', cidade: '', uf: '', endereco: '' });
+    expect(esquemaFechar.safeParse({ ...base, ...vista, contato: { uf: 'Rio' } }).success).toBe(false);
     expect(esquemaFechar.safeParse({ ...base, ...vista, precoEsperado: 0 }).success).toBe(false);
     expect(esquemaFechar.safeParse({ ...base, precoEsperado: 23.5, minimoEsperado: 10 }).success).toBe(false);
     expect(esquemaFechar.safeParse({ ...base, ...vista, minimoEsperado: 0 }).success).toBe(false);
+  });
+
+  it('as travas do banco viram frases para a oficina', () => {
+    expect(mensagemDoAlerta({ code: 'P0001', message: 'Alertas de teste esgotados' })).toEqual({ erro: expect.stringMatching(/teste acabaram/), semCota: true });
+    expect(mensagemDoAlerta({ code: 'P0001', message: 'Alertas do mês esgotados' })).toEqual({ erro: expect.stringMatching(/pacote/), semCota: true });
+    expect(mensagemDoAlerta({ code: 'P0001', message: 'Alertas abertos demais' })?.erro).toMatch(/5 alertas esperando/);
+    expect(mensagemDoAlerta({ code: 'P0001', message: 'Alerta repetido' })?.erro).toMatch(/já tem um alerta/);
+    expect(mensagemDoAlerta({ code: 'P0001', message: 'Muitos alertas seguidos' })?.erro).toMatch(/Espere um pouco/);
+    expect(mensagemDoAlerta({ code: '28000', message: 'Entre na sua conta para mandar alertas' })?.erro).toMatch(/Entre na sua conta/);
+    expect(mensagemDoAlerta({ code: '23505', message: 'x' })).toBeNull();
+    expect(mensagemDoAlerta(null)).toBeNull();
+  });
+
+  it('a cota segue o plano da conta (Pro: mês e pacotes; teste e grátis: 30 dias)', () => {
+    const agora = Date.parse('2026-10-17T15:00:00Z');
+    const alerta = (criadoEm: string, extra: Partial<AlertaParaContar> = {}): AlertaParaContar => ({ status: 'fechado', expiraEm: criadoEm, criadoEm, usouCredito: false, propostas: 1, ...extra });
+    const lista = [alerta('2026-10-02T12:00:00Z'), alerta('2026-09-25T12:00:00Z'), alerta('2026-10-05T12:00:00Z', { usouCredito: true })];
+    const pro = cotaDaOficina('pro', lista, 5, agora);
+    expect(pro).toMatchObject({ tipo: 'pro', usados: 1, extras: 4, restantes: 13 });
+    const teste = cotaDaOficina('teste', lista, 5, agora);
+    expect(teste).toMatchObject({ tipo: 'amostra', usados: 3, restantes: 0 });
+    expect(cotaDaOficina('gratis', [], 0, agora)).toMatchObject({ tipo: 'amostra', usados: 0, restantes: 3 });
+    expect(inicioDoMesEmBrasilia(agora)).toBe('2026-10-01T03:00:00.000Z');
   });
 
   it('só os pacotes da lista', () => {

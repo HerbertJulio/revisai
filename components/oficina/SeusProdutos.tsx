@@ -1,8 +1,10 @@
 'use client';
 
 import { Pencil, Plus, Send, Trash2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { sugerirParaBase } from '@/app/acoes';
+import { useConta } from '@/components/conta/ProvedorConta';
 import { Folha } from '@/components/Folha';
 import { IconeServico } from '@/components/icones';
 import { useToast } from '@/components/Toasts';
@@ -32,6 +34,8 @@ export function SeusProdutos() {
   const salvar = useOficina((s) => s.salvarProdutoProprio);
   const remover = useOficina((s) => s.removerProdutoProprio);
   const toast = useToast();
+  const router = useRouter();
+  const { conta } = useConta();
   const [rascunho, setRascunho] = useState<Rascunho | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, iniciar] = useTransition();
@@ -76,6 +80,11 @@ export function SeusProdutos() {
     if (!p.marca.trim()) {
       abrir(p);
       setErro('Para sugerir para a base, escreva a marca do produto.');
+      return;
+    }
+    // a sugestão vai pela oficina da conta (a equipe confere antes de entrar na base)
+    if (!conta) {
+      toast({ texto: 'Entre na sua conta para sugerir produtos para a base.', tom: 'erro', acao: { rotulo: 'Entrar', fazer: () => router.push('/entrar?para=/oficina/ajustes') } });
       return;
     }
     iniciar(async () => {

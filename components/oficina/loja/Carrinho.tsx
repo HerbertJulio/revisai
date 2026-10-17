@@ -1,10 +1,12 @@
 'use client';
 
-// O pedido da oficina: produtos, quantidades, preço de promoção e o envio para a equipe.
+// O pedido da oficina: produtos, quantidades, preço de promoção e o envio para as lojas. Só com a
+// conta: o pedido sai pela oficina escolhida e o banco calcula os preços.
 
 import { Check } from 'lucide-react';
 import { useEffect, useState, useTransition } from 'react';
 import { enviarPedido } from '@/app/acoes';
+import { useConta } from '@/components/conta/ProvedorConta';
 import { Folha } from '@/components/Folha';
 import { Botao, Campo, classeArea, classeEntrada } from '@/components/ui';
 import { precoNaQuantidade } from '@/lib/catalogo';
@@ -14,10 +16,11 @@ import { useHoje } from '@/lib/ganchos';
 import { useOficina } from '@/lib/store';
 import { useCatalogo } from '../catalogo';
 import { FotoProduto } from '../FotoProduto';
-import { nomeComMarca, Passo } from './comum';
+import { BotaoEntrar, nomeComMarca, Passo } from './comum';
 
 export function Carrinho({ aberto, aoFechar, aoAcompanhar }: { aberto: boolean; aoFechar: () => void; aoAcompanhar?: (codigo: string) => void }) {
-  const { catalogo, produto, carregando } = useCatalogo();
+  const { catalogo, produto, carregando, comPrecos } = useCatalogo();
+  const { conta, oficina: daConta } = useConta();
   const hoje = useHoje();
   const carrinho = useOficina((s) => s.carrinho);
   const definir = useOficina((s) => s.definirQuantidade);
@@ -25,11 +28,12 @@ export function Carrinho({ aberto, aoFechar, aoAcompanhar }: { aberto: boolean; 
   const oficina = useOficina((s) => s.oficina);
   const salvarOficina = useOficina((s) => s.salvarOficina);
   const registrarPedido = useOficina((s) => s.registrarPedido);
-  const garantirAparelhoId = useOficina((s) => s.garantirAparelhoId);
   const [obs, setObs] = useState('');
-  const [erro, setErro] = useState<string | null>(null);
+  const [erro, setErro] = useState<{ texto: string; entrar?: boolean } | null>(null);
   const [enviado, setEnviado] = useState<string | null>(null);
   const [enviando, iniciar] = useTransition();
+  // o WhatsApp do cadastro da oficina vale mais; o do formulário entra quando a conta não tem
+  const whatsappDaConta = daConta?.whatsapp ? normalizarTelefone(daConta.whatsapp) : null;
 
   const linhas = carrinho
     .map((c) => {
@@ -45,42 +49,45 @@ export function Carrinho({ aberto, aoFechar, aoAcompanhar }: { aberto: boolean; 
   useEffect(() => {
     if (!sairam.length) return;
     for (const c of sairam) definir(c.produtoId, 0);
-    setErro(sairam.length === 1 ? 'Um produto saiu da loja e foi tirado do pedido.' : `${sairam.length} produtos saíram da loja e foram tirados do pedido.`);
+    setErro({ texto: sairam.length === 1 ? 'Um produto saiu da loja e foi tirado do pedido.' : `${sairam.length} produtos saíram da loja e foram tirados do pedido.` });
   }, [sairam.length]);
 
   function enviar() {
     setErro(null);
-    if (!oficina.nome.trim()) return setErro('Escreva o nome da oficina.');
-    if (!normalizarTelefone(oficina.whatsapp)) return setErro('Escreva o WhatsApp da oficina, com DDD. É por ele que o fornecedor fala com você.');
+    if (!conta) return setErro({ texto: 'Entre na sua conta para enviar o pedido.', entrar: true });
+    if (!whatsappDaConta && !normalizarTelefone(oficina.whatsapp)) return setErro({ texto: 'Escreva o WhatsApp da oficina, com DDD. É por ele que a loja fala com você.' });
     iniciar(async () => {
       let r: Awaited<ReturnType<typeof enviarPedido>>;
       try {
         r = await enviarPedido({
-          oficina: { nome: oficina.nome, whatsapp: oficina.whatsapp, cidade: oficina.cidade, uf: oficina.uf },
           itens: linhas.map((l) => ({ produtoId: l.p.id, quantidade: l.quantidade })),
           observacao: obs,
-          aparelhoId: garantirAparelhoId(),
-          endereco: oficina.endereco
+          contato: { whatsapp: oficina.whatsapp, cidade: oficina.cidade, uf: oficina.uf, endereco: oficina.endereco }
         });
       } catch {
-        setErro('Não deu para falar com o servidor. Confira a internet e tente de novo. Se o app ficou aberto muito tempo, recarregue a página.');
+        setErro({ texto: 'Não deu para falar com o servidor. Confira a internet e tente de novo. Se o app ficou aberto muito tempo, recarregue a página.' });
         return;
       }
-      if (!r.ok) return setErro(r.erro);
+      if (!r.ok) return setErro({ texto: r.erro, entrar: !!r.semConta });
+      // o pedido fica guardado com os preços que o banco calculou
+      const doCatalogo = new Map(linhas.map((l) => [l.p.id, l.p]));
       registrarPedido({
         codigo: r.codigo,
         quando: new Date().toISOString(),
-        itens: linhas.map((l) => ({
-          produtoId: l.p.id,
-          nome: l.p.nome,
-          quantidade: l.quantidade,
-          precoUnitario: l.preco,
-          fornecedorId: l.p.fornecedorId,
-          fornecedor: catalogo.fornecedores.find((f) => f.id === l.p.fornecedorId)?.nome,
-          chave: chaveDoProduto(l.p),
-          precoComparavel: precoComparavel(l.p, l.preco)
-        })),
-        total: r.total ?? Math.round(total * 100) / 100
+        itens: r.itens.map((i) => {
+          const p = doCatalogo.get(i.produtoId);
+          return {
+            produtoId: i.produtoId,
+            nome: i.nome || p?.nome || 'Produto',
+            quantidade: i.quantidade,
+            precoUnitario: i.precoUnitario,
+            fornecedorId: i.fornecedorId,
+            fornecedor: i.fornecedor || catalogo.fornecedores.find((f) => f.id === i.fornecedorId)?.nome,
+            ...(p ? { chave: chaveDoProduto(p), precoComparavel: precoComparavel(p, i.precoUnitario) } : {}),
+            ...(i.combinado ? { combinado: true } : {})
+          };
+        }),
+        total: r.total
       });
       setObs('');
       setEnviado(r.codigo);
@@ -127,7 +134,7 @@ export function Carrinho({ aberto, aoFechar, aoAcompanhar }: { aberto: boolean; 
             Pedido <strong className="largo num tracking-wider">{enviado}</strong> recebido.
           </p>
           <p className="text-tinta-2">
-            A loja chama você no WhatsApp {formatarTelefone(oficina.whatsapp)} para combinar a entrega. Dá para acompanhar o pedido e pagar por Pix aqui na Loja, em Pedidos. Os preços seguem as promoções de hoje.
+            A loja chama você no WhatsApp {formatarTelefone(whatsappDaConta ?? oficina.whatsapp)} para combinar a entrega. Dá para acompanhar o pedido e pagar por Pix aqui na Loja, em Pedidos. Os preços seguem as promoções de hoje.
           </p>
         </div>
       </Folha>
@@ -142,19 +149,24 @@ export function Carrinho({ aberto, aoFechar, aoAcompanhar }: { aberto: boolean; 
       descricao={linhas.length ? `${linhas.length} ${linhas.length === 1 ? 'produto' : 'produtos'}` : undefined}
       rodape={
         linhas.length ? (
-          <div className="flex w-full flex-wrap items-center justify-between gap-3">
-            <p>
-              Total <strong className="largo num text-[19px]">{formatarMoeda(total)}</strong>
-            </p>
-            <Botao variante="primario" tamanho="grande" onClick={enviar} disabled={enviando}>
-              {enviando ? 'Enviando…' : 'Enviar pedido'}
-            </Botao>
-          </div>
+          conta ? (
+            <div className="flex w-full flex-wrap items-center justify-between gap-3">
+              <p>{comPrecos ? <>Total <strong className="largo num text-[19px]">{formatarMoeda(total)}</strong></> : null}</p>
+              <Botao variante="primario" tamanho="grande" onClick={enviar} disabled={enviando}>
+                {enviando ? 'Enviando…' : 'Enviar pedido'}
+              </Botao>
+            </div>
+          ) : (
+            <div className="flex w-full flex-wrap items-center justify-between gap-3">
+              <p className="max-w-[36ch] text-[14px] text-tinta-2">Para ver os preços e enviar o pedido, entre na sua conta.</p>
+              <BotaoEntrar />
+            </div>
+          )
         ) : undefined
       }
     >
       {linhas.length === 0 ? (
-        <p className="text-tinta-2">Nada no pedido ainda. Toque em Pôr nos produtos ou nas sugestões dos avisos.</p>
+        <p className="text-tinta-2">{conta ? 'Nada no pedido ainda. Toque em Pôr nos produtos ou nas sugestões dos avisos.' : 'Nada no pedido. Entre na sua conta para comprar das lojas.'}</p>
       ) : (
         <div className="flex flex-col gap-5">
           <ul className="divide-y divide-linha">
@@ -163,38 +175,46 @@ export function Carrinho({ aberto, aoFechar, aoAcompanhar }: { aberto: boolean; 
                 <FotoProduto produto={l.p} tamanhos="48px" className="h-12 w-12 shrink-0 rounded-lg ring-1 ring-linha" />
                 <div className="min-w-0 flex-1">
                   <p className="leading-snug font-semibold">{nomeComMarca(l.p)}</p>
-                  <p className="text-[13.5px] text-tinta-3">
-                    {formatarMoeda(l.preco)} cada
-                    {l.promocao ? `, promoção ${l.promocao.titulo.toLowerCase()}` : ''}
-                  </p>
+                  {comPrecos ? (
+                    <p className="text-[13.5px] text-tinta-3">
+                      {formatarMoeda(l.preco)} cada
+                      {l.promocao ? `, promoção ${l.promocao.titulo.toLowerCase()}` : ''}
+                    </p>
+                  ) : null}
                 </div>
                 <Passo valor={l.quantidade} aoMudar={(n) => definir(l.p.id, n)} rotulo={l.p.nome} />
-                <span className="num w-24 text-right font-semibold">{formatarMoeda(l.preco * l.quantidade)}</span>
+                {comPrecos ? <span className="num w-24 text-right font-semibold">{formatarMoeda(l.preco * l.quantidade)}</span> : null}
                 <button type="button" className="text-[13px] font-semibold text-tinta-3 hover:text-atraso" onClick={() => definir(l.p.id, 0)}>
                   Tirar
                 </button>
               </li>
             ))}
           </ul>
-          <div className="grid gap-3 rounded-xl bg-papel-2 p-4 sm:grid-cols-2">
-            <p className="text-[14px] font-semibold sm:col-span-2">Para o fornecedor falar com você</p>
-            <Campo rotulo="Oficina" htmlFor="ped-nome">
-              <input id="ped-nome" className={classeEntrada} value={oficina.nome} onChange={(e) => salvarOficina({ nome: e.target.value })} />
-            </Campo>
-            <Campo rotulo="WhatsApp" htmlFor="ped-whats">
-              <input id="ped-whats" className={classeEntrada} value={oficina.whatsapp} onChange={(e) => salvarOficina({ whatsapp: e.target.value })} inputMode="tel" />
-            </Campo>
-            <Campo rotulo="Endereço para entrega" htmlFor="ped-end" className="sm:col-span-2">
-              <input id="ped-end" className={classeEntrada} value={oficina.endereco} onChange={(e) => salvarOficina({ endereco: e.target.value })} maxLength={160} autoComplete="street-address" placeholder="Rua, número, bairro" />
-            </Campo>
-            <Campo rotulo="Observação" htmlFor="ped-obs" className="sm:col-span-2" dica="Ex.: entregar até sexta, pagar no PIX.">
-              <textarea id="ped-obs" rows={2} className={classeArea} value={obs} onChange={(e) => setObs(e.target.value)} maxLength={500} />
-            </Campo>
-          </div>
+          {conta ? (
+            <div className="grid gap-3 rounded-xl bg-papel-2 p-4 sm:grid-cols-2">
+              <p className="text-[14px] font-semibold sm:col-span-2">Para a loja falar com você</p>
+              <p className="-mt-2 text-[13px] text-tinta-3 sm:col-span-2">
+                O pedido sai em nome de <strong className="text-tinta-2">{daConta?.nome ?? oficina.nome}</strong>
+                {whatsappDaConta ? `, com o WhatsApp ${formatarTelefone(whatsappDaConta)} do cadastro da oficina` : ''}.
+              </p>
+              {whatsappDaConta ? null : (
+                <Campo rotulo="WhatsApp" htmlFor="ped-whats">
+                  <input id="ped-whats" className={classeEntrada} value={oficina.whatsapp} onChange={(e) => salvarOficina({ whatsapp: e.target.value })} inputMode="tel" />
+                </Campo>
+              )}
+              <Campo rotulo="Endereço para entrega" htmlFor="ped-end" className="sm:col-span-2">
+                <input id="ped-end" className={classeEntrada} value={oficina.endereco} onChange={(e) => salvarOficina({ endereco: e.target.value })} maxLength={160} autoComplete="street-address" placeholder="Rua, número, bairro" />
+              </Campo>
+              <Campo rotulo="Observação" htmlFor="ped-obs" className="sm:col-span-2" dica="Ex.: entregar até sexta, pagar no PIX.">
+                <textarea id="ped-obs" rows={2} className={classeArea} value={obs} onChange={(e) => setObs(e.target.value)} maxLength={500} />
+              </Campo>
+            </div>
+          ) : null}
           {erro ? (
-            <p className="rounded-lg bg-atraso-claro px-3 py-2 text-[14px] text-atraso" role="alert">
-              {erro}
-            </p>
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-atraso-claro px-3 py-2 text-[14px] text-atraso" role="alert">
+              <p>{erro.texto}</p>
+              {erro.entrar ? <BotaoEntrar rotulo="Entrar" pequeno /> : null}
+            </div>
           ) : null}
           <button type="button" className="self-start text-[14px] font-semibold text-tinta-3 hover:text-atraso" onClick={limpar}>
             Esvaziar pedido
