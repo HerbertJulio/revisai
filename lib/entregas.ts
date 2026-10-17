@@ -19,7 +19,7 @@ const numeroOuNulo = z.union([z.number(), z.string(), z.null()]).transform((v) =
 const textoOuNulo = z.string().nullish().transform((v) => v ?? null);
 
 const COLUNAS_PARTE_DA_OFICINA =
-  'id, codigo, fornecedor_id, status, subtotal, itens, pagamento, pagamento_em, entrega_previsao, entrega_saiu_em, entrega_lat, entrega_lng, entrega_precisao, entrega_posicao_em, entregue_em, cancelado_motivo, cancelado_por, criado_em, atualizado_em';
+  'id, codigo, fornecedor_id, status, subtotal, cashback, itens, pagamento, pagamento_em, entrega_previsao, entrega_saiu_em, entrega_lat, entrega_lng, entrega_precisao, entrega_posicao_em, entregue_em, cancelado_motivo, cancelado_por, criado_em, atualizado_em';
 
 const esquemaParteDaOficina = z.object({
   id: numero,
@@ -27,6 +27,7 @@ const esquemaParteDaOficina = z.object({
   fornecedor_id: numero,
   status: z.enum(['novo', 'em_contato', 'confirmado', 'saiu_entrega', 'entregue', 'cancelado']),
   subtotal: numero,
+  cashback: numeroOuNulo.optional().transform((v) => v ?? 0),
   itens: z.unknown(),
   pagamento: z.enum(['pendente', 'informado', 'confirmado']),
   pagamento_em: textoOuNulo,
@@ -53,8 +54,11 @@ const esquemaHistorico = z.object({
   motivo: textoOuNulo
 });
 
-/** Quantos dias de pedidos a oficina acompanha (os mais velhos já terminaram). */
-const DIAS_ACOMPANHADOS = 45;
+/**
+ * Quantos dias de pedidos a oficina acompanha: o bastante para pedir garantia ou devolução até 90
+ * dias depois da entrega (os mais velhos já terminaram).
+ */
+export const DIAS_ACOMPANHADOS = 120;
 
 function lerLinhas<T>(esquema: z.ZodType<T>, dados: unknown): T[] {
   return (Array.isArray(dados) ? dados : []).flatMap((x) => {
@@ -64,7 +68,7 @@ function lerLinhas<T>(esquema: z.ZodType<T>, dados: unknown): T[] {
 }
 
 /**
- * Os pedidos da oficina dos últimos 45 dias, com a situação de cada loja e o histórico. O banco só
+ * Os pedidos da oficina dos últimos 120 dias, com a situação de cada loja e o histórico. O banco só
  * devolve as partes da oficina de quem entrou; o filtro por oficina_id escolhe entre as oficinas
  * da conta.
  */
@@ -104,6 +108,7 @@ export async function acompanharPedidos(sb: SupabaseClient, oficinaId: string): 
 function erroDoPix(e: { code?: string; message?: string }): string {
   if (e.code === 'RV021') return 'O Pix aparece quando a loja confirmar o pedido.';
   if (e.code === 'RV022') return 'Esta loja ainda não cadastrou a chave Pix. Combine o pagamento com ela.';
+  if (e.code === 'RV023') return 'O seu cashback cobriu esta compra: não tem Pix para pagar.';
   if (e.code === '42501') return /Pagamento só depois/.test(e.message ?? '') ? 'O Pix aparece quando a loja confirmar o pedido.' : 'Pedido não encontrado nesta oficina.';
   if (e.code === '28000') return 'Sua sessão terminou. Entre de novo.';
   return ERRO;
@@ -126,7 +131,7 @@ const esquemaPixDaParte = z.object({
 export async function pixDaParte(sb: SupabaseClient, parteId: number): Promise<Gravacao<{ codigo: string; valor: number; recebedor: string; trocadaEm: string | null }>> {
   const { data, error } = await sb.rpc('pix_da_parte', { p_parte: parteId });
   if (error) {
-    if (!/^(RV02[12]|42501|28000)$/.test(error.code ?? '')) console.error('[entregas] pix da parte', error);
+    if (!/^(RV02[123]|42501|28000)$/.test(error.code ?? '')) console.error('[entregas] pix da parte', error);
     return { ok: false, erro: erroDoPix(error) };
   }
   const r = esquemaPixDaParte.safeParse(data);

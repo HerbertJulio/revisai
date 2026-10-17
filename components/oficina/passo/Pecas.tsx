@@ -3,7 +3,7 @@
 // A escolha da peça de um serviço, como numa loja: cartões com foto, o que tem no estoque,
 // o indicado para o carro e o usado da última vez. Depois de escolher, a quantidade e o preço.
 
-import { Check, ChevronDown, Minus, PackageX, Plus, Search, ShoppingCart, Star, TriangleAlert } from 'lucide-react';
+import { CarFront, Check, ChevronDown, Minus, PackageX, Plus, Search, ShoppingCart, Star, TriangleAlert } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useToast } from '@/components/Toasts';
 import { classeEntrada } from '@/components/ui';
@@ -48,7 +48,7 @@ export function EscolhaDePeca({
   aoEscolher: (e: EscolhaPeca | null) => void;
   aoMudarLinha: (m: Partial<LinhaDocumento>) => void;
 }) {
-  const { principais, outras, exigido } = opcoes;
+  const { principais, outras, exigido, carro } = opcoes;
   const [verOutras, setVerOutras] = useState(false);
   const [busca, setBusca] = useState('');
   const [outroTexto, setOutroTexto] = useState(linha && chaveDaLinha(linha) === 'outro' ? linha.descricao : '');
@@ -87,7 +87,7 @@ export function EscolhaDePeca({
         <ul className="grid grid-cols-2 gap-2.5 sm:grid-cols-3" aria-label="Peças">
           {principais.map((o) => (
             <li key={o.chave}>
-              <CartaoPeca opcao={o} marcada={o.chave === escolhida} aoEscolher={() => escolher(o)} tipo={tipo} />
+              <CartaoPeca opcao={o} marcada={o.chave === escolhida} aoEscolher={() => escolher(o)} tipo={tipo} carro={carro} />
             </li>
           ))}
         </ul>
@@ -118,7 +118,10 @@ export function EscolhaDePeca({
                       <FotoProduto produto={{ imagemUrl: o.imagemUrl, categoria: o.categoria, nome: o.titulo }} tamanhos="44px" className="h-11 w-11 shrink-0 rounded-lg ring-1 ring-linha" />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate font-semibold">{o.titulo}</span>
-                        <span className="block truncate text-[13px] text-tinta-3">{[o.detalhe, o.alerta].filter(Boolean).join(', ')}</span>
+                        <span className="block truncate text-[13px] text-tinta-3">
+                          {o.serve === 'sim' && carro ? <span className="font-semibold text-ok">Serve no {carro}. </span> : null}
+                          {[o.detalhe, o.alerta].filter(Boolean).join(', ')}
+                        </span>
                       </span>
                       {o.precoLoja ? <span className="num text-[13.5px] text-tinta-2">{formatarMoeda(o.precoLoja)}</span> : null}
                       {o.chave === escolhida ? <Check size={18} className="text-ok" aria-hidden="true" /> : null}
@@ -161,7 +164,7 @@ export function EscolhaDePeca({
   );
 }
 
-function CartaoPeca({ opcao: o, marcada, aoEscolher, tipo }: { opcao: OpcaoPeca; marcada: boolean; aoEscolher: () => void; tipo: 'ordem' | 'orcamento' }) {
+function CartaoPeca({ opcao: o, marcada, aoEscolher, tipo, carro }: { opcao: OpcaoPeca; marcada: boolean; aoEscolher: () => void; tipo: 'ordem' | 'orcamento'; carro: string | null }) {
   return (
     <button
       type="button"
@@ -186,6 +189,11 @@ function CartaoPeca({ opcao: o, marcada, aoEscolher, tipo }: { opcao: OpcaoPeca;
       <span className="flex flex-1 flex-col gap-1 px-3 pt-2 pb-3">
         <span className="line-clamp-2 text-[14.5px] leading-snug font-bold">{o.titulo}</span>
         {o.detalhe ? <span className="line-clamp-1 text-[12.5px] text-tinta-3">{o.detalhe}</span> : null}
+        {o.serve === 'sim' && carro ? (
+          <span className="inline-flex items-center gap-1 self-start rounded-full bg-ok-claro px-2 py-0.5 text-[12px] font-semibold text-ok">
+            <CarFront size={12} aria-hidden="true" className="shrink-0" /> Serve no {carro}
+          </span>
+        ) : null}
         <span className="mt-auto flex flex-wrap gap-1 pt-1">
           {o.estoque ? <SeloEstoque e={o.estoque} /> : o.origem === 'loja' ? <span className="rounded-full bg-caneta-claro px-2 py-0.5 text-[12px] font-semibold text-caneta">Na loja</span> : null}
           {tipo === 'orcamento' && o.preco != null ? (

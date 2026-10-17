@@ -1,7 +1,10 @@
 import 'server-only';
 import type { Catalogo, Fornecedor, Patrocinio, Produto, Promocao } from './catalogo';
 import { CATALOGO_EXEMPLO } from './catalogo-demo';
+import { anunciosComOrcamento } from './loja/anuncios';
+import { lerAplicacoes } from './loja/dados';
 import { clientePublico } from './supabase-servidor';
+import { EXTRAS_VAZIOS, type Anuncio, type ExtrasDaVitrine, type InfoDaLoja, type InfoDoProduto } from './vitrine';
 
 interface LinhaProduto {
   id: number;
@@ -32,10 +35,25 @@ interface LinhaFornecedor {
 }
 
 interface LinhaImpulso {
+  id: number;
   produto_id: number;
   uf: string | null;
   inicio: string;
   fim: string;
+  cpc: number | string | null;
+}
+
+interface LinhaInfoDaLoja {
+  id: number;
+  prazo_entrega_horas: number | null;
+  pedido_minimo: number | string | null;
+  cashback_percentual: number | string | null;
+}
+
+interface LinhaInfoDoProduto {
+  id: number;
+  estoque: number | string | null;
+  aplicacoes: unknown;
 }
 
 interface LinhaPromocao {
@@ -49,21 +67,25 @@ interface LinhaPromocao {
 }
 
 const VALIDADE_MS = 5 * 60_000;
-let guardado: { em: number; catalogo: Catalogo } | null = null;
+let guardado: { em: number; catalogo: Catalogo; extras: ExtrasDaVitrine } | null = null;
+
+const numeroOuNulo = (v: number | string | null | undefined): number | null => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
 
 /**
  * O catálogo do banco (só o que é público: lojas ativas e os produtos delas), com os preços; sem
  * configuração ou com o banco fora do ar, o de exemplo. Fica 5 minutos na memória do servidor,
  * para o banco não ser consultado a cada visita. Quem não entrou recebe o catálogo sem preços
  * (app/api/catalogo).
+ * Junto, os extras da vitrine: prazo de entrega, pedido mínimo e cashback das lojas, estoque e
+ * aplicações dos produtos, e os anúncios no ar (os por clique só enquanto têm teto no dia).
  */
-export async function buscarCatalogo(): Promise<{ catalogo: Catalogo; erro?: string }> {
-  if (guardado && Date.now() - guardado.em < VALIDADE_MS) return { catalogo: guardado.catalogo };
+export async function buscarCatalogo(): Promise<{ catalogo: Catalogo; extras: ExtrasDaVitrine; erro?: string }> {
+  if (guardado && Date.now() - guardado.em < VALIDADE_MS) return { catalogo: guardado.catalogo, extras: guardado.extras };
   const sb = clientePublico();
-  if (!sb) return { catalogo: CATALOGO_EXEMPLO, erro: 'Supabase não configurado' };
+  if (!sb) return { catalogo: CATALOGO_EXEMPLO, extras: EXTRAS_VAZIOS, erro: 'Supabase não configurado' };
   try {
     const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
-    const [f, p, pr, im] = await Promise.all([
+    const [f, p, pr, im, fx, px] = await Promise.all([
       sb.from('fornecedores').select('id, nome, cidade, uf, demonstracao, destaque, destaque_ate, descricao').order('id'),
       sb
         .from('produtos')
@@ -71,12 +93,17 @@ export async function buscarCatalogo(): Promise<{ catalogo: Catalogo; erro?: str
         .order('categoria')
         .order('preco'),
       sb.from('promocoes').select('id, produto_id, titulo, preco_promocional, quantidade_minima, inicio, fim'),
-      sb.from('impulsos').select('produto_id, uf, inicio, fim').eq('status', 'ativo').gte('fim', hoje)
+      sb.from('impulsos').select('id, produto_id, uf, inicio, fim, cpc').eq('status', 'ativo').gte('fim', hoje),
+      // os extras vêm à parte: sem as colunas (banco antigo), a loja segue sem eles
+      sb.from('fornecedores').select('id, prazo_entrega_horas, pedido_minimo, cashback_percentual'),
+      sb.from('produtos').select('id, estoque, aplicacoes')
     ]);
     const erro = f.error ?? p.error ?? pr.error;
     if (erro) throw erro;
     // sem a tabela de impulsos (banco antigo), a loja segue sem patrocinados
     if (im.error) console.error('[catalogo] impulsos', im.error);
+    if (fx.error) console.error('[catalogo] extras das lojas', fx.error);
+    if (px.error) console.error('[catalogo] extras dos produtos', px.error);
     const fornecedores: Fornecedor[] = ((f.data ?? []) as LinhaFornecedor[]).map((x) => ({
       id: Number(x.id),
       nome: x.nome,
@@ -104,9 +131,30 @@ export async function buscarCatalogo(): Promise<{ catalogo: Catalogo; erro?: str
       referenciaId: x.referencia_id == null ? null : Number(x.referencia_id)
     }));
     const comProduto = new Set(produtos.map((x) => x.id));
-    const patrocinios: Patrocinio[] = ((im.data ?? []) as LinhaImpulso[])
+    const noAr: Anuncio[] = ((im.data ?? []) as LinhaImpulso[])
       .filter((x) => comProduto.has(Number(x.produto_id)))
-      .map((x) => ({ produtoId: Number(x.produto_id), uf: x.uf, inicio: x.inicio, fim: x.fim }));
+      .map((x) => ({ impulsoId: Number(x.id), produtoId: Number(x.produto_id), uf: x.uf, inicio: x.inicio, fim: x.fim, porClique: x.cpc != null }));
+    // o anúncio por clique que gastou o teto do dia sai da vitrine até amanhã (o por período fica)
+    const comTeto = await anunciosComOrcamento(
+      sb,
+      noAr.filter((a) => a.porClique).map((a) => a.impulsoId)
+    );
+    const anuncios = noAr.filter((a) => !a.porClique || comTeto.has(a.impulsoId));
+    const patrocinios: Patrocinio[] = anuncios.map((a) => ({ produtoId: a.produtoId, uf: a.uf, inicio: a.inicio, fim: a.fim }));
+    const lojas: Record<string, InfoDaLoja> = {};
+    for (const x of (fx.data ?? []) as LinhaInfoDaLoja[]) {
+      if (!ativos.has(Number(x.id))) continue;
+      lojas[String(x.id)] = { prazoEntregaHoras: numeroOuNulo(x.prazo_entrega_horas), pedidoMinimo: numeroOuNulo(x.pedido_minimo), cashbackPercentual: numeroOuNulo(x.cashback_percentual) ?? 0 };
+    }
+    const infoProdutos: Record<string, InfoDoProduto> = {};
+    for (const x of (px.data ?? []) as LinhaInfoDoProduto[]) {
+      if (!comProduto.has(Number(x.id))) continue;
+      const estoque = numeroOuNulo(x.estoque);
+      const aplicacoes = lerAplicacoes(x.aplicacoes);
+      // só vai o que a loja informou (o resto é "sem informação")
+      if (estoque != null || aplicacoes.length) infoProdutos[String(x.id)] = { estoque, aplicacoes };
+    }
+    const extras: ExtrasDaVitrine = { lojas, produtos: infoProdutos, anuncios };
     const promocoes: Promocao[] = ((pr.data ?? []) as LinhaPromocao[]).map((x) => ({
       id: Number(x.id),
       produtoId: Number(x.produto_id),
@@ -117,10 +165,10 @@ export async function buscarCatalogo(): Promise<{ catalogo: Catalogo; erro?: str
       fim: x.fim
     }));
     const catalogo: Catalogo = { origem: 'banco', atualizadoEm: new Date().toISOString(), fornecedores, produtos, promocoes, patrocinios };
-    guardado = { em: Date.now(), catalogo };
-    return { catalogo };
+    guardado = { em: Date.now(), catalogo, extras };
+    return { catalogo, extras };
   } catch (e) {
     console.error('[catalogo] falha ao ler o Supabase', e);
-    return { catalogo: CATALOGO_EXEMPLO, erro: 'Banco indisponível' };
+    return { catalogo: CATALOGO_EXEMPLO, extras: EXTRAS_VAZIOS, erro: 'Banco indisponível' };
   }
 }

@@ -260,6 +260,12 @@ export function mensagemDoPedido(e: { code?: string; message?: string } | null |
       return 'A quantidade não bate com a proposta. Confira e tente de novo.';
     case 'RV030':
       return m ? `${m.replace(/\.$/, '')}. Ponha mais itens dessa loja ou tire os dela do pedido.` : 'O pedido não chega ao mínimo de uma das lojas.';
+    case 'RV031':
+      return m ? `${m.replace(/\.$/, '')}. Confira o cashback no pedido e mande de novo.` : 'O seu saldo de cashback não cobre o valor escolhido. Confira e mande de novo.';
+    case 'RV032':
+      return m ? `${m.replace(/\.$/, '')}. Use no máximo o valor da compra.` : 'O cashback passa do valor da compra nessa loja.';
+    case 'RV033':
+      return 'O cashback do pedido não confere com as lojas do pedido. Confira o pedido e mande de novo.';
     case '22023':
       return /proposta|alerta/i.test(m) ? 'O produto da proposta saiu da loja.' : 'Algum produto do pedido saiu da loja. Atualize a página e confira o carrinho.';
     case 'P0001':

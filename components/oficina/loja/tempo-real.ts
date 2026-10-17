@@ -1,6 +1,6 @@
 // O tempo real da loja da oficina: quando uma loja confirma, sai para entrega, responde um alerta
-// ou o entregador anda, o banco avisa pelo canal do Supabase (só as linhas que a pessoa pode ver,
-// filtradas pela oficina). Cada aviso pede uma busca nova; avisos em sequência viram uma busca só.
+// ou um pedido de garantia ou devolução, ou o entregador anda, o banco avisa pelo canal do Supabase
+// (só as linhas que a pessoa pode ver, filtradas pela oficina). Cada aviso pede uma busca nova; avisos em sequência viram uma busca só.
 // Sem servidor de tempo real, a reserva de 2 minutos do andamento segura.
 
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
@@ -8,7 +8,7 @@ import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 export type EstadoDoCanal = 'conectando' | 'ligado' | 'caiu';
 
 /** As tabelas que avisam a oficina (todas têm a coluna oficina_id). */
-export const TABELAS_DA_OFICINA = ['pedidos_fornecedores', 'alertas_respostas', 'alertas_preco'] as const;
+export const TABELAS_DA_OFICINA = ['pedidos_fornecedores', 'alertas_respostas', 'alertas_preco', 'devolucoes'] as const;
 export type TabelaDaOficina = (typeof TABELAS_DA_OFICINA)[number];
 
 type ClienteDoCanal = Pick<SupabaseClient, 'channel' | 'removeChannel'>;

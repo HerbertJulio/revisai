@@ -567,7 +567,12 @@ export function EquipeDaLoja({
 
 // ---------------------------------------------------------------- cashback
 
-const TIPOS_CASHBACK = { credito: { nome: 'Crédito', tom: 'ok' }, uso: { nome: 'Usado', tom: 'caneta' }, estorno: { nome: 'Estorno', tom: 'atraso' } } as const;
+const TIPOS_CASHBACK = {
+  credito: { nome: 'Crédito', tom: 'ok' },
+  uso: { nome: 'Usado', tom: 'caneta' },
+  estorno: { nome: 'Estorno', tom: 'atraso' },
+  uso_desfeito: { nome: 'Uso devolvido (compra cancelada)', tom: 'ok' }
+} as const;
 
 export function CashbackDaLoja({
   percentual,
