@@ -1,6 +1,6 @@
 'use client';
 
-import { Bell, ClipboardList, Mic, Package, Plus, Settings, Store, Users } from 'lucide-react';
+import { Bell, ClipboardList, LayoutGrid, Mic, Package, Plus, Settings, Store, Users } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
@@ -30,6 +30,7 @@ const ITENS = [
   { href: '/oficina/loja', rotulo: 'Loja', lateral: 'Loja', Icone: Store },
   { href: '/oficina/clientes', rotulo: 'Clientes', lateral: 'Clientes', Icone: Users, soNaLateral: true },
   { href: '/oficina/ordem', rotulo: 'Ordem por voz', lateral: 'Ordem por voz', Icone: Mic, soNaLateral: true },
+  { href: '/oficina/mais', rotulo: 'Mais', lateral: 'Financeiro, agenda e mais', Icone: LayoutGrid, soNaLateral: true },
   { href: '/oficina/ajustes', rotulo: 'Ajustes', lateral: 'Ajustes', Icone: Settings, soNaLateral: true }
 ] as const;
 
@@ -191,6 +192,7 @@ function Moldura({ children }: { children: ReactNode }) {
   const paraAvisar = resumo.avisar;
   // propostas para escolher e entregas a caminho chamam mais atenção que o carrinho
   const { pendencias } = useAndamento();
+  const { oficina: daConta } = useConta();
 
   useNotificacaoDoDia(paraAvisar, resumo.atrasados, resumo.agendadosHoje, hoje);
   useEnvioDeDemanda();
@@ -267,6 +269,9 @@ function Moldura({ children }: { children: ReactNode }) {
           <Link href="/oficina/clientes" aria-label="Clientes" aria-current={caminho.startsWith('/oficina/clientes') ? 'page' : undefined} className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-tinta-2 hover:bg-papel-2 aria-[current=page]:bg-tinta aria-[current=page]:text-papel">
             <Users size={19} aria-hidden="true" />
           </Link>
+          <Link href="/oficina/mais" aria-label="Financeiro, agenda e mais" aria-current={caminho.startsWith('/oficina/mais') ? 'page' : undefined} className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-tinta-2 hover:bg-papel-2 aria-[current=page]:bg-tinta aria-[current=page]:text-papel">
+            <LayoutGrid size={19} aria-hidden="true" />
+          </Link>
           <Link href="/oficina/ajustes" aria-label="Ajustes" aria-current={caminho.startsWith('/oficina/ajustes') ? 'page' : undefined} className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-tinta-2 hover:bg-papel-2 aria-[current=page]:bg-tinta aria-[current=page]:text-papel">
             <Settings size={19} aria-hidden="true" />
           </Link>
@@ -285,6 +290,14 @@ function Moldura({ children }: { children: ReactNode }) {
         {armazenamentoComProblema() ? (
           <p className="mb-5 rounded-xl bg-atraso-claro px-4 py-3 text-[14px] text-atraso" role="alert">
             O navegador não deixou abrir os dados salvos neste aparelho. Feche o Revisaí e abra de novo antes de cadastrar algo. Se continuar, restaure um backup em Ajustes.
+          </p>
+        ) : null}
+        {daConta && !daConta.ativa ? (
+          <p className="mb-5 rounded-xl bg-atraso-claro px-4 py-3 text-[14px] text-atraso" role="alert">
+            A exclusão desta oficina foi pedida, e nada do que você mudar agora vai para a conta.{' '}
+            <Link href="/oficina/ajustes#apagar-oficina" className="font-semibold underline">
+              Ver ou cancelar a exclusão
+            </Link>
           </p>
         ) : null}
         {children}

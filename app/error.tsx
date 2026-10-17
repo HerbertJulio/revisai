@@ -1,10 +1,13 @@
 'use client';
 
 import Link from 'next/link';
+import { useEffect } from 'react';
+import { relatarErro } from '@/components/avisos/RelatorDeErros';
 import { Logo } from '@/components/marca';
 import { Botao, classeBotao } from '@/components/ui';
 
-export default function Erro({ reset }: { error: Error & { digest?: string }; reset: () => void }) {
+export default function Erro({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+  useEffect(() => relatarErro(error, 'tela'), [error]);
   return (
     <main className="mx-auto grid min-h-dvh max-w-2xl content-center gap-6 px-4 py-16 sm:px-6">
       <Logo />

@@ -4,6 +4,7 @@ import { BellRing, Download, RotateCcw, Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { ApagarCopiaDoAparelho, ApagarOficina, EquipeDaOficinaSecao, ProvedorDaEquipe, SuaConta } from '@/app/oficina/ajustes/ContaEEquipe';
 import { useConta } from '@/components/conta/ProvedorConta';
+import { AtivarAvisos } from '@/components/avisos/AtivarAvisos';
 import { Folha } from '@/components/Folha';
 import { IconeServico } from '@/components/icones';
 import { useToast } from '@/components/Toasts';
@@ -29,6 +30,7 @@ const PARTES = [
   { id: 'equipe', nome: 'Equipe', soComConta: true },
   { id: 'agente', nome: 'Agente no WhatsApp' },
   { id: 'avisos', nome: 'Avisos' },
+  { id: 'notificacoes', nome: 'Notificações', soComConta: true },
   { id: 'mensagem', nome: 'Mensagem' },
   { id: 'prazos', nome: 'Prazos' },
   { id: 'produtos', nome: 'Seus produtos' },
@@ -72,6 +74,7 @@ export function Ajustes() {
         <EquipeDaOficinaSecao />
         <AgenteWhatsApp />
         <Avisos />
+        {oficina ? <Notificacoes /> : null}
         <Mensagem />
         <Prazos />
         <SeusProdutos />
@@ -80,6 +83,17 @@ export function Ajustes() {
         <ApagarOficina />
       </div>
     </ProvedorDaEquipe>
+  );
+}
+
+/** Notificações no celular e por e-mail: pedido da loja, alerta respondido, orçamento aprovado. */
+function Notificacoes() {
+  return (
+    <Secao id="notificacoes" titulo="Notificações" descricao="Receba no celular, mesmo com o app fechado, quando a loja responder, o cliente aprovar um orçamento ou um pedido mudar.">
+      <Cartao>
+        <AtivarAvisos para="oficina" />
+      </Cartao>
+    </Secao>
   );
 }
 

@@ -30,7 +30,7 @@ const PRO_ITENS = [
   'Relatório de retorno: quem voltou depois do aviso e quanto isso rendeu',
   'Pedido de avaliação no Google depois do serviço, com um toque',
   `Alerta de preço: diga quanto quer pagar e as lojas do seu estado respondem, ${ALERTAS.porMesPro} por mês (dá para comprar mais)`,
-  'Um código vale em até 3 aparelhos da oficina',
+  'O Pro vale para a oficina toda, em todos os aparelhos da equipe',
   `${PRO.diasTeste} dias de teste direto no app, sem cartão`
 ];
 

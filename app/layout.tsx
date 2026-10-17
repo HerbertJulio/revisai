@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import localFont from 'next/font/local';
+import { RelatorDeErros } from '@/components/avisos/RelatorDeErros';
 import './globals.css';
 
 const archivo = localFont({
@@ -54,6 +55,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         {children}
+        <RelatorDeErros />
         <noscript>
           <p className="sem-js">O Revisaí precisa do JavaScript ligado no navegador.</p>
         </noscript>
