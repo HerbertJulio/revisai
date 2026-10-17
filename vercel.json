@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "regions": ["gru1"],
+  "buildCommand": "npm run build:publicacao",
   "crons": [{ "path": "/api/cron/manter-ativo", "schedule": "17 9 * * *" }]
 }
