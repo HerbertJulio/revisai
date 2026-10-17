@@ -190,30 +190,31 @@ export function montarPedidos(
     .sort((a, b) => (a.criadoEm < b.criadoEm ? 1 : a.criadoEm > b.criadoEm ? -1 : 0));
 }
 
-const NOMES_DA_SITUACAO: Record<string, string> = {
-  novo: 'recebido',
-  em_contato: 'em contato',
-  confirmado: 'confirmado',
-  saiu_entrega: 'saiu para entrega',
-  entregue: 'entregue',
-  cancelado: 'cancelado'
+const SITUACAO_NA_FRASE: Record<string, string> = {
+  novo: 'Pedido recebido',
+  em_contato: 'A loja começou a falar com você',
+  confirmado: 'Pedido confirmado',
+  saiu_entrega: 'Saiu para entrega',
+  entregue: 'Entregue',
+  cancelado: 'Cancelado'
 };
 
-const QUEM_FEZ: Record<QuemMudou, string> = { loja: 'a loja', oficina: 'você', equipe: 'a equipe do Revisaí', entregador: 'o entregador', sistema: 'o Revisaí' };
+/** Quem fez, quando não foi a loja (o normal): "pela equipe do Revisaí", "por você". */
+const POR_QUEM: Record<QuemMudou, string> = { loja: 'pela loja', oficina: 'por você', equipe: 'pela equipe do Revisaí', entregador: 'pelo entregador', sistema: 'pelo Revisaí' };
 
-/** A mudança numa frase curta: "Confirmado pela loja", "Você avisou que pagou". */
+/** A mudança numa frase curta: "Pedido confirmado", "Você avisou que pagou", "Cancelado pela loja: sem estoque". */
 export function textoDaMudanca(m: MudancaDaParte): string {
   if (m.campo === 'pagamento') {
-    if (m.para === 'informado') return m.quem === 'oficina' ? 'Você avisou que pagou' : 'Pagamento avisado';
-    if (m.para === 'confirmado') return `Pagamento confirmado por ${QUEM_FEZ[m.quem]}`;
-    if (m.para === 'pendente') return `Pagamento voltou para pendente (${QUEM_FEZ[m.quem]})`;
-    return 'Pagamento mudou';
+    if (m.para === 'informado') return m.quem === 'oficina' ? 'Você avisou que pagou' : `Pagamento avisado ${POR_QUEM[m.quem]}`;
+    if (m.para === 'confirmado') return `Pagamento confirmado ${POR_QUEM[m.quem]}`;
+    if (m.para === 'pendente') return `Pagamento voltou para pendente ${POR_QUEM[m.quem]}`;
+    return 'O pagamento mudou';
   }
-  const nome = NOMES_DA_SITUACAO[m.para ?? ''] ?? 'mudou';
-  if (m.para === 'cancelado') return `Cancelado por ${QUEM_FEZ[m.quem]}${m.motivo ? `: ${m.motivo}` : ''}`;
-  if (m.para === 'entregue' && m.quem === 'entregador') return 'Entregue (marcado pelo entregador)';
-  if (m.para === 'confirmado' && m.de === 'saiu_entrega') return `Voltou para confirmado (${QUEM_FEZ[m.quem]})`;
-  return `${nome.charAt(0).toUpperCase()}${nome.slice(1)} por ${QUEM_FEZ[m.quem]}`;
+  if (m.para === 'cancelado') return `Cancelado ${POR_QUEM[m.quem]}${m.motivo ? `: ${m.motivo}` : ''}`;
+  if (m.para === 'entregue' && m.quem === 'entregador') return 'Entregue, marcado pelo entregador';
+  if (m.para === 'confirmado' && m.de === 'saiu_entrega') return `Voltou para confirmado ${POR_QUEM[m.quem]}`;
+  const frase = SITUACAO_NA_FRASE[m.para ?? ''] ?? 'A situação mudou';
+  return m.quem === 'loja' ? frase : `${frase} (${POR_QUEM[m.quem]})`;
 }
 
 /** Por que a parte foi cancelada, para a oficina. */
