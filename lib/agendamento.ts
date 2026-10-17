@@ -93,13 +93,17 @@ export function veiculoDoAgendamento(a: Pick<Agendamento, 'veiculoId' | 'placa'>
   return null;
 }
 
-/** Nome, WhatsApp, placa e carro, do cadastro quando há, ou do que foi digitado na agenda. */
+/**
+ * Nome, WhatsApp, placa e carro. O nome e o WhatsApp digitados no horário (o pedido pelo link, o
+ * cliente sem cadastro) valem antes do cadastro: quem pediu é quem recebe a confirmação, mesmo
+ * quando o carro é de outra pessoa. O carro vem do cadastro (pela escolha ou pela placa).
+ */
 export function quemE(a: Agendamento, clientes: Record<Id, Cliente>, veiculos: Record<Id, Veiculo>): QuemE {
   const veiculo = veiculoDoAgendamento(a, veiculos);
   const cliente = (a.clienteId ? clientes[a.clienteId] : undefined) ?? (veiculo ? clientes[veiculo.clienteId] : undefined) ?? null;
   return {
-    nome: cliente?.nome || a.nome?.trim() || 'Cliente',
-    telefone: cliente?.telefone || a.telefone || '',
+    nome: a.nome?.trim() || cliente?.nome || 'Cliente',
+    telefone: (a.telefone ? a.telefone : cliente?.telefone) || '',
     placa: veiculo?.placa || normalizarPlaca(a.placa ?? ''),
     carro: veiculo ? [veiculo.modelo, veiculo.ano].filter(Boolean).join(' ') : '',
     cliente,

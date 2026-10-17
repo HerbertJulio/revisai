@@ -79,6 +79,13 @@ describe('quem é e o carro', () => {
     expect(quemE(agendamento({ placa: 'abc-1d23', nome: 'Maria' }), { c1: cliente }, { v1: veiculo }).veiculo?.id).toBe('v1');
     const avulso = quemE(agendamento({ nome: 'João', telefone: '21911112222', placa: 'XYZ9A99' }), {}, {});
     expect(avulso).toMatchObject({ nome: 'João', telefone: '21911112222', placa: 'XYZ9A99', carro: '', veiculo: null });
+    // pediu pelo link para o carro da Maria: a confirmação vai para quem pediu
+    expect(quemE(agendamento({ nome: 'Carlos', telefone: '5521988887777', placa: 'ABC1D23' }), { c1: cliente }, { v1: veiculo })).toMatchObject({
+      nome: 'Carlos',
+      telefone: '5521988887777',
+      carro: 'Onix 2019',
+      cliente: { id: 'c1' }
+    });
   });
 
   it('acha os serviços no texto', () => {

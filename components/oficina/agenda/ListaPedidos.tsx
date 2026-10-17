@@ -34,6 +34,7 @@ const ROTULO: Record<PedidoOnline['situacao'], { texto: string; tom: 'oleo' | 'o
 export function ListaPedidos({ hoje, aoVerNaAgenda }: { hoje: string; aoVerNaAgenda: (data: string) => void }) {
   const { pedidos, novos, carregado, erro, comConta } = usePedidosOnline();
   const [recusar, setRecusar] = useState<PedidoOnline | null>(null);
+  const [aceito, setAceito] = useState<PedidoOnline | null>(null);
   const respondidos = pedidos.filter((p) => p.situacao !== 'novo');
 
   if (!comConta) return null;
@@ -52,7 +53,7 @@ export function ListaPedidos({ hoje, aoVerNaAgenda }: { hoje: string; aoVerNaAge
         <ul className="flex flex-col gap-3" aria-label="Pedidos esperando resposta">
           {novos.map((p) => (
             <li key={p.id}>
-              <CartaoPedido p={p} hoje={hoje} aoRecusar={() => setRecusar(p)} aoVerNaAgenda={aoVerNaAgenda} />
+              <CartaoPedido p={p} hoje={hoje} aoRecusar={() => setRecusar(p)} aoAceito={setAceito} aoVerNaAgenda={aoVerNaAgenda} />
             </li>
           ))}
         </ul>
@@ -65,18 +66,71 @@ export function ListaPedidos({ hoje, aoVerNaAgenda }: { hoje: string; aoVerNaAge
           <ul className="mt-3 flex flex-col gap-3">
             {respondidos.map((p) => (
               <li key={p.id}>
-                <CartaoPedido p={p} hoje={hoje} aoRecusar={() => setRecusar(p)} aoVerNaAgenda={aoVerNaAgenda} />
+                <CartaoPedido p={p} hoje={hoje} aoRecusar={() => setRecusar(p)} aoAceito={setAceito} aoVerNaAgenda={aoVerNaAgenda} />
               </li>
             ))}
           </ul>
         </details>
       ) : null}
       <FolhaRecusa pedido={recusar} hoje={hoje} aoFechar={() => setRecusar(null)} />
+      <FolhaAceito
+        pedido={aceito}
+        hoje={hoje}
+        aoFechar={() => setAceito(null)}
+        aoVerNaAgenda={(d) => {
+          setAceito(null);
+          aoVerNaAgenda(d);
+        }}
+      />
     </div>
   );
 }
 
-function CartaoPedido({ p, hoje, aoRecusar, aoVerNaAgenda }: { p: PedidoOnline; hoje: string; aoRecusar: () => void; aoVerNaAgenda: (data: string) => void }) {
+/** Logo depois de aceitar: a confirmação pronta para o cliente no WhatsApp. */
+function FolhaAceito({ pedido, hoje, aoFechar, aoVerNaAgenda }: { pedido: PedidoOnline | null; hoje: string; aoFechar: () => void; aoVerNaAgenda: (data: string) => void }) {
+  const oficina = useOficina((s) => s.oficina);
+  const mensagem = pedido ? mensagemConfirmacao({ cliente: pedido.nome, oficina, data: pedido.data, hora: pedido.hora, servico: pedido.servico, hoje }) : '';
+  const whatsapp = pedido ? linkWhatsApp(pedido.telefone, mensagem) : null;
+  return (
+    <Folha
+      aberta={!!pedido}
+      aoFechar={aoFechar}
+      titulo="Pedido aceito"
+      descricao={pedido ? `O horário de ${pedido.nome} entrou na agenda: ${quandoPorExtenso(pedido.data, pedido.hora, hoje)}.` : undefined}
+      rodape={
+        pedido ? (
+          <>
+            <Botao onClick={() => aoVerNaAgenda(pedido.data)}>
+              <CalendarCheck size={17} aria-hidden="true" /> Ver na agenda
+            </Botao>
+            {whatsapp ? (
+              <a href={whatsapp} target="_blank" rel="noopener noreferrer" className={classeBotao('whatsapp')} onClick={aoFechar}>
+                <MessageCircle size={17} aria-hidden="true" /> Mandar a confirmação
+              </a>
+            ) : null}
+          </>
+        ) : null
+      }
+    >
+      <p className="mb-2 text-[14px] text-tinta-2">A mensagem vai pronta para o WhatsApp do cliente:</p>
+      <p className="rounded-xl bg-ok-claro px-4 py-3 text-[14.5px] leading-relaxed">{mensagem}</p>
+    </Folha>
+  );
+}
+
+function CartaoPedido({
+  p,
+  hoje,
+  aoRecusar,
+  aoAceito,
+  aoVerNaAgenda
+}: {
+  p: PedidoOnline;
+  hoje: string;
+  aoRecusar: () => void;
+  aoAceito: (p: PedidoOnline) => void;
+  aoVerNaAgenda: (data: string) => void;
+}) {
   const { banco } = useConta();
   const toast = useToast();
   const config = useConfigAgenda();
@@ -104,8 +158,9 @@ function CartaoPedido({ p, hoje, aoRecusar, aoVerNaAgenda }: { p: PedidoOnline; 
     const s = useOficina.getState();
     // outro aparelho aceitou antes: o horário dele chega pela sincronização
     if (r.agendamentoId === id) {
+      // o carro pela placa e o cliente pelo WhatsApp (quem pediu pode não ser o dono do carro)
       const veiculo = p.placa ? Object.values(s.veiculos).find((v) => v.placa === p.placa) : undefined;
-      const cliente = veiculo ? s.clientes[veiculo.clienteId] : Object.values(s.clientes).find((c) => normalizarTelefone(c.telefone) === p.telefone);
+      const cliente = Object.values(s.clientes).find((c) => normalizarTelefone(c.telefone) === p.telefone);
       s.salvarRegistro('agendamentos', {
         id,
         data: p.data,
@@ -124,7 +179,8 @@ function CartaoPedido({ p, hoje, aoRecusar, aoVerNaAgenda }: { p: PedidoOnline; 
         pedidoOnlineId: p.id
       });
     }
-    toast({ texto: 'Pedido aceito: o horário está na agenda. Mande a confirmação para o cliente.' });
+    toast({ texto: 'Pedido aceito: o horário está na agenda.' });
+    aoAceito({ ...p, situacao: 'aceito', agendamentoId: r.agendamentoId });
   }
 
   return (

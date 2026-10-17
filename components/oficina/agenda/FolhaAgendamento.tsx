@@ -172,17 +172,19 @@ function Formulario({ abertura, editar, aoFechar, hoje }: { abertura: AberturaAg
     if (Object.keys(e).length) return;
     const s = useOficina.getState();
     const base = editar ? semDatas(editar) : null;
+    // o mesmo carro de antes: o nome e o WhatsApp de quem pediu (pelo link) continuam
+    const mesmoCarro = !!veiculo && editar?.veiculoId === veiculo.id;
     const id = s.salvarRegistro('agendamentos', {
       ...(base ?? {}),
       id: editar?.id,
       data: r.data,
       hora: r.hora,
       duracaoMin: r.duracaoMin,
-      clienteId: veiculo ? veiculo.clienteId : (r.clienteId ?? null),
+      clienteId: veiculo ? (mesmoCarro ? (editar?.clienteId ?? veiculo.clienteId) : veiculo.clienteId) : (r.clienteId ?? null),
       veiculoId: veiculo?.id ?? null,
-      nome: veiculo ? undefined : r.nome.trim(),
-      telefone: veiculo ? undefined : normalizarTelefone(r.telefone) ?? undefined,
-      placa: veiculo ? undefined : normalizarPlaca(r.placa) || undefined,
+      nome: veiculo ? (mesmoCarro ? editar?.nome : undefined) : r.nome.trim(),
+      telefone: veiculo ? (mesmoCarro ? editar?.telefone : undefined) : (normalizarTelefone(r.telefone) ?? undefined),
+      placa: veiculo ? (mesmoCarro ? editar?.placa : undefined) : normalizarPlaca(r.placa) || undefined,
       servico: r.servico.trim(),
       observacao: r.observacao.trim() || undefined,
       profissionalId: r.profissionalId,
