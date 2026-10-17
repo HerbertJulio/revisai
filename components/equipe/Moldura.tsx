@@ -18,6 +18,7 @@ import {
   Store,
   UserSearch,
   Users,
+  Wallet,
   Wrench
 } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -41,6 +42,7 @@ export type Aba =
   | 'promocoes'
   | 'impulsos'
   | 'assinaturas'
+  | 'cobrancas'
   | 'marketplace'
   | 'coortes'
   | 'uso'
@@ -100,6 +102,7 @@ export async function Moldura({
       titulo: 'Números',
       itens: [
         { id: 'assinaturas', href: '/admin/assinaturas', rotulo: 'Assinaturas', Icone: ChartLine, permissao: 'numerosDeAssinatura' },
+        { id: 'cobrancas', href: '/admin/cobrancas', rotulo: 'Cobranças', Icone: Wallet, permissao: 'mudarPlano' },
         { id: 'marketplace', href: '/admin/marketplace', rotulo: 'Marketplace', Icone: ChartColumn, permissao: 'numeros' },
         { id: 'coortes', href: '/admin/coortes', rotulo: 'Coortes', Icone: Grid3x3, permissao: 'numeros' },
         { id: 'uso', href: '/admin/uso', rotulo: 'Uso e funil', Icone: Funnel, permissao: 'numeros' },

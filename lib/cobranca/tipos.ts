@@ -201,6 +201,40 @@ export const NOMES_SITUACAO_ASSINATURA: Record<SituacaoAssinatura, string> = {
 
 export const NOMES_PROVEDOR: Record<NomeProvedor | 'manual', string> = { asaas: 'Asaas', efi: 'Efí', teste: 'Teste', manual: 'À mão' };
 
+// ------------------------------------------------------------------ painel da equipe
+
+export type AssinaturaNoPainel = LinhaAssinatura & { oficina: string };
+export type PagamentoNoPainel = LinhaPagamento & { quem: string };
+
+/** O extrato do mês de uma loja (public.extrato_da_loja) com as cobranças do mês. */
+export interface LojaDoMes {
+  fornecedorId: number;
+  nome: string;
+  cnpj: string | null;
+  totalVendas: number;
+  totalComissao: number;
+  mensalidade: number;
+  total: number;
+  pedidos: number;
+  cobrancas: PagamentoNoPainel[];
+  erro?: string | null;
+}
+
+export interface AvisoComProblema {
+  provedor: string;
+  evento: string;
+  tipo: string | null;
+  recebidoEm: string;
+  tentativas: number;
+  erro: string | null;
+}
+
+export interface EstadoDosGateways {
+  asaas: { ambiente: 'sandbox' | 'producao'; webhook: boolean; nota: boolean } | null;
+  efi: { ambiente: 'homologacao' | 'producao'; webhook: boolean } | null;
+  teste: boolean;
+}
+
 export class ErroDoGateway extends Error {
   constructor(
     mensagem: string,
