@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { AvisoErro } from '@/components/equipe/comum';
 import { Moldura } from '@/components/equipe/Moldura';
+import { ComprasBarradas } from '@/app/admin/moderacao/_componentes/Antifraude';
 import { Chip, Vazio } from '@/components/ui';
 import { quandoFoi } from '@/lib/equipe-dados';
 import { sinaisDeFraude } from '@/lib/equipe/dados';
@@ -57,6 +58,7 @@ export default async function PaginaAntifraude() {
           Aparecem aqui: conta nova comprando ou vendendo mais de R$ 2.000 em 7 dias, muitos pedidos cancelados e alertas de preço em série.
         </Vazio>
       ) : null}
+      <ComprasBarradas sb={acesso.sb} />
     </Moldura>
   );
 }
