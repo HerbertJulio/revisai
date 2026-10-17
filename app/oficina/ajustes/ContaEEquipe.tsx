@@ -323,7 +323,7 @@ export function EquipeDaOficinaSecao() {
                   </div>
                   {dono ? (
                     <select
-                      className={`${classeEntrada} h-9 w-auto text-[14px]`}
+                      className="h-9 shrink-0 rounded-[10px] border border-linha bg-papel px-2.5 text-[14px] font-semibold outline-none focus:border-caneta focus:ring-3 focus:ring-caneta/20 disabled:opacity-60"
                       value={m.papel}
                       disabled={ocupado}
                       aria-label={`Papel de ${m.email || 'membro'}`}

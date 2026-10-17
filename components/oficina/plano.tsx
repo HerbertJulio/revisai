@@ -419,7 +419,7 @@ export function PlanoDaOficina() {
               {p.tipo === 'pro'
                 ? `Vale até ${formatarData(p.ate)}.`
                 : p.tipo === 'teste'
-                  ? `O teste vai até ${formatarData(p.ate)}. Para continuar no Pro depois disso, assine.`
+                  ? `O teste vai até ${formatarData(p.ate)}. Para continuar no Pro depois disso, ${p.podeMudar ? 'assine' : 'o dono ou o gerente assina'}.`
                   : `${PRO.avisosGratis} avisos e ${PRO.ordensGratis} ordens por voz por mês.`}
             </p>
           </div>
