@@ -16,7 +16,7 @@ import { normalizarTelefone } from '@/lib/formatos';
 import { permitido } from '@/lib/limite';
 import { avisarLojasDoPedido } from '@/lib/loja/avisos';
 import { esquemaContatoDoPedido, mensagemDoPedido } from '@/lib/marketplace-dados';
-import { clientePublico } from '@/lib/supabase-servidor';
+import { clienteSistema } from '@/lib/supabase-servidor';
 import type { Categoria } from '@/lib/tipos';
 
 /** `semConta`: a pessoa não entrou (ou saiu); a tela manda para o login. */
@@ -128,7 +128,8 @@ export async function registrarInteresse(entrada: unknown): Promise<Resposta> {
   if (!whatsapp && !email) return { ok: false, erro: 'Deixe um WhatsApp ou um e-mail para a gente falar com você.' };
   if (!(await permitido('interesse', 6, 10))) return { ok: false, erro: 'Recebemos vários envios seguidos. Espere alguns minutos.' };
 
-  const sb = clientePublico();
+  // o banco só aceita o cadastro pelo servidor (com o limite por IP acima)
+  const sb = clienteSistema();
   if (!sb) return { ok: false, erro: 'O cadastro ainda não está ligado. Tente mais tarde.' };
   const { error } = await sb.from('interessados').insert({
     tipo: d.tipo,

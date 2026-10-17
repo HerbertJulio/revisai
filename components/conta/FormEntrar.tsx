@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Botao, Campo, classeEntrada } from '@/components/ui';
 import { clienteNavegador, type ConfigPublica } from '@/lib/supabase-navegador';
+import { Captcha } from './Captcha';
 
 const ERROS_DO_LINK: Record<string, string> = {
   link: 'O link de entrada não vale mais. Peça um código novo.',
@@ -51,6 +52,9 @@ export function FormEntrar({ config, para, google, erro: erroInicial, aoEntrar }
   const [agora, setAgora] = useState(() => Date.now());
   const campoCodigo = useRef<HTMLInputElement>(null);
   const conferindo = useRef(false);
+  // com a verificação ligada, cada pedido de código leva um token novo
+  const [captcha, setCaptcha] = useState<string | null>(null);
+  const [rodadaCaptcha, setRodadaCaptcha] = useState(0);
 
   const sb = () => clienteNavegador(config);
   const faltam = Math.max(0, Math.ceil((reenviarEm - agora) / 1000));
@@ -74,15 +78,27 @@ export function FormEntrar({ config, para, google, erro: erroInicial, aoEntrar }
       setErro('Confira o e-mail.');
       return;
     }
+    if (config.captcha && !captcha) {
+      setErro('Espere a verificação de segurança terminar e tente de novo.');
+      return;
+    }
     setOcupado(true);
     setErro(null);
     const { error } = await sb()
       .auth.signInWithOtp({
         email: limpo,
-        options: { shouldCreateUser: true, emailRedirectTo: `${location.origin}/auth/confirmar?para=${encodeURIComponent(para)}` }
+        options: {
+          shouldCreateUser: true,
+          emailRedirectTo: `${location.origin}/auth/confirmar?para=${encodeURIComponent(para)}`,
+          ...(captcha ? { captchaToken: captcha } : {})
+        }
       })
       .catch((x: unknown) => ({ error: { message: String((x as Error)?.message ?? x) } }));
     setOcupado(false);
+    if (config.captcha) {
+      setCaptcha(null);
+      setRodadaCaptcha((r) => r + 1);
+    }
     const espera = esperaPedida(error);
     if (error && !espera) {
       setErro(mensagemDeEntrada(error));
@@ -184,6 +200,7 @@ export function FormEntrar({ config, para, google, erro: erroInicial, aoEntrar }
         <Botao type="submit" variante="escuro" tamanho="grande" disabled={ocupado}>
           {ocupado ? 'Conferindo…' : 'Entrar'}
         </Botao>
+        {config.captcha ? <Captcha chave={config.captcha} aoResolver={setCaptcha} rodada={rodadaCaptcha} /> : null}
         <div className="flex flex-wrap items-center justify-between gap-2 text-[14px]">
           <button
             type="button"
@@ -246,6 +263,7 @@ export function FormEntrar({ config, para, google, erro: erroInicial, aoEntrar }
             required
           />
         </Campo>
+        {config.captcha ? <Captcha chave={config.captcha} aoResolver={setCaptcha} rodada={rodadaCaptcha} /> : null}
         <Botao type="submit" variante="escuro" tamanho="grande" disabled={ocupado}>
           <Mail size={18} aria-hidden="true" />
           {ocupado ? 'Mandando…' : 'Receber o código'}

@@ -16,12 +16,15 @@ const SEM_SESSAO = { auth: { persistSession: false, autoRefreshToken: false, det
 export interface ConfigSupabase {
   url: string;
   chave: string;
+  /** A chave do site do Turnstile (pública), quando a verificação de pessoa está ligada no Supabase Auth. */
+  captcha?: string | null;
 }
 
 export function configSupabase(): ConfigSupabase | null {
   const url = process.env.SUPABASE_URL ?? '';
   const chave = process.env.SUPABASE_PUBLISHABLE_KEY ?? '';
-  return url && chave ? { url, chave } : null;
+  const captcha = (process.env.TURNSTILE_SITE_KEY ?? '').trim() || null;
+  return url && chave ? { url, chave, captcha } : null;
 }
 
 /** A chave do sistema: SISTEMA_CHAVE, ou EQUIPE_CHAVE enquanto a troca não for feita. */

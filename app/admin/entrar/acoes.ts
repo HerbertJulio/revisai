@@ -15,13 +15,14 @@ export type Resposta = { ok: true } | { ok: false; erro: string; naoExiste?: boo
 
 const NAO_EXISTE: { ok: false; erro: string; naoExiste: true } = { ok: false, erro: 'Página não encontrada.', naoExiste: true };
 
-export async function pedirCodigo(email: string): Promise<Resposta> {
+export async function pedirCodigo(email: string, captcha: string | null = null): Promise<Resposta> {
   const limpo = String(email ?? '').trim().toLowerCase();
   if (!emailValido(limpo)) return { ok: false, erro: 'Confira o e-mail.' };
   if (!(await permitido('equipe-codigo', 6, 15))) return { ok: false, erro: 'Muitos códigos pedidos seguidos. Espere alguns minutos.' };
   const sb = await clienteDoUsuario(true);
   if (!sb) return { ok: false, erro: 'O login ainda não foi ligado neste servidor.' };
-  const { error } = await sb.auth.signInWithOtp({ email: limpo, options: { shouldCreateUser: true } });
+  const token = typeof captcha === 'string' && captcha.length <= 4096 ? captcha : null;
+  const { error } = await sb.auth.signInWithOtp({ email: limpo, options: { shouldCreateUser: true, ...(token ? { captchaToken: token } : {}) } });
   if (error) {
     console.error('[equipe] pedir código', error.message);
     return { ok: false, erro: mensagemDaEntrada(error) };

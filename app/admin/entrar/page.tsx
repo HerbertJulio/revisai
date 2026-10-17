@@ -19,7 +19,7 @@ export default async function PaginaEntrarEquipe() {
   if (!sessao) {
     return (
       <TelaDaEquipe>
-        <EntrarEquipe passo="email" />
+        <EntrarEquipe passo="email" captcha={configSupabase()?.captcha ?? null} />
       </TelaDaEquipe>
     );
   }
