@@ -8,6 +8,7 @@ import { CarFront, ShoppingCart, Wallet } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useConta } from '@/components/conta/ProvedorConta';
 import { Folha } from '@/components/Folha';
+import { Denunciar } from '@/components/suporte/Denunciar';
 import { Botao, Chip } from '@/components/ui';
 import { desconto, embalagem, melhorOferta, nomeCategoria, patrocinado, precoNaQuantidade, promocoesAtivas, quantidadeComUnidade, type Produto } from '@/lib/catalogo';
 import { formatarDataCurta } from '@/lib/datas';
@@ -253,6 +254,8 @@ export function DetalheProduto({
             </div>
           </div>
         ) : null}
+
+        {conta ? <Denunciar key={p.id} produtoId={p.id} alvo="este produto" /> : null}
 
         {outras.length ? (
           <div className="flex flex-col gap-2">

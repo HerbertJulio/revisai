@@ -8,8 +8,10 @@ import { Check, Wallet } from 'lucide-react';
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { enviarPedido } from '@/app/acoes';
 import { useConta } from '@/components/conta/ProvedorConta';
+import { EscolhaDePagamento } from '@/components/fornecedor/EscolhaDePagamento';
 import { Folha } from '@/components/Folha';
 import { Botao, Campo, classeArea, classeEntrada } from '@/components/ui';
+import type { FormaDePagamento } from '@/lib/loja/credito-dados';
 import { textoDoPrazoDeEntrega } from '@/lib/loja/dados';
 import { chaveDoProduto, precoComparavel } from '@/lib/precos';
 import { formatarMoeda, formatarTelefone, normalizarTelefone } from '@/lib/formatos';
@@ -39,6 +41,8 @@ export function Carrinho({ aberto, aoFechar, aoAcompanhar }: { aberto: boolean; 
   const [enviado, setEnviado] = useState<{ codigo: string; cashback: number } | null>(null);
   // as lojas em que a oficina quer usar o cashback
   const [usarCashback, setUsarCashback] = useState<Record<string, boolean>>({});
+  // como pagar cada loja que deu crédito à oficina (sem escolha, Pix)
+  const [pagamentos, setPagamentos] = useState<Record<string, FormaDePagamento>>({});
   const [enviando, iniciar] = useTransition();
   // o WhatsApp do cadastro da oficina vale mais; o do formulário entra quando a conta não tem
   const whatsappDaConta = daConta?.whatsapp ? normalizarTelefone(daConta.whatsapp) : null;
@@ -100,6 +104,7 @@ export function Carrinho({ aberto, aoFechar, aoAcompanhar }: { aberto: boolean; 
     if (!whatsappDaConta && !normalizarTelefone(oficina.whatsapp)) return setErro({ texto: 'Escreva o WhatsApp da oficina, com DDD. É por ele que a loja fala com você.' });
     if (abaixoDoMinimoDaLoja.length) return setErro({ texto: `O pedido não chega ao mínimo da ${abaixoDoMinimoDaLoja[0].nome}. Ponha mais itens dela ou tire os dela do pedido.` });
     const cashback = Object.fromEntries(lojas.filter((g) => g.usado > 0).map((g) => [String(g.fornecedorId), g.usado]));
+    const faturadas = Object.fromEntries(lojas.filter((g) => pagamentos[String(g.fornecedorId)] === 'faturado').map((g) => [String(g.fornecedorId), 'faturado' as const]));
     iniciar(async () => {
       let r: Awaited<ReturnType<typeof enviarPedido>>;
       try {
@@ -107,7 +112,8 @@ export function Carrinho({ aberto, aoFechar, aoAcompanhar }: { aberto: boolean; 
           itens: linhas.map((l) => ({ produtoId: l.p.id, quantidade: l.quantidade })),
           observacao: obs,
           contato: { whatsapp: oficina.whatsapp, cidade: oficina.cidade, uf: oficina.uf, endereco: oficina.endereco },
-          cashback
+          cashback,
+          pagamentos: faturadas
         });
       } catch {
         setErro({ texto: 'Não deu para falar com o servidor. Confira a internet e tente de novo. Se o app ficou aberto muito tempo, recarregue a página.' });
@@ -140,6 +146,7 @@ export function Carrinho({ aberto, aoFechar, aoAcompanhar }: { aberto: boolean; 
       });
       setObs('');
       setUsarCashback({});
+      setPagamentos({});
       setEnviado({ codigo: r.codigo, cashback: r.cashback });
       void condicoes.atualizar();
     });
@@ -297,6 +304,14 @@ export function Carrinho({ aberto, aoFechar, aoAcompanhar }: { aberto: boolean; 
               ) : null}
             </section>
           ))}
+          {conta && comPrecos ? (
+            <EscolhaDePagamento
+              lojas={lojas.map((g) => ({ id: g.fornecedorId, nome: g.nome, subtotal: r2(g.subtotal - g.usado) }))}
+              total={total}
+              valor={pagamentos}
+              aoMudar={setPagamentos}
+            />
+          ) : null}
           {conta ? (
             <div className="grid gap-3 rounded-xl bg-papel-2 p-4 sm:grid-cols-2">
               <p className="text-[14px] font-semibold sm:col-span-2">Para a loja falar com você</p>

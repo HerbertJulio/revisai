@@ -7,6 +7,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { MenuDaConta } from '@/components/conta/MenuDaConta';
 import { ProvedorConta, useConta } from '@/components/conta/ProvedorConta';
 import { Logo } from '@/components/marca';
+import { BotaoAjudaDaOficina } from '@/components/suporte/BotaoAjuda';
 import { Toasts } from '@/components/Toasts';
 import { classeBotao } from '@/components/ui';
 import { plural } from '@/lib/formatos';
@@ -243,6 +244,7 @@ function Moldura({ children }: { children: ReactNode }) {
               </Link>
             );
           })}
+          <BotaoAjudaDaOficina aparencia="lateral" />
         </nav>
         <div className="mt-auto flex flex-col gap-1 border-t border-linha px-2 pt-4">
           <p className="truncate font-bold">{nomeOficina || 'Minha oficina'}</p>
@@ -272,6 +274,7 @@ function Moldura({ children }: { children: ReactNode }) {
           <Link href="/oficina/mais" aria-label="Financeiro, agenda e mais" aria-current={caminho.startsWith('/oficina/mais') ? 'page' : undefined} className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-tinta-2 hover:bg-papel-2 aria-[current=page]:bg-tinta aria-[current=page]:text-papel">
             <LayoutGrid size={19} aria-hidden="true" />
           </Link>
+          <BotaoAjudaDaOficina aparencia="cabecalho" />
           <Link href="/oficina/ajustes" aria-label="Ajustes" aria-current={caminho.startsWith('/oficina/ajustes') ? 'page' : undefined} className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-tinta-2 hover:bg-papel-2 aria-[current=page]:bg-tinta aria-[current=page]:text-papel">
             <Settings size={19} aria-hidden="true" />
           </Link>

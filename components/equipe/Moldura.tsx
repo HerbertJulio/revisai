@@ -6,6 +6,7 @@ import {
   ChartColumn,
   ChartLine,
   Fingerprint,
+  Flag,
   Funnel,
   Grid3x3,
   History,
@@ -42,6 +43,7 @@ export type Aba =
   | 'lojas-em-analise'
   | 'promocoes'
   | 'impulsos'
+  | 'moderacao'
   | 'assinaturas'
   | 'cobrancas'
   | 'marketplace'
@@ -97,7 +99,8 @@ export async function Moldura({
         { id: 'fornecedores', href: '/admin/fornecedores', rotulo: 'Lojas', Icone: Store, permissao: 'ver' },
         { id: 'lojas-em-analise', href: '/admin/lojas-em-analise', rotulo: 'Em análise', Icone: Building2, contador: novos.lojas, permissao: 'decidirLoja' },
         { id: 'promocoes', href: '/admin/promocoes', rotulo: 'Promoções', Icone: BadgePercent, permissao: 'ver' },
-        { id: 'impulsos', href: '/admin/impulsos', rotulo: 'Impulsos', Icone: Megaphone, contador: novos.impulsos, permissao: 'ver' }
+        { id: 'impulsos', href: '/admin/impulsos', rotulo: 'Impulsos', Icone: Megaphone, contador: novos.impulsos, permissao: 'ver' },
+        { id: 'moderacao', href: '/admin/moderacao', rotulo: 'Moderação', Icone: Flag, permissao: 'suporte' }
       ]
     },
     {

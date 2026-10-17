@@ -5,6 +5,7 @@ import { notFound } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { AvisoErro } from '@/components/equipe/comum';
 import { Moldura } from '@/components/equipe/Moldura';
+import { LimiteDeCompraDaOficina } from '@/app/admin/moderacao/_componentes/Antifraude';
 import { OficinaAcoes } from '@/components/equipe/OficinaAcoes';
 import { ChipPlano } from '@/components/equipe/OficinasEquipe';
 import { Numero } from '@/components/painel/Numero';
@@ -88,6 +89,8 @@ export default async function PaginaOficina({ params }: { params: Promise<{ id: 
       {pode(acesso.papel, 'mudarPlano') ? (
         <OficinaAcoes oficina={{ id: o.id, nome: o.nome, fundador: o.fundador, ativa: o.ativa, proAte: o.pro_ate, testeAte: o.teste_ate }} />
       ) : null}
+
+      <LimiteDeCompraDaOficina sb={acesso.sb} oficinaId={o.id} podeMudar={pode(acesso.papel, 'mudarCadastro')} />
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Numero rotulo="Ordens pela IA no mês" valor={uso ? usoTexto(uso.montagem.usado, uso.montagem.limite) : 'sem dados'} />

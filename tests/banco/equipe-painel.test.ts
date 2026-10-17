@@ -96,6 +96,8 @@ d('números do negócio', () => {
       const dono = await criarPessoa(b, pessoa('dono'));
       const lojista = await criarPessoa(b, pessoa('lojista'));
       const o = await criarOficina(b, dono, 'Compradora');
+      // nos primeiros 30 dias a oficina compra até R$ 2.000 a cada 7 dias: a equipe libera mais para ela
+      await b.query('update public.oficinas set limite_compra_7d = 100000 where id = $1', [o]);
       const loja = await criarLoja(b, lojista, { preco: 1000 });
       const p1 = await pedido(b, dono, o, loja.produtoId, 'MKT001', 3);
       await pedido(b, dono, o, loja.produtoId, 'MKT002', 1);

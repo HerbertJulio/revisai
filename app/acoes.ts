@@ -16,6 +16,8 @@ import { mensagemDoBanco } from '@/lib/conta-dados';
 import { normalizarTelefone } from '@/lib/formatos';
 import { ipDaRequisicao, permitido } from '@/lib/limite';
 import { avisarLojasDoPedido } from '@/lib/loja/avisos';
+import { mensagemDoCredito } from '@/lib/loja/credito-dados';
+import { registrarBloqueio } from '@/lib/loja/moderacao';
 import { esquemaContatoDoPedido, mensagemDoPedido } from '@/lib/marketplace-dados';
 import { clienteSistema } from '@/lib/supabase-servidor';
 import type { Categoria } from '@/lib/tipos';
@@ -35,7 +37,13 @@ const esquemaPedido = z.object({
     .record(z.string().regex(/^[1-9]\d{0,17}$/, 'Loja inválida no cashback.'), z.number().min(0).max(1_000_000))
     .optional()
     .default({})
-    .transform((c) => Object.fromEntries(Object.entries(c).map(([loja, v]) => [loja, Math.round(v * 100) / 100]).filter(([, v]) => (v as number) > 0)) as Record<string, number>)
+    .transform((c) => Object.fromEntries(Object.entries(c).map(([loja, v]) => [loja, Math.round(v * 100) / 100]).filter(([, v]) => (v as number) > 0)) as Record<string, number>),
+  /** Como pagar cada loja ({ "<loja>": "pix" | "faturado" }); faturado só com o crédito que a loja deu (o banco confere: RV061, RV062). */
+  pagamentos: z
+    .record(z.string().regex(/^[1-9]\d{0,17}$/, 'Loja inválida na forma de pagamento.'), z.enum(['pix', 'faturado']))
+    .optional()
+    .default({})
+    .transform((p) => Object.fromEntries(Object.entries(p).filter(([, f]) => f === 'faturado')) as Record<string, 'faturado'>)
 });
 
 /**
@@ -48,7 +56,7 @@ export async function enviarPedido(entrada: unknown): Promise<Resposta<{ codigo:
   if (!r.success) return { ok: false, erro: r.error.issues[0]?.message ?? 'Confira os dados do pedido.' };
   const a = await acessoDaOficina();
   if (!a.ok) return { ok: false, erro: a.erro, semConta: true };
-  const { itens, observacao, contato, cashback } = r.data;
+  const { itens, observacao, contato, cashback, pagamentos } = r.data;
   const whatsapp = normalizarTelefone(a.oficina.whatsapp ?? '') ?? normalizarTelefone(contato.whatsapp);
   if (!whatsapp) return { ok: false, erro: 'Confira o WhatsApp da oficina, com DDD. É por ele que a loja fala com você.' };
   if (!(await permitido('pedido', 8, 10))) return { ok: false, erro: 'Muitos pedidos seguidos. Espere alguns minutos e tente de novo.' };
@@ -71,7 +79,8 @@ export async function enviarPedido(entrada: unknown): Promise<Resposta<{ codigo:
         oficina_endereco: contato.endereco || null,
         itens: [...porProduto].map(([produto_id, quantidade]) => ({ produto_id, quantidade })),
         observacao: observacao || null,
-        cashback: Object.keys(cashback).length ? cashback : null
+        cashback: Object.keys(cashback).length ? cashback : null,
+        pagamentos: Object.keys(pagamentos).length ? pagamentos : null
       })
       .select('id, itens, total')
       .single();
@@ -89,7 +98,9 @@ export async function enviarPedido(entrada: unknown): Promise<Resposta<{ codigo:
       return { ok: true, codigo, total: Number(pedido.total), itens: itensFechados(pedido.itens), cashback: usado };
     }
     if (error?.code === '23505') continue; // código repetido: tenta outro
-    const m = mensagemDoPedido(error);
+    // compra barrada pelo limite das oficinas novas: fica registrada para a equipe (o banco confere de novo)
+    if (error?.code === 'RV060') await registrarBloqueio(a.sb, a.oficina.id, error.details);
+    const m = mensagemDoCredito(error) ?? mensagemDoPedido(error);
     if (m) return { ok: false, erro: m, ...(error?.code === '28000' ? { semConta: true } : {}) };
     console.error('[pedido]', error);
     return { ok: false, erro: 'Não deu para enviar agora. Tente de novo em instantes.' };
