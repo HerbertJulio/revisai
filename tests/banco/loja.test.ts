@@ -12,12 +12,14 @@ async function pedidos(b: Banco, n: number) {
   const o = await criarOficina(b, dono);
   const loja = await criarLoja(b, lojista);
   const partes: number[] = [];
+  // código do pedido: 6 letras e números, sem repetir entre chamadas do mesmo teste
+  const prefixo = Math.random().toString(36).slice(2, 5).toUpperCase().padEnd(3, 'X');
   for (let i = 0; i < n; i++) {
     const [ped] = await linhas(
       b,
       dono,
       `insert into public.pedidos (codigo, oficina_id, oficina_nome, oficina_whatsapp, itens) values ($1, $2, 'x', '5521911112222', $3::jsonb) returning id`,
-      [`REP${String(i).padStart(3, '0')}`, o, JSON.stringify([{ produto_id: loja.produtoId, quantidade: 1 }])]
+      [`${prefixo}${String(i).padStart(3, '0')}`, o, JSON.stringify([{ produto_id: loja.produtoId, quantidade: 1 }])]
     );
     const r = await b.query('select id from public.pedidos_fornecedores where pedido_id = $1', [ped.id]);
     partes.push(Number(r.rows[0].id));
@@ -192,5 +194,75 @@ d('o que a loja faz no painel', () => {
       // com dois donos, um deles pode voltar a vendedor
       expect((await linhas(b, recente, 'select public.loja_mudar_papel($1, $2, $3) as ok', [loja.fornecedorId, vendedor.id, 'vendedor']))[0].ok).toBe(true);
       expect((await tentar(b, dono, 'select public.loja_mudar_papel($1, $2, $3)', [loja.fornecedorId, vendedor.id, 'gerente'])).codigo).toBe('22023');
+    }));
+
+});
+
+d('estoque, planilha e prazo da loja', () => {
+  it('o estoque baixa quando a loja confirma e volta se ela cancelar depois; sem estoque informado, nada muda', () =>
+    emTransacao(async (b) => {
+      const x = await pedidos(b, 2);
+      await b.query('update public.produtos set estoque = 10 where id = $1', [x.loja.produtoId]);
+      const [p1, p2] = x.partes;
+      const estoque = async () => Number((await b.query('select estoque from public.produtos where id = $1', [x.loja.produtoId])).rows[0].estoque);
+      expect((await muda(b, x.lojista, p1, `status = 'confirmado'`)).erro).toBeNull();
+      expect(await estoque()).toBe(9);
+      expect((await muda(b, x.lojista, p1, `status = 'saiu_entrega'`)).erro).toBeNull();
+      expect(await estoque()).toBe(9);
+      expect((await muda(b, x.lojista, p1, `status = 'cancelado', cancelado_motivo = 'A oficina desistiu'`)).erro).toBeNull();
+      expect(await estoque()).toBe(10);
+      // cancelado antes de confirmar não mexe no estoque
+      expect((await muda(b, x.lojista, p2, `status = 'cancelado', cancelado_motivo = 'Sem o produto no estoque'`)).erro).toBeNull();
+      expect(await estoque()).toBe(10);
+      // sem estoque informado (vazio), continua vazio
+      const y = await pedidos(b, 1);
+      expect((await muda(b, y.lojista, y.partes[0], `status = 'confirmado'`)).erro).toBeNull();
+      expect((await b.query('select estoque from public.produtos where id = $1', [y.loja.produtoId])).rows[0].estoque).toBeNull();
+    }));
+
+  it('a planilha importa numa transação só e só mexe nos produtos da própria loja', () =>
+    emTransacao(async (b) => {
+      const lojista = await criarPessoa(b, pessoa('lojista'));
+      const rival = await criarPessoa(b, pessoa('rival'));
+      const loja = await criarLoja(b, lojista);
+      const outra = await criarLoja(b, rival, { nome: 'Outra' });
+      const base = { categoria: 'filtro_oleo', unidade: 'un', preco: 25.5, ativo: true, especificacao: {}, aplicacoes: [{ texto: 'Gol 1.0 2015-2020', marca: 'Volkswagen', modelo: 'Gol', anoDe: 2015, anoAte: 2020 }] };
+      const [r] = await linhas(b, lojista, 'select public.loja_importar_produtos($1, $2::jsonb) as r', [
+        loja.fornecedorId,
+        JSON.stringify([
+          { ...base, codigo: 'FO-01', nome: 'Filtro de óleo PSL 140', estoque: 12 },
+          { ...base, id: loja.produtoId, codigo: 'OL-5W30', nome: 'Óleo 5W30 1L', categoria: 'oleo_motor', preco: 38 }
+        ])
+      ]);
+      expect(r.r).toEqual({ novos: 1, mudados: 1 });
+      const meus = (await b.query('select codigo, nome, preco, estoque, aplicacoes from public.produtos where fornecedor_id = $1 order by codigo', [loja.fornecedorId])).rows;
+      expect(meus.map((x) => x.codigo)).toEqual(['FO-01', 'OL-5W30']);
+      expect(Number(meus[1].preco)).toBe(38);
+      expect(meus[0].estoque).toBe(12);
+      // mexer no produto da outra loja derruba a importação toda
+      const antes = (await b.query('select count(*)::int as n from public.produtos where fornecedor_id = $1', [loja.fornecedorId])).rows[0].n;
+      const errada = await tentar(b, lojista, 'select public.loja_importar_produtos($1, $2::jsonb)', [
+        loja.fornecedorId,
+        JSON.stringify([{ ...base, codigo: 'NOVO', nome: 'Produto novo' }, { ...base, id: outra.produtoId, nome: 'Golpe' }])
+      ]);
+      expect(errada.codigo).toBe('42501');
+      expect((await b.query('select count(*)::int as n from public.produtos where fornecedor_id = $1', [loja.fornecedorId])).rows[0].n).toBe(antes);
+      expect((await b.query('select nome from public.produtos where id = $1', [outra.produtoId])).rows[0].nome).not.toBe('Golpe');
+      // nem importa para a loja dos outros
+      expect((await tentar(b, lojista, 'select public.loja_importar_produtos($1, $2::jsonb)', [outra.fornecedorId, JSON.stringify([{ ...base, nome: 'X' }])])).codigo).toBe('42501');
+      // o código não repete na mesma loja (em outra loja pode)
+      expect((await tentar(b, lojista, 'select public.loja_importar_produtos($1, $2::jsonb)', [loja.fornecedorId, JSON.stringify([{ ...base, codigo: 'FO-01', nome: 'Repetido' }])])).codigo).toBe('23505');
+      expect((await tentar(b, rival, 'select public.loja_importar_produtos($1, $2::jsonb)', [outra.fornecedorId, JSON.stringify([{ ...base, codigo: 'FO-01', nome: 'Na outra loja' }])])).erro).toBeNull();
+    }));
+
+  it('o prazo de entrega e o aviso por WhatsApp são do dono', () =>
+    emTransacao(async (b) => {
+      const dono = await criarPessoa(b, pessoa('dono'));
+      const loja = await criarLoja(b, dono);
+      expect((await tentar(b, dono, 'update public.fornecedores set prazo_entrega_horas = 4, avisar_whatsapp = false where id = $1', [loja.fornecedorId])).erro).toBeNull();
+      expect((await tentar(b, dono, 'update public.fornecedores set prazo_entrega_horas = 0 where id = $1', [loja.fornecedorId])).codigo).toBe('23514');
+      // o prazo aparece no catálogo público
+      const [l] = await linhas(b, null, 'select prazo_entrega_horas from public.fornecedores where id = $1', [loja.fornecedorId]);
+      expect(l.prazo_entrega_horas).toBe(4);
     }));
 });

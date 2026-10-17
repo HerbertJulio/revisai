@@ -5,13 +5,23 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
+import { after } from 'next/server';
 import { acessoDaLoja } from '@/lib/conta';
 import { permitido } from '@/lib/limite';
 import { responderAlerta } from '@/lib/loja/alertas';
+import { avisarTrocaDePix, lojaParaAviso } from '@/lib/loja/avisos';
 import { cancelarConviteDaLoja, convidarParaLoja, mudarPapelNaLoja, tirarDaLoja, type ResultadoConvite, type ResultadoPapel } from '@/lib/loja/equipe';
 import { confirmarPagamento, mudarSituacao, saidaParaEntrega } from '@/lib/loja/pedidos';
 import { cancelarTrocaDoPix, trocarPix, type ResultadoTroca } from '@/lib/loja/pix';
-import { enviarFoto as guardarFoto, pedirDestaque, pedirImpulso, salvarCadastro, salvarProduto as gravarProduto, salvarPromocao as gravarPromocao } from '@/lib/loja/produtos';
+import {
+  enviarFoto as guardarFoto,
+  importarProdutos,
+  pedirDestaque,
+  pedirImpulso,
+  salvarCadastro,
+  salvarProduto as gravarProduto,
+  salvarPromocao as gravarPromocao
+} from '@/lib/loja/produtos';
 import { situacaoParteValida } from '@/lib/marketplace-dados';
 import { lerLoja, COLUNAS_LOJA } from '@/lib/loja/dados';
 
@@ -42,6 +52,15 @@ export async function salvarProduto(entrada: unknown): Promise<Gravacao<{ id: nu
   const a = await acesso('produto');
   if (!a.ok) return a;
   const r = await gravarProduto(a.sb, a.loja.id, entrada);
+  if (r.ok) atualizar();
+  return r;
+}
+
+/** A planilha de produtos, já lida e conferida na tela; o servidor confere de novo e grava tudo junto. */
+export async function importarPlanilha(produtos: unknown): Promise<Gravacao<{ novos: number; mudados: number }>> {
+  const a = await acesso('planilha', 20);
+  if (!a.ok) return a;
+  const r = await importarProdutos(a.sb, a.loja.id, produtos);
   if (r.ok) atualizar();
   return r;
 }
@@ -143,7 +162,14 @@ export async function trocarChavePix(entrada: unknown): Promise<ResultadoTroca> 
   if (!a.ok) return a;
   if (a.loja.papel !== 'dono') return SO_DONO;
   const r = await trocarPix(a.sb, a.loja.id, entrada);
-  if (r.ok) atualizar();
+  if (r.ok) {
+    atualizar();
+    // a troca espera 24 horas: o WhatsApp da loja fica sabendo (quem não pediu cancela a tempo)
+    if (!r.imediata) {
+      const loja = await lojaParaAviso(a.sb, a.loja.id);
+      if (loja) after(() => avisarTrocaDePix(loja, r.valeEm).catch(() => false));
+    }
+  }
   return r;
 }
 

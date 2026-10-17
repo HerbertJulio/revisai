@@ -7,6 +7,7 @@ import { COLUNAS_PRODUTO, lerProdutosCompletos, type LinhaProduto } from '../mar
 import { diasImpulsoValido, PRECO_IMPULSO } from '../planos-fornecedor';
 import type { Categoria } from '../tipos';
 import { mensagemDaLoja } from './comum';
+import { esquemaProdutoDaPlanilha, LIMITE_DA_PLANILHA } from './planilha';
 
 // Vitrine da loja: produtos, fotos, promoções, impulsos, o pedido do Destaque e o cadastro.
 // Tudo como a pessoa da loja: o banco barra o que não é da loja dela.
@@ -47,7 +48,14 @@ export const esquemaProdutoDaLoja = z
     intervaloMeses: z.number().int().min(1).max(180).nullable(),
     referenciaId: z.number().int().positive().nullable(),
     ativo: z.boolean(),
-    especificacao
+    especificacao,
+    codigo: z.string().trim().max(60, 'O código tem até 60 letras.').optional().default(''),
+    estoque: z.number().int('O estoque é um número inteiro.').min(0).max(1_000_000).nullable().optional().default(null),
+    aplicacoes: z
+      .array(z.object({ texto: z.string().trim().min(2).max(80), marca: z.string().nullable(), modelo: z.string().nullable(), anoDe: z.number().int().nullable(), anoAte: z.number().int().nullable() }))
+      .max(100, 'Até 100 carros por produto.')
+      .optional()
+      .default([])
   })
   .refine((x) => x.unidade !== 'L' || x.conteudo != null, { message: 'Informe quantos litros tem a embalagem.' });
 
@@ -68,11 +76,15 @@ export async function salvarProduto(sb: SupabaseClient, fornecedorId: number, en
     intervalo_meses: d.intervaloMeses,
     referencia_id: d.referenciaId,
     ativo: d.ativo,
-    especificacao: Object.fromEntries(Object.entries(d.especificacao).filter(([, v]) => v !== '' && v != null && !(Array.isArray(v) && !v.length)))
+    especificacao: Object.fromEntries(Object.entries(d.especificacao).filter(([, v]) => v !== '' && v != null && !(Array.isArray(v) && !v.length))),
+    codigo: d.codigo || null,
+    estoque: d.estoque,
+    aplicacoes: d.aplicacoes
   };
   if (d.id) {
     const { data, error } = await sb.from('produtos').update(linha).eq('id', d.id).eq('fornecedor_id', fornecedorId).select('id').maybeSingle();
     if (error || !data) {
+      if (error?.code === '23505') return { ok: false, erro: 'Esse código já é de outro produto da loja.' };
       if (error) console.error('[loja] editar produto', error);
       return { ok: false, erro: error ? mensagemDaLoja(error, ERRO_GRAVACAO) : 'Produto não encontrado.' };
     }
@@ -84,10 +96,38 @@ export async function salvarProduto(sb: SupabaseClient, fornecedorId: number, en
     .select('id')
     .single();
   if (error || !data) {
+    if (error?.code === '23505') return { ok: false, erro: 'Esse código já é de outro produto da loja.' };
     console.error('[loja] novo produto', error);
     return { ok: false, erro: mensagemDaLoja(error, ERRO_GRAVACAO) };
   }
   return { ok: true, id: Number(data.id) };
+}
+
+/**
+ * A planilha conferida no navegador vem de novo para cá: confere cada linha com as mesmas regras e
+ * grava tudo numa transação só (a função do banco roda como a pessoa, com as regras dela).
+ */
+export async function importarProdutos(sb: SupabaseClient, fornecedorId: number, entrada: unknown): Promise<Gravacao<{ novos: number; mudados: number }>> {
+  const r = z.array(esquemaProdutoDaPlanilha).min(1, 'A planilha não tem produtos.').max(LIMITE_DA_PLANILHA, `Mande até ${LIMITE_DA_PLANILHA} produtos por vez.`).safeParse(entrada);
+  if (!r.success) {
+    const i = r.error.issues[0];
+    const linha = typeof i?.path[0] === 'number' ? ` (produto ${i.path[0] + 1})` : '';
+    return { ok: false, erro: `${i?.message ?? 'Confira a planilha.'}${linha}` };
+  }
+  const produtos = r.data.map((p) => ({
+    ...p,
+    preco: Math.round(p.preco * 100) / 100,
+    especificacao: Object.fromEntries(Object.entries(p.especificacao).filter(([, v]) => v !== '' && v != null && !(Array.isArray(v) && !v.length)))
+  }));
+  const { data, error } = await sb.rpc('loja_importar_produtos', { p_fornecedor: fornecedorId, p_produtos: produtos });
+  if (error) {
+    if (error.code === '23505') return { ok: false, erro: 'Dois produtos ficaram com o mesmo código. Confira a coluna codigo.' };
+    if (error.code === '42501') return { ok: false, erro: 'A planilha tem produto de outra loja. Baixe a planilha de novo e use a da sua loja.' };
+    console.error('[loja] importar planilha', error);
+    return { ok: false, erro: mensagemDaLoja(error, 'Não deu para importar agora. Nada foi mudado; tente de novo.') };
+  }
+  const x = z.object({ novos: z.number(), mudados: z.number() }).safeParse(data);
+  return x.success ? { ok: true, ...x.data } : { ok: true, novos: 0, mudados: 0 };
 }
 
 const TIPOS_FOTO: Record<string, string> = { 'image/webp': 'webp', 'image/jpeg': 'jpg', 'image/png': 'png' };
@@ -209,7 +249,9 @@ export const esquemaCadastroDaLoja = z.object({
   descricao: z.string().trim().max(400).optional().default(''),
   whatsapp: z.string().trim().max(30),
   email: z.string().trim().max(160).optional().default(''),
-  cidade: z.string().trim().max(80).optional().default('')
+  cidade: z.string().trim().max(80).optional().default(''),
+  prazoEntregaHoras: z.number().int().min(1).max(720).nullable().optional().default(null),
+  avisarWhatsapp: z.boolean().optional().default(true)
 });
 
 /** O dono muda o cadastro da loja. O estado (UF), o CNPJ e o plano ficam com a equipe. */
@@ -223,7 +265,7 @@ export async function salvarCadastro(sb: SupabaseClient, fornecedorId: number, e
   if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { ok: false, erro: 'Confira o e-mail.' };
   const { data, error } = await sb
     .from('fornecedores')
-    .update({ nome: d.nome, descricao: d.descricao || null, whatsapp, email: email || null, cidade: d.cidade || null })
+    .update({ nome: d.nome, descricao: d.descricao || null, whatsapp, email: email || null, cidade: d.cidade || null, prazo_entrega_horas: d.prazoEntregaHoras, avisar_whatsapp: d.avisarWhatsapp })
     .eq('id', fornecedorId)
     .select('id')
     .maybeSingle();

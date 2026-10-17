@@ -3,8 +3,11 @@
 import { Camera, Pencil, Plus, Rocket, Search } from 'lucide-react';
 import { useRef, useState, useTransition } from 'react';
 import { enviarFoto, impulsionar, salvarProduto } from '@/app/fornecedor/acoes';
+import { lerAplicacoesDoTexto, rotuloDaAplicacao, textoDasAplicacoes } from '@/lib/loja/aplicacoes';
 import { combina, paraBusca } from '@/lib/loja/comum';
+import type { LinhaProdutoDaLoja } from '@/lib/loja/dados';
 import { AvisoErro } from './comum';
+import { Planilha } from './Planilha';
 import { TrocaExibicao, useExibicao } from '@/components/exibicao';
 import { Folha } from '@/components/Folha';
 import { FotoProduto } from '@/components/oficina/FotoProduto';
@@ -14,11 +17,12 @@ import { Alternar, Botao, Campo, Chip, Vazio, classeArea, classeEntrada } from '
 import { CATEGORIAS, nomeCategoria } from '@/lib/catalogo';
 import { formatarMoeda, lerNumero } from '@/lib/formatos';
 import { reduzirFoto } from '@/lib/imagem-cliente';
-import type { LinhaImpulso, LinhaProduto, LinhaPromocao } from '@/lib/marketplace-dados';
+import type { LinhaImpulso, LinhaPromocao } from '@/lib/marketplace-dados';
 import { DIAS_IMPULSO, PRECO_IMPULSO, type DiasImpulso } from '@/lib/planos-fornecedor';
 import { nomeDaReferencia, referenciasDaCategoria, textoDoPrazo } from '@/lib/referencias';
 import type { Categoria } from '@/lib/tipos';
 
+type LinhaProduto = LinhaProdutoDaLoja;
 type Unidade = LinhaProduto['unidade'];
 
 interface Rascunho {
@@ -42,6 +46,9 @@ interface Rascunho {
   medida: string;
   amperagem: string;
   tipo: string;
+  codigo: string;
+  estoque: string;
+  aplicacoes: string;
 }
 
 const UNIDADES: { id: Unidade; nome: string }[] = [
@@ -78,7 +85,10 @@ function rascunhoDe(p?: LinhaProduto): Rascunho {
     normas: texto(e.normas),
     medida: texto(e.medida),
     amperagem: texto(e.amperagem),
-    tipo: texto(e.tipo)
+    tipo: texto(e.tipo),
+    codigo: p?.codigo ?? '',
+    estoque: p?.estoque != null ? String(p.estoque) : '',
+    aplicacoes: p ? textoDasAplicacoes(p.aplicacoes) : ''
   };
 }
 
@@ -90,7 +100,7 @@ function lista(t: string): string[] | undefined {
   return l.length ? l : undefined;
 }
 
-type FiltroProduto = 'todos' | 'na_loja' | 'fora' | 'sem_foto' | 'promocao' | 'impulso';
+type FiltroProduto = 'todos' | 'na_loja' | 'fora' | 'sem_foto' | 'sem_estoque' | 'promocao' | 'impulso';
 
 interface ContextoFiltro {
   promoDe: (p: LinhaProduto) => LinhaPromocao | undefined;
@@ -102,16 +112,18 @@ const FILTROS: { id: FiltroProduto; nome: string; passa: (p: LinhaProduto, c: Co
   { id: 'na_loja', nome: 'Na loja', passa: (p) => p.ativo },
   { id: 'fora', nome: 'Fora da loja', passa: (p) => !p.ativo },
   { id: 'sem_foto', nome: 'Sem foto', passa: (p) => !p.imagem_url },
+  { id: 'sem_estoque', nome: 'Esgotados', passa: (p) => p.estoque === 0 },
   { id: 'promocao', nome: 'Em promoção', passa: (p, c) => !!c.promoDe(p) },
   { id: 'impulso', nome: 'Impulsionados', passa: (p, c) => !!c.impulsoDe(p) }
 ];
 
 /** Como o produto está: fora da loja, promoção em vigor, impulso no ar ou pedido. */
 function SelosDoProduto({ produto: p, promo, impulso }: { produto: LinhaProduto; promo?: LinhaPromocao; impulso?: LinhaImpulso }) {
-  if (p.ativo && !promo && !impulso) return null;
+  if (p.ativo && !promo && !impulso && p.estoque == null) return null;
   return (
     <div className="flex flex-wrap gap-1.5">
       {!p.ativo ? <Chip tom="atraso">Fora da loja</Chip> : null}
+      {p.estoque === 0 ? <Chip tom="atraso">Esgotado</Chip> : p.estoque != null ? <Chip>{p.estoque} em estoque</Chip> : null}
       {promo ? <Chip tom="oleo">{promo.titulo}</Chip> : null}
       {impulso ? (
         <Chip tom={impulso.status === 'ativo' ? 'ok' : 'caneta'}>
@@ -200,6 +212,7 @@ export function ProdutosFornecedor({
     const meses = rascunho.meses.trim() ? lerNumero(rascunho.meses) : null;
     const amperagem = rascunho.amperagem.trim() ? lerNumero(rascunho.amperagem) : null;
     if (!preco || preco <= 0) return setErro('Informe o preço.');
+    if (rascunho.estoque.trim() && lerNumero(rascunho.estoque) == null) return setErro('O estoque é um número (ou deixe em branco).');
     const especificacao = {
       ...(rascunho.categoria === 'oleo_motor'
         ? {
@@ -229,7 +242,10 @@ export function ProdutosFornecedor({
           intervaloMeses: meses ? Math.round(meses) : null,
           referenciaId: rascunho.referenciaId ? Number(rascunho.referenciaId) : null,
           ativo: rascunho.ativo,
-          especificacao: Object.fromEntries(Object.entries(especificacao).filter(([, v]) => v !== undefined))
+          especificacao: Object.fromEntries(Object.entries(especificacao).filter(([, v]) => v !== undefined)),
+          codigo: rascunho.codigo.trim(),
+          estoque: rascunho.estoque.trim() ? Math.max(0, Math.round(lerNumero(rascunho.estoque) ?? 0)) : null,
+          aplicacoes: lerAplicacoesDoTexto(rascunho.aplicacoes)
         });
         if (!r.ok) return setErro(r.erro);
         if (rascunho.id) {
@@ -290,9 +306,12 @@ export function ProdutosFornecedor({
         <p className="text-[15px] text-tinta-2">
           Produto com foto, ficha técnica e prazo de troca entra nas recomendações certas para as oficinas.
         </p>
-        <Botao variante="escuro" onClick={() => abrir()}>
-          <Plus size={17} /> Produto
-        </Botao>
+        <div className="flex flex-wrap gap-2">
+          <Planilha produtos={produtos} />
+          <Botao variante="escuro" onClick={() => abrir()}>
+            <Plus size={17} /> Produto
+          </Botao>
+        </div>
       </div>
 
       {produtos.length ? (
@@ -458,6 +477,12 @@ export function ProdutosFornecedor({
             <Campo rotulo="Preço (R$)" htmlFor="pf-preco" className="sm:col-span-2">
               <input id="pf-preco" className={`${classeEntrada} num font-bold`} value={rascunho.preco} onChange={(e) => mudar({ preco: e.target.value })} inputMode="decimal" placeholder="0,00" />
             </Campo>
+            <Campo rotulo="Estoque" htmlFor="pf-estoque" className="sm:col-span-3" dica="Em branco se você não controla. Baixa sozinho quando você confirma um pedido.">
+              <input id="pf-estoque" className={`${classeEntrada} num`} value={rascunho.estoque} onChange={(e) => mudar({ estoque: e.target.value })} inputMode="numeric" placeholder="não controlo" />
+            </Campo>
+            <Campo rotulo="Código na sua loja" htmlFor="pf-codigo" className="sm:col-span-3" dica="Opcional. O mesmo da sua planilha ou do seu sistema.">
+              <input id="pf-codigo" className={classeEntrada} value={rascunho.codigo} onChange={(e) => mudar({ codigo: e.target.value })} maxLength={60} autoComplete="off" />
+            </Campo>
 
             {rascunho.categoria === 'oleo_motor' ? (
               <>
@@ -524,7 +549,19 @@ export function ProdutosFornecedor({
               <p className="text-[13px] text-tinta-3">O que o fabricante do produto indica. Em branco, vale a base ligada acima ou o padrão do app. O manual do carro sempre manda quando pede menos.</p>
             </div>
 
-            <Campo rotulo="Descrição" htmlFor="pf-desc" className="sm:col-span-6" dica="Aplicação, diferenciais, garantia.">
+            <Campo rotulo="Serve em quais carros" htmlFor="pf-aplic" className="sm:col-span-6" dica="Um carro por linha, como você fala: Gol 1.0 2015 a 2020. A oficina acha a peça pelo carro que está atendendo.">
+              <textarea id="pf-aplic" rows={3} className={classeArea} value={rascunho.aplicacoes} onChange={(e) => mudar({ aplicacoes: e.target.value })} placeholder={'Onix 1.0 2017 a 2022\nPrisma 1.4 2013 a 2019'} />
+            </Campo>
+            {rascunho.aplicacoes.trim() ? (
+              <div className="-mt-2 flex flex-wrap gap-1.5 sm:col-span-6" aria-label="Carros entendidos">
+                {lerAplicacoesDoTexto(rascunho.aplicacoes).map((a) => (
+                  <Chip key={a.texto} tom={a.modelo ? 'caneta' : 'neutro'}>
+                    {rotuloDaAplicacao(a)}
+                  </Chip>
+                ))}
+              </div>
+            ) : null}
+            <Campo rotulo="Descrição" htmlFor="pf-desc" className="sm:col-span-6" dica="Diferenciais e garantia.">
               <textarea id="pf-desc" rows={3} className={classeArea} value={rascunho.descricao} onChange={(e) => mudar({ descricao: e.target.value })} maxLength={600} />
             </Campo>
             <div className="rounded-xl border border-linha px-4 py-1 sm:col-span-6">

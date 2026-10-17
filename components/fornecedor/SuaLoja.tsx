@@ -16,12 +16,12 @@ import {
   trocarChavePix
 } from '@/app/fornecedor/acoes';
 import { useToast } from '@/components/Toasts';
-import { Botao, Campo, Chip, classeArea, classeBotao, classeEntrada } from '@/components/ui';
+import { Alternar, Botao, Campo, Chip, classeArea, classeBotao, classeEntrada } from '@/components/ui';
 import { formatarCnpj } from '@/lib/cnpj';
 import { formatarDiaHora } from '@/lib/datas';
 import { formatarTelefone } from '@/lib/formatos';
 import { dataCurta, diaEmBrasilia, FUSO, hojeEmBrasilia, quandoFoi } from '@/lib/loja/comum';
-import type { ConviteDaLoja, LinhaLoja, MembroDaLoja, ResumoPix } from '@/lib/loja/dados';
+import { PRAZOS_DE_ENTREGA, textoDoPrazoDeEntrega, type ConviteDaLoja, type LinhaLoja, type MembroDaLoja, type ResumoPix } from '@/lib/loja/dados';
 import { formatarChavePix, type TipoChavePix } from '@/lib/pix';
 import type { ConfigPublica } from '@/lib/supabase-navegador';
 import { ConfirmarEmail } from './ConfirmarEmail';
@@ -38,6 +38,8 @@ export function CadastroDaLoja({ loja, dono }: { loja: LinhaLoja; dono: boolean 
   const [whatsapp, setWhatsapp] = useState(loja.whatsapp ? formatarTelefone(loja.whatsapp) : '');
   const [email, setEmail] = useState(loja.email ?? '');
   const [cidade, setCidade] = useState(loja.cidade ?? '');
+  const [prazo, setPrazo] = useState(loja.prazo_entrega_horas != null ? String(loja.prazo_entrega_horas) : '');
+  const [avisar, setAvisar] = useState(loja.avisar_whatsapp !== false);
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, iniciar] = useTransition();
 
@@ -67,6 +69,7 @@ export function CadastroDaLoja({ loja, dono }: { loja: LinhaLoja; dono: boolean 
         </p>
         {loja.descricao ? <p className="text-tinta-2">{loja.descricao}</p> : null}
         <p className="text-tinta-2">{[loja.whatsapp ? `WhatsApp ${formatarTelefone(loja.whatsapp)}` : null, loja.email].filter(Boolean).join(', ') || 'Sem contato cadastrado.'}</p>
+        {textoDoPrazoDeEntrega(loja.prazo_entrega_horas) ? <p className="text-tinta-2">{textoDoPrazoDeEntrega(loja.prazo_entrega_horas)}.</p> : null}
         {fixos}
         <p className="text-[13.5px] text-tinta-3">Só o dono da loja muda o cadastro.</p>
       </div>
@@ -76,7 +79,7 @@ export function CadastroDaLoja({ loja, dono }: { loja: LinhaLoja; dono: boolean 
     setErro(null);
     iniciar(async () => {
       try {
-        const r = await salvarCadastroDaLoja({ nome, descricao, whatsapp, email, cidade });
+        const r = await salvarCadastroDaLoja({ nome, descricao, whatsapp, email, cidade, prazoEntregaHoras: prazo ? Number(prazo) : null, avisarWhatsapp: avisar });
         if (!r.ok) return setErro(r.erro);
         toast({ texto: 'Cadastro salvo.' });
       } catch {
@@ -109,6 +112,26 @@ export function CadastroDaLoja({ loja, dono }: { loja: LinhaLoja; dono: boolean 
         <Campo rotulo="Cidade" htmlFor="loja-cidade">
           <input id="loja-cidade" className={classeEntrada} value={cidade} onChange={(e) => setCidade(e.target.value)} maxLength={80} />
         </Campo>
+        <Campo rotulo="Prazo de entrega" htmlFor="loja-prazo" dica="Aparece para as oficinas ao lado dos seus produtos.">
+          <select id="loja-prazo" className={classeEntrada} value={prazo} onChange={(e) => setPrazo(e.target.value)}>
+            <option value="">Não informar</option>
+            {PRAZOS_DE_ENTREGA.map((p) => (
+              <option key={p.horas} value={p.horas}>
+                {p.nome}
+              </option>
+            ))}
+            {prazo && !PRAZOS_DE_ENTREGA.some((p) => String(p.horas) === prazo) ? <option value={prazo}>{textoDoPrazoDeEntrega(Number(prazo))}</option> : null}
+          </select>
+        </Campo>
+        <div className="rounded-xl border border-linha px-4 py-1 sm:col-span-2">
+          <Alternar
+            id="loja-avisos"
+            ligado={avisar}
+            aoMudar={setAvisar}
+            rotulo="Avisos no WhatsApp da loja"
+            descricao="Pedido novo, alerta de preço da região e troca da chave Pix, para quando o painel está fechado."
+          />
+        </div>
       </div>
       {fixos}
       <p className="text-[13.5px] text-tinta-3">Para mudar o CNPJ ou o estado, fale com a equipe do Revisaí.</p>

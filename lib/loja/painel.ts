@@ -4,17 +4,7 @@ import { cache } from 'react';
 import { contaAtual, lojaEscolhida } from '../conta';
 import type { LojaDaConta } from '../conta-dados';
 import { redirect } from 'next/navigation';
-import {
-  COLUNAS_IMPULSO,
-  COLUNAS_PRODUTO,
-  COLUNAS_PROMOCAO,
-  lerImpulsos,
-  lerProdutosCompletos,
-  lerPromocoesCompletas,
-  type LinhaImpulso,
-  type LinhaProduto,
-  type LinhaPromocao
-} from '../marketplace-dados';
+import { COLUNAS_IMPULSO, COLUNAS_PROMOCAO, lerImpulsos, lerPromocoesCompletas, type LinhaImpulso, type LinhaPromocao } from '../marketplace-dados';
 import { clienteDoUsuario } from '../supabase-servidor';
 import { contarAlertasSemResposta } from './alertas';
 import { hojeEmBrasilia } from './comum';
@@ -22,11 +12,14 @@ import {
   COLUNAS_CONTRATO_DA_LOJA,
   COLUNAS_LOJA,
   COLUNAS_PARTE_DA_LOJA,
+  COLUNAS_PRODUTO_DA_LOJA,
   lerContratoDaLoja,
   lerLoja,
   lerPedidosDaLoja,
+  lerProdutosDaLoja,
   type ContratoDaLoja,
   type LinhaLoja,
+  type LinhaProdutoDaLoja,
   type PedidoDaLoja
 } from './dados';
 
@@ -41,7 +34,7 @@ export interface PainelDaLoja {
   /** As outras lojas da mesma pessoa (para trocar). */
   lojas: LojaDaConta[];
   contrato: ContratoDaLoja | null;
-  produtos: LinhaProduto[];
+  produtos: LinhaProdutoDaLoja[];
   promocoes: LinhaPromocao[];
   impulsos: LinhaImpulso[];
   pedidos: PedidoDaLoja[];
@@ -82,7 +75,7 @@ export const painelDaLoja = cache(async (): Promise<ResultadoPainel> => {
     const [f, c, p, i, pf, t] = await Promise.all([
       sb.from('fornecedores').select(COLUNAS_LOJA).eq('id', id).maybeSingle(),
       sb.from('fornecedores_contrato').select(COLUNAS_CONTRATO_DA_LOJA).eq('fornecedor_id', id).maybeSingle(),
-      sb.from('produtos').select(COLUNAS_PRODUTO).eq('fornecedor_id', id).order('categoria').order('nome'),
+      sb.from('produtos').select(COLUNAS_PRODUTO_DA_LOJA).eq('fornecedor_id', id).order('categoria').order('nome').limit(5000),
       sb.from('impulsos').select(COLUNAS_IMPULSO).eq('fornecedor_id', id).order('criado_em', { ascending: false }).limit(100),
       sb.from('pedidos_fornecedores').select(COLUNAS_PARTE_DA_LOJA).eq('fornecedor_id', id).order('criado_em', { ascending: false }).limit(200),
       sb.rpc('termos_pendentes')
@@ -96,7 +89,7 @@ export const painelDaLoja = cache(async (): Promise<ResultadoPainel> => {
     }
     const loja = lerLoja(f.data);
     if (!loja) return { estado: 'sem-loja' };
-    const produtos = lerProdutosCompletos(p.data).itens;
+    const produtos = lerProdutosDaLoja(p.data);
     const ids = produtos.map((x) => x.id);
     const promos = ids.length ? await sb.from('promocoes').select(COLUNAS_PROMOCAO).in('produto_id', ids).order('fim', { ascending: false }) : { data: [], error: null };
     if (promos.error) {

@@ -4,7 +4,7 @@
 import { z } from 'zod';
 import { CATEGORIAS } from '../catalogo';
 import type { LinhaRegional } from '../demanda';
-import type { ItemDoPedido, SituacaoPagamentoParte, SituacaoParte } from '../marketplace-dados';
+import { COLUNAS_PRODUTO, lerProdutosCompletos, type ItemDoPedido, type LinhaProduto, type SituacaoPagamentoParte, type SituacaoParte } from '../marketplace-dados';
 import type { TipoChavePix } from '../pix';
 import type { Categoria } from '../tipos';
 
@@ -36,14 +36,80 @@ const esquemaLoja = z.object({
   demonstracao: z.boolean(),
   verificacao: z.enum(['pendente', 'aprovada', 'recusada']).catch('aprovada'),
   verificacao_obs: texto,
+  prazo_entrega_horas: numeroOuNulo.optional().transform((v) => v ?? null),
+  avisar_whatsapp: z.boolean().optional().default(true),
   criado_em: z.string()
 });
 export type LinhaLoja = z.infer<typeof esquemaLoja>;
-export const COLUNAS_LOJA = 'id, nome, cidade, uf, whatsapp, descricao, email, cnpj, ativo, destaque, destaque_ate, demonstracao, verificacao, verificacao_obs, criado_em';
+export const COLUNAS_LOJA =
+  'id, nome, cidade, uf, whatsapp, descricao, email, cnpj, ativo, destaque, destaque_ate, demonstracao, verificacao, verificacao_obs, prazo_entrega_horas, avisar_whatsapp, criado_em';
+
+/** Os prazos de entrega que a loja escolhe (em horas). */
+export const PRAZOS_DE_ENTREGA: { horas: number; nome: string }[] = [
+  { horas: 2, nome: 'Em até 2 horas' },
+  { horas: 4, nome: 'Em até 4 horas' },
+  { horas: 8, nome: 'No mesmo dia' },
+  { horas: 24, nome: 'Em 1 dia útil' },
+  { horas: 48, nome: 'Em até 2 dias' },
+  { horas: 72, nome: 'Em até 3 dias' }
+];
+
+/** "Entrega em até 4 horas", "Entrega no mesmo dia"... (ou null sem prazo). */
+export function textoDoPrazoDeEntrega(horas: number | null | undefined): string | null {
+  if (!horas || horas < 1) return null;
+  const conhecido = PRAZOS_DE_ENTREGA.find((p) => p.horas === horas);
+  if (conhecido) return `Entrega ${conhecido.nome.charAt(0).toLowerCase()}${conhecido.nome.slice(1)}`;
+  if (horas < 24) return `Entrega em até ${horas} ${horas === 1 ? 'hora' : 'horas'}`;
+  const dias = Math.round(horas / 24);
+  return `Entrega em até ${dias} ${dias === 1 ? 'dia' : 'dias'}`;
+}
 
 export function lerLoja(d: unknown): LinhaLoja | null {
   const r = esquemaLoja.safeParse(d);
   return r.success ? r.data : null;
+}
+
+// ---------------------------------------------------------------- produtos
+
+/** Em que carro a peça serve: o texto que a loja escreveu e o que o app entendeu dele. */
+export interface Aplicacao {
+  texto: string;
+  marca: string | null;
+  modelo: string | null;
+  anoDe: number | null;
+  anoAte: number | null;
+}
+
+const esquemaAplicacao = z.object({
+  texto: z.string(),
+  marca: texto,
+  modelo: texto,
+  anoDe: numeroOuNulo.optional().transform((v) => v ?? null),
+  anoAte: numeroOuNulo.optional().transform((v) => v ?? null)
+});
+
+export function lerAplicacoes(d: unknown): Aplicacao[] {
+  return ler(esquemaAplicacao, d);
+}
+
+/** O produto como o painel da loja usa: o do catálogo mais o código, o estoque e as aplicações. */
+export type LinhaProdutoDaLoja = LinhaProduto & { codigo: string | null; estoque: number | null; aplicacoes: Aplicacao[] };
+
+export const COLUNAS_PRODUTO_DA_LOJA = `${COLUNAS_PRODUTO}, codigo, estoque, aplicacoes`;
+
+export function lerProdutosDaLoja(d: unknown): LinhaProdutoDaLoja[] {
+  const linhas = Array.isArray(d) ? d : [];
+  const base = lerProdutosCompletos(linhas).itens;
+  const extras = new Map(
+    linhas.flatMap((x) => {
+      const r = z.object({ id: numero, codigo: texto, estoque: numeroOuNulo.optional().transform((v) => v ?? null), aplicacoes: z.unknown() }).safeParse(x);
+      return r.success ? [[r.data.id, r.data] as const] : [];
+    })
+  );
+  return base.map((p) => {
+    const e = extras.get(p.id);
+    return { ...p, codigo: e?.codigo ?? null, estoque: e?.estoque ?? null, aplicacoes: lerAplicacoes(e?.aplicacoes) };
+  });
 }
 
 // ---------------------------------------------------------------- pedidos
