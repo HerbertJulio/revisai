@@ -37,7 +37,7 @@ export function MenuDaConta({ compacto = false }: { compacto?: boolean }) {
             </div>
           ) : null}
           <Link href="/conta?ver=1" className={classeBotao('secundario', 'normal', 'self-start')} onClick={() => setAberto(false)}>
-            <ArrowLeftRight size={16} aria-hidden="true" /> {outras ? 'Trocar de oficina' : 'Abrir a conta'}
+            {outras ? <ArrowLeftRight size={16} aria-hidden="true" /> : <CircleUserRound size={16} aria-hidden="true" />} {outras ? 'Trocar de oficina' : 'Abrir a conta'}
           </Link>
           <div className="border-t border-linha pt-4">
             <p className="mb-3 text-[14px] text-tinta-2">Ao sair, o que ainda não subiu vai para a nuvem e os dados da oficina saem deste aparelho. Entrando de novo, eles voltam.</p>
