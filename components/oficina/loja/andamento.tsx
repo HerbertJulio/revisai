@@ -207,9 +207,10 @@ export function ProvedorDeAndamento({ children }: { children: ReactNode }) {
   const precisaOlhar = !!oficinaId && (entregasACaminho > 0 || esperando || andando);
   useEffect(() => {
     if (!precisaOlhar) return;
+    // confere a cada 15 s se já passaram 2 minutos desde a última busca (qualquer busca conta)
     const t = setInterval(() => {
-      if (document.visibilityState === 'visible' && Date.now() - ultima.current >= INTERVALO_RESERVA_MS - 5_000) void atualizar();
-    }, INTERVALO_RESERVA_MS);
+      if (document.visibilityState === 'visible' && Date.now() - ultima.current >= INTERVALO_RESERVA_MS) void atualizar();
+    }, 15_000);
     return () => clearInterval(t);
   }, [precisaOlhar, atualizar]);
   useEffect(() => {
