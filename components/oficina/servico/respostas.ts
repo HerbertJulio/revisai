@@ -109,9 +109,9 @@ async function aplicarOrcamento(ctx: ContextoDaConta, l: LinhaComResposta, r: Re
     avisar(`O cliente respondeu o orçamento nº ${atual.numero}, mas os itens mudaram. Confira o orçamento.`);
     return;
   }
-  const aprovacao = aprovacaoDoLink(r);
+  // a prova que já estava (a oficina marcou antes) fica; a do link continua guardada no banco
   const depois = useOficina.getState().documentos[atual.id];
-  if (depois) useOficina.getState().salvarDocumento({ ...depois, aprovacao });
+  if (depois && !depois.aprovacao) useOficina.getState().salvarDocumento({ ...depois, aprovacao: aprovacaoDoLink(r) });
   if (!jaTinha) await notificarExtensoes('aprovar', atual.id, ordemId, recusadas);
   avisar(`O cliente aprovou o orçamento nº ${atual.numero} pelo link${recusadas.length ? ', sem alguns itens' : ''}. A ordem de serviço já está aberta.`);
   void mandarCopiaDaAprovacao(atual.id);
