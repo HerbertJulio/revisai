@@ -143,6 +143,50 @@ d('cobrança do Pro', () => {
     }));
 });
 
+d('cobrança pelo servidor', () => {
+  it('o servidor lê assinaturas e pagamentos; sem a chave, ninguém lê', () =>
+    emTransacao(async (b) => {
+      const dono = await criarPessoa(b, pessoa('dono'));
+      const o = await criarOficina(b, dono);
+      const a = await assinatura(b, o);
+      await cobranca(b, o, a.id, 'pay_s1');
+      expect(await linhas(b, null, `select externo from public.pagamentos where oficina_id = $1`, [o], sistema)).toEqual([{ externo: 'pay_s1' }]);
+      expect(await linhas(b, null, `select id from public.assinaturas_pro where oficina_id = $1`, [o], sistema)).toHaveLength(1);
+      expect(await linhas(b, null, `select id from public.pagamentos where oficina_id = $1`, [o])).toEqual([]);
+      expect(await linhas(b, null, `select id from public.assinaturas_pro where oficina_id = $1`, [o])).toEqual([]);
+    }));
+
+  it('a nota de outro gateway acha o pagamento pelo id da nota', () =>
+    emTransacao(async (b) => {
+      const dono = await criarPessoa(b, pessoa('dono'));
+      const o = await criarOficina(b, dono);
+      const a = await assinatura(b, o);
+      await cobranca(b, o, a.id, 'txid_s2');
+      // a nota avulsa foi pedida ao Asaas para um pagamento da cobrança 'teste'
+      await linhas(b, null, `select public.cobranca_nota('teste', 'txid_s2', 'inv_asaas_9', null, null, 'agendada')`, [], sistema);
+      // o aviso do Asaas chega só com o id da nota
+      await linhas(b, null, `select public.cobranca_nota('asaas', null, 'inv_asaas_9', '77', 'https://nota.exemplo/77.pdf', 'emitida')`, [], sistema);
+      expect((await linhas(b, dono, `select nota_numero, nota_situacao from public.pagamentos where externo = 'txid_s2'`))[0]).toEqual({ nota_numero: '77', nota_situacao: 'emitida' });
+      expect((await tentar(b, null, `select public.cobranca_nota('teste', 'txid_s2', 'x', null, null, 'esquisita')`, [], sistema)).codigo).toBe('22023');
+    }));
+
+  it('a autorização aprovada no banco ativa a assinatura e tira o código da tela', () =>
+    emTransacao(async (b) => {
+      const dono = await criarPessoa(b, pessoa('dono'));
+      const o = await criarOficina(b, dono);
+      const [r] = await linhas(
+        b,
+        null,
+        `select public.cobranca_registrar_assinatura($1, 'efi', 'pix_automatico', null, 'RR123', 29.90, null, null, null, current_date, '00020101...', null) as id`,
+        [o],
+        sistema
+      );
+      expect((await tentar(b, dono, `select public.cobranca_autorizacao_aprovada('efi', 'RR123')`)).codigo).toBe('42501');
+      await linhas(b, null, `select public.cobranca_autorizacao_aprovada('efi', 'RR123')`, [], sistema);
+      expect((await linhas(b, dono, `select situacao, autorizacao from public.assinaturas_pro where id = $1`, [r.id]))[0]).toEqual({ situacao: 'ativa', autorizacao: null });
+    }));
+});
+
 d('cobrança das lojas', () => {
   it('o financeiro lança, a loja dona vê, outra loja não; marcar como pago', () =>
     emTransacao(async (b) => {
