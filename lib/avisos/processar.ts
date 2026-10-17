@@ -99,6 +99,12 @@ export async function processarAvisos(opcoes: { lote?: number; ateMs?: number } 
       const modelo = tipoAvisoValido(a.tipo) ? modeloDoAviso(a.tipo) : null;
       if (whatsapp && modelo) {
         for (const para of [...new Set(a.para.whatsapps)]) {
+          // teto por número por dia: nenhum número recebe uma enxurrada de mensagens do Revisaí
+          const { data: cabe } = await sb.rpc('limite_consumir', { p_chave: `wa-aviso:${para}`, p_max: 30, p_segundos: 86_400 });
+          if (cabe === false) {
+            erros.push('whatsapp no teto do dia');
+            continue;
+          }
           const r = await enviarWhatsApp(whatsapp, para, modelo, m);
           if (r === 'ok') {
             conta.ok++;

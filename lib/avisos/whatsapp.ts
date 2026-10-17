@@ -7,6 +7,7 @@ import 'server-only';
 // Sem o token, o número ou o modelo, não manda nada.
 
 import type { MensagemAviso, TipoAviso } from './mensagens';
+import { textoSeguro } from './texto-seguro';
 
 export interface ConfigWhatsAppAvisos {
   token: string;
@@ -46,9 +47,9 @@ export function modeloDoAviso(tipo: TipoAviso): string | null {
   return proprio || geral || null;
 }
 
-/** Variável de modelo da Meta: sem quebra de linha, sem espaços seguidos e nunca vazia. */
+/** Variável de modelo da Meta: sem quebra de linha, sem link, e-mail ou telefone, e nunca vazia. */
 function parametro(t: string, max: number): string {
-  return t.replace(/\s+/g, ' ').trim().slice(0, max) || '-';
+  return textoSeguro(t, max);
 }
 
 export type ResultadoWhatsApp = 'ok' | 'tentar' | 'erro';

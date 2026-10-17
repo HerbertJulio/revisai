@@ -150,7 +150,8 @@ export async function assinarPro(sbUsuario: SupabaseClient, oficina: OficinaQueA
         boleto: p.boletoLinha,
         userId
       });
-      if (p.situacao === 'pago') await aplicarEProcessar(provedor.nome, { id: `assinar:${p.externo}`, tipo: 'pago', externo: p.externo, pagoEm: p.pagoEm, assinatura: null, cobranca: null });
+      // a situação veio da resposta do próprio gateway
+      if (p.situacao === 'pago') await aplicarEProcessar(provedor.nome, { id: `assinar:${p.externo}`, tipo: 'pago', externo: p.externo, pagoEm: p.pagoEm, assinatura: null, cobranca: null }, undefined, true);
     } catch (e) {
       // a assinatura ficou guardada; a cobrança chega pelo aviso do gateway ou pela conferência da tela
       console.error('[cobranca] guardar a primeira cobrança', e instanceof Error ? e.message : e);
@@ -240,7 +241,8 @@ export async function conferirPagamentos(oficinaId: string): Promise<Res<{ mudou
       if (c.situacao === linha.situacao && !pixNovo) continue;
       const assinatura = viva && viva.id === linha.assinatura_id ? viva.assinatura_externa : null;
       const e = eventoDaSituacao(c, assinatura);
-      if (e && (await aplicarEProcessar(provedor.nome, e)).ok) mudou = mudou || c.situacao !== linha.situacao;
+      // o evento saiu da consulta ao próprio gateway: já está conferido
+      if (e && (await aplicarEProcessar(provedor.nome, e, undefined, true)).ok) mudou = mudou || c.situacao !== linha.situacao;
     } catch (e) {
       console.error('[cobranca] conferir', linha.id, e instanceof Error ? e.message : e);
     }
@@ -255,7 +257,7 @@ export async function conferirPagamentos(oficinaId: string): Promise<Res<{ mudou
         const ja = await bancoSupabase(sistema).pagamentoPorExterno(viva.provedor, c.externo);
         if (ja) continue;
         const e = eventoDaSituacao(c, viva.assinatura_externa);
-        if (e && (await aplicarEProcessar(viva.provedor, e)).ok) mudou = true;
+        if (e && (await aplicarEProcessar(viva.provedor, e, undefined, true)).ok) mudou = true;
       }
     } catch (e) {
       console.error('[cobranca] cobranças da assinatura', viva.id, e instanceof Error ? e.message : e);
@@ -266,11 +268,33 @@ export async function conferirPagamentos(oficinaId: string): Promise<Res<{ mudou
 
 // ------------------------------------------------------------------ avisos dos gateways
 
+/**
+ * Antes de dar o Pro por um aviso de "pago", pergunta ao próprio gateway: um aviso falso (com o
+ * segredo do webhook vazado, por exemplo) não liga nada. Confere a situação e o valor.
+ */
+async function pagoNoGateway(provedor: NomeProvedor, e: Evento, banco: BancoCobranca): Promise<string | null> {
+  // o gateway de mentira (só fora de produção) não guarda as cobranças para consultar
+  if (e.tipo !== 'pago' || provedor === 'teste') return null;
+  const registrado = await banco.pagamentoPorExterno(provedor, e.externo);
+  // Pix que chegou na chave e não é do Revisaí (Efí): nada vai ser ligado por ele
+  if (!registrado && !e.assinatura) return null;
+  const p = provedorPorNome(provedor);
+  if (!p) return null;
+  const c = await p.consultarPagamento(e.externo);
+  if (!c || c.situacao !== 'pago') return `O gateway não confirma o pagamento ${e.externo}`;
+  if (registrado && c.valor > 0 && c.valor + 0.01 < registrado.valor) return `Valor pago (${c.valor}) menor que o cobrado (${registrado.valor}) em ${e.externo}`;
+  return null;
+}
+
 /** Aplica um evento e, se um pagamento foi confirmado, emite a nota quando o gateway não emite sozinho. */
-export async function aplicarEProcessar(provedor: NomeProvedor, e: Evento, banco?: BancoCobranca): Promise<Res> {
+export async function aplicarEProcessar(provedor: NomeProvedor, e: Evento, banco?: BancoCobranca, conferido = false): Promise<Res> {
   const sistema = sistemaOuErro();
   if (!sistema) return { ok: false, erro: SEM_SISTEMA };
   try {
+    if (!conferido) {
+      const recusa = await pagoNoGateway(provedor, e, banco ?? bancoSupabase(sistema));
+      if (recusa) return { ok: false, erro: recusa };
+    }
     const r = await aplicarEvento(provedor, e, banco ?? bancoSupabase(sistema));
     if (!r.ok) return r;
     if (r.pago) await notaDepoisDoPagamento(sistema, r.pago);

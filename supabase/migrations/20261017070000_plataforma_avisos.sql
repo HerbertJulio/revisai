@@ -483,10 +483,14 @@ begin
   -- O WhatsApp é da empresa (um número por loja ou oficina). Vai quando alguém da empresa deixou
   -- o WhatsApp ligado para este tipo de aviso (ou quando a empresa ainda não tem ninguém com
   -- conta). A loja também desliga em Sua loja (fornecedores.avisar_whatsapp, quando existe).
+  -- Só para número conferido: a loja aprovada pela equipe, e a oficina cujo número já mandou o
+  -- código para o agente do Revisaí (senão qualquer conta faria o Revisaí mandar mensagem para
+  -- o número de outra pessoa).
   select coalesce(jsonb_agg(distinct w.whatsapp), '[]'::jsonb) into v_whatsapps
     from (
       select f.whatsapp from public.fornecedores f
        where f.id = any (v_lojas) and f.whatsapp is not null
+         and f.ativo and f.verificacao = 'aprovada'
          and coalesce((to_jsonb(f) ->> 'avisar_whatsapp')::boolean, true)
          and (not exists (select 1 from public.fornecedor_membros m where m.fornecedor_id = f.id)
               or exists (select 1 from public.fornecedor_membros m left join public.avisos_preferencias p on p.user_id = m.user_id
@@ -494,6 +498,9 @@ begin
       union
       select o.whatsapp from public.oficinas o
        where o.id = v_oficina and o.whatsapp is not null
+         and exists (select 1 from public.whatsapp_vinculos v
+                      where v.oficina_id = o.id
+                        and v.telefone in (regexp_replace(o.whatsapp, '[^0-9]', '', 'g'), '55' || regexp_replace(o.whatsapp, '[^0-9]', '', 'g')))
          and (not exists (select 1 from public.oficina_membros m where m.oficina_id = o.id)
               or exists (select 1 from public.oficina_membros m left join public.avisos_preferencias p on p.user_id = m.user_id
                           where m.oficina_id = o.id and coalesce(p.whatsapp, true) and not (p_tipo = any (coalesce(p.desligados, '{}')))))

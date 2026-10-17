@@ -4,6 +4,7 @@
 // dos dados da oficina (outra pessoa pode usar o mesmo computador). Na próxima entrada, os dados
 // voltam do banco.
 
+import { del, keys } from 'idb-keyval';
 import { useSyncExternalStore } from 'react';
 import { MotorDeSincronia } from '@/components/oficina/sincronia/motor';
 import { limparCacheDoApp } from '@/lib/cache-app';
@@ -104,7 +105,22 @@ export async function prepararSaida(config: ConfigPublica | null, confirmar?: (t
     // grava já: a página vai mudar logo em seguida
     await gravarAgora().catch(() => {});
   }
+  // a ordem por voz em andamento e os áudios e fotos guardados são da conta que sai
+  await apagarRascunhosDoAparelho();
   // as telas guardadas para abrir sem internet têm os dados da conta
   await limparCacheDoApp();
   return true;
+}
+
+const RASCUNHOS = ['revisai:ordem-por-voz', 'revisai:midia:'];
+
+async function apagarRascunhosDoAparelho(): Promise<void> {
+  try {
+    const todas = await keys();
+    await Promise.all(
+      todas.filter((k) => typeof k === 'string' && RASCUNHOS.some((p) => k.startsWith(p))).map((k) => del(k).catch(() => {}))
+    );
+  } catch {
+    // sem IndexedDB (aba privada), não há o que apagar
+  }
 }

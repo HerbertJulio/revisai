@@ -187,7 +187,11 @@ d('quem recebe', () => {
       const o = await criarOficina(b, dono, 'Oficina AP', { uf: 'AP', whatsapp: '5596999990000' });
       const r = await para(b, 'pedido_situacao', { oficina_id: o });
       expect(r.pessoas.map((p) => p.userId)).toEqual([dono.id]);
-      expect(r.whatsapps).toEqual(['5596999990000']);
+      // número que ninguém conferiu não recebe WhatsApp do Revisaí
+      expect(r.whatsapps).toEqual([]);
+      // depois que o número mandou o código para o agente, recebe
+      await b.query(`insert into public.whatsapp_vinculos (telefone, oficina_id, oficina_nome) values ('5596999990000', $1, 'Oficina AP')`, [o]);
+      expect((await para(b, 'pedido_situacao', { oficina_id: o })).whatsapps).toEqual(['5596999990000']);
       expect(await para(b, 'suporte_resposta', { user_id: dono.id, email: dono.email })).toMatchObject({ pessoas: [{ userId: dono.id, email: dono.email }], whatsapps: [] });
       expect((await para(b, 'suporte_resposta', { user_id: null, email: 'Fulano@Exemplo.dev' })).pessoas).toMatchObject([{ userId: null, email: 'fulano@exemplo.dev' }]);
     }));

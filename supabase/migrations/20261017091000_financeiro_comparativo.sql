@@ -80,6 +80,8 @@ begin
     select o.id, privado.cidade_normalizada(o.cidade) as cidade
       from public.oficinas o
      where o.uf = p_uf and o.ativa and o.excluir_em is null
+       -- oficina com menos de 30 dias não entra (oficinas de mentira não furam o mínimo de 5 na hora)
+       and o.criado_em < now() - interval '30 days'
   ),
   docs as (
     select r.oficina_id, r.dados
