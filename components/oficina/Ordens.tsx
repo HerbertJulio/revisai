@@ -18,6 +18,7 @@ import { useHoje } from '@/lib/ganchos';
 import { useOficina } from '@/lib/store';
 import type { Documento, Id } from '@/lib/tipos';
 import { useConcluirOrdem, useLinkDoOrcamento } from './documentos';
+import { aoAprovarOrcamento, aoRecusarOrcamento, PaineisDaOrdem } from './extensoes';
 
 type Aba = 'orcamentos' | 'ordens';
 
@@ -206,6 +207,7 @@ function Detalhe({ doc, hoje, aoFechar, aoAbrir }: { doc: Documento; hoje: strin
       toast({ texto: 'Deixe pelo menos um item aprovado.', tom: 'erro' });
       return;
     }
+    aoAprovarOrcamento(doc.id, ordemId, [...recusadas]);
     toast({ texto: 'Aprovado. A ordem de serviço já está pronta para começar.' });
     setAprovando(false);
     router.replace('/oficina/ordens?aba=ordens');
@@ -289,6 +291,8 @@ function Detalhe({ doc, hoje, aoFechar, aoAbrir }: { doc: Documento; hoje: strin
         </button>
       ) : null}
 
+      <PaineisDaOrdem doc={doc} />
+
       <div className="flex flex-wrap gap-2 border-t border-linha pt-4">
         {ehOrcamento && aprovando ? (
           <>
@@ -319,6 +323,7 @@ function Detalhe({ doc, hoje, aoFechar, aoAbrir }: { doc: Documento; hoje: strin
                   variante="perigo"
                   onClick={() => {
                     recusar(doc.id);
+                    aoRecusarOrcamento(doc.id);
                     toast({ texto: 'Anotado: o cliente não quis agora.' });
                   }}
                 >

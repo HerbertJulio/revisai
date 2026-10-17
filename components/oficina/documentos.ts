@@ -11,6 +11,7 @@ import { linkDoOrcamento, montarOrcamento } from '@/lib/orcamento-link';
 import { useOficina } from '@/lib/store';
 import type { Id } from '@/lib/tipos';
 import { linkWhatsApp } from '@/lib/whatsapp';
+import { aoConcluirOrdem } from './extensoes';
 import { usePrazoDoServico } from './prazos';
 
 /** Conclui a ordem: registra o serviço (os avisos saem dele) e tira as peças do estoque. */
@@ -42,6 +43,7 @@ export function useConcluirOrdem() {
       const oleo = itens.find((i) => i.servico === 'troca_oleo')?.produto?.especificacao;
       const atual = useOficina.getState().veiculos[veiculo.id];
       if (oleo?.base && atual?.oleo?.viscosidades?.length && atual.oleo.base !== oleo.base) s.salvarVeiculo({ ...atual, oleo: { ...atual.oleo, base: oleo.base } });
+      if (atendimentoId) aoConcluirOrdem(id);
       return { atendimentoId };
     },
     [prazo]

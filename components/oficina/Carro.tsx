@@ -36,6 +36,7 @@ import {
   rascunhoDoVeiculo,
   veiculoDoRascunho
 } from './formularios';
+import { PaineisDoCarro } from './extensoes';
 
 const RESULTADOS: Record<ResultadoContato, string> = { avisado: 'Avisado', agendado: 'Agendado', adiado: 'Adiado', recusou: 'Não quis agora' };
 
@@ -345,6 +346,8 @@ export function Carro() {
       >
         <p className="text-tinta-2">O cliente {cliente?.nome} continua cadastrado.</p>
       </Folha>
+
+      <PaineisDoCarro veiculoId={veiculo.id} />
     </div>
   );
 }

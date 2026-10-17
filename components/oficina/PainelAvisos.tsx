@@ -25,6 +25,7 @@ import { linkWhatsApp, montarMensagem } from '@/lib/whatsapp';
 import { useCartaoDoCarro, useContatar } from './acoes';
 import { useCatalogo } from './catalogo';
 import { AvisoDeLimite, RetornoDosAvisos, useOfertaDoPro, usePlano } from './plano';
+import { PaineisDoInicio } from './extensoes';
 
 type Aba = 'avisar' | 'aguardando' | 'agendado' | 'proximos';
 
@@ -76,6 +77,7 @@ export function PainelAvisos() {
       </header>
 
       <ResumoDoDia />
+      <PaineisDoInicio />
       <AvisoDeLimite />
 
       {exemplo ? (
