@@ -19,6 +19,8 @@ import { calcularDemanda } from '@/lib/recomendacao';
 import { useOficina } from '@/lib/store';
 import type { Categoria, Id, ItemEstoque, PedidoEnviado, UnidadeEstoque } from '@/lib/tipos';
 import { useCatalogo } from './catalogo';
+import { EntradaPelaNota } from './estoque/EntradaPelaNota';
+import { LeitorDeCodigo } from './estoque/LeitorDeCodigo';
 import { FotoProduto } from './FotoProduto';
 import { nomeComMarca } from './loja/comum';
 
@@ -38,7 +40,7 @@ export function Estoque() {
   const itens = useMemo(() => Object.values(estoque).sort((a, b) => a.categoria.localeCompare(b.categoria) || a.nome.localeCompare(b.nome, 'pt-BR')), [estoque]);
   const categorias = useMemo(() => [...new Set(itens.map((i) => i.categoria))], [itens]);
   const t = busca.trim().toLowerCase();
-  const visiveis = itens.filter((i) => (!categoria || i.categoria === categoria) && (!t || `${i.marca ?? ''} ${i.nome} ${i.codigo ?? ''}`.toLowerCase().includes(t)));
+  const visiveis = itens.filter((i) => (!categoria || i.categoria === categoria) && (!t || `${i.marca ?? ''} ${i.nome} ${i.codigo ?? ''} ${i.ean ?? ''} ${i.codigoFornecedor ?? ''}`.toLowerCase().includes(t)));
   const aReceber = pedidos.filter((p) => !p.recebidoEm).slice(0, 5);
   const valorEmEstoque = itens.reduce((s, i) => s + (i.custo ?? 0) * i.quantidade, 0);
 
@@ -51,9 +53,13 @@ export function Estoque() {
             {itens.length ? `${itens.length} ${itens.length === 1 ? 'produto' : 'produtos'}, uns ${formatarMoeda(valorEmEstoque)} em mercadoria. ` : ''}O que sai nas ordens de serviço é descontado sozinho.
           </p>
         </div>
-        <Botao variante="primario" onClick={() => setNovo(true)}>
-          <PackagePlus size={18} aria-hidden="true" /> Adicionar produto
-        </Botao>
+        <div className="flex flex-wrap gap-2">
+          <LeitorDeCodigo />
+          <EntradaPelaNota />
+          <Botao variante="primario" onClick={() => setNovo(true)}>
+            <PackagePlus size={18} aria-hidden="true" /> Adicionar produto
+          </Botao>
+        </div>
       </header>
 
       {aReceber.length ? (
@@ -259,7 +265,12 @@ function LinhaFalta({ linha: l, hoje }: { linha: LinhaPrevisao; hoje: string }) 
               {quantidadeComUnidade(compra.produto, compra.quantidade)} de {nomeComMarca(compra.produto)}
             </p>
             <p className="text-tinta-2">
-              {fornecedor?.nome}, <strong className="num text-tinta">{formatarMoeda(compra.total)}</strong>
+              {fornecedor?.nome}
+              {compra.total > 0 ? (
+                <>
+                  , <strong className="num text-tinta">{formatarMoeda(compra.total)}</strong>
+                </>
+              ) : null}
               {compra.promocao ? <Chip tom="oleo" className="ml-2 align-middle">-{desconto(compra.produto.preco, compra.promocao.precoPromocional)}% {compra.promocao.titulo.toLowerCase()}</Chip> : null}
               {!compra.promocao && compra.oferta ? (
                 <span className="text-oleo-tinta">
@@ -387,10 +398,15 @@ function DetalheItem({ item, aoFechar }: { item: ItemEstoque; aoFechar: () => vo
         <div>
           <p className="largo num text-[32px] leading-none font-extrabold">{textoQuantidade(item.quantidade, item.unidade)}</p>
           <p className="mt-1 text-[14px] text-tinta-2">{item.custo != null ? `Pagou ${formatarMoeda(item.custo)} por ${unidade} na última compra.` : 'Sem o preço de compra ainda.'}</p>
+          {item.ean || item.ncm || item.codigoFornecedor ? (
+            <p className="num mt-0.5 text-[12.5px] text-tinta-3">
+              {[item.ean ? `Código de barras ${item.ean}` : '', item.codigoFornecedor ? `código do fornecedor ${item.codigoFornecedor}` : '', item.ncm ? `NCM ${item.ncm}` : ''].filter(Boolean).join(' · ')}
+            </p>
+          ) : null}
         </div>
       </div>
 
-      {p && leitura ? (
+      {p && leitura && leitura.atual.preco > 0 ? (
         <div className={`flex flex-col gap-2 rounded-xl px-3.5 py-3 text-[14px] ${leitura.leitura?.tom === 'caro' ? 'bg-atraso-claro text-atraso' : leitura.leitura?.tom === 'bom' ? 'bg-ok-claro text-ok' : 'bg-papel-2 text-tinta-2'}`}>
           <p>
             Na loja hoje: <strong className="num">{formatarMoeda(leitura.atual.preco)}</strong> por {quantidadeComUnidade(p, 1)}, na {leitura.atual.fornecedor?.nome}. {leitura.leitura?.texto}
@@ -560,8 +576,8 @@ function FolhaNovo({ aberta, aoFechar, aoCriado }: { aberta: boolean; aoFechar: 
                 <li key={p.id}>
                   <button type="button" onClick={() => escolher(p)} className="flex h-full w-full flex-col overflow-hidden rounded-xl bg-papel text-left ring-1 ring-linha hover:ring-tinta-3">
                     <FotoProduto produto={p} tamanhos="160px" className="aspect-[4/3] w-full" />
-                    <span className="line-clamp-2 px-2.5 pt-2 text-[13.5px] leading-snug font-semibold">{nomeComMarca(p)}</span>
-                    <span className="num px-2.5 pb-2 text-[12.5px] text-tinta-3">{formatarMoeda(p.preco)}</span>
+                    <span className={`line-clamp-2 px-2.5 pt-2 text-[13.5px] leading-snug font-semibold ${p.preco > 0 ? '' : 'pb-2'}`}>{nomeComMarca(p)}</span>
+                    {p.preco > 0 ? <span className="num px-2.5 pb-2 text-[12.5px] text-tinta-3">{formatarMoeda(p.preco)}</span> : null}
                   </button>
                 </li>
               ))}
