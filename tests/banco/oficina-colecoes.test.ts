@@ -49,6 +49,46 @@ describe.skipIf(!temBanco)('coleções novas da oficina', () => {
       expect(await linhas(b, dono, `select id from public.registros where colecao = 'lancamentos' order by id`)).toEqual([{ id: 'l1' }]);
     }));
 
+  it('o mecânico recebe os registros sem a comissão, o custo e os preços, e não muda esses valores', () =>
+    emTransacao(async (b) => {
+      const dono = await criarPessoa(b, pessoa('dono'));
+      const mec = await criarPessoa(b, pessoa('mec'));
+      const o = await criarOficina(b, dono);
+      await linhas(b, dono, `select public.convidar('oficina', $1, $2, 'mecanico')`, [o, mec.email]);
+      await linhas(b, mec, 'select public.aceitar_convite()');
+      await gravar(b, dono, o, [
+        { colecao: 'profissionais', id: 'p1', dados: { id: 'p1', nome: 'Zé', comissaoServicos: 10, comissaoPecas: 5 } },
+        { colecao: 'estoque', id: 'e1', dados: { id: 'e1', nome: 'Óleo', custo: 20, preco: 35, quantidade: 4 } },
+        { colecao: 'movimentos', id: 'm1', dados: { id: 'm1', itemId: 'e1', custoUnitario: 20, quantidade: 4 } },
+        { colecao: 'lembretes', id: 'r1', dados: { id: 'r1', descricao: 'Pastilha', valorEstimado: 300 } },
+        { colecao: 'clubePlanos', id: 'c1', dados: { id: 'c1', nome: 'Clube', preco: 49 } }
+      ]);
+      const r = await linhas(b, mec, 'select public.ler_registros($1, 0) as r', [o]);
+      const itens = (r[0].r as { itens: { colecao: string; dados: Record<string, unknown> }[] }).itens;
+      const de = (c: string) => itens.find((x) => x.colecao === c)?.dados ?? {};
+      expect(de('profissionais')).toEqual({ id: 'p1', nome: 'Zé' });
+      expect(de('estoque')).toEqual({ id: 'e1', nome: 'Óleo', preco: 35, quantidade: 4 });
+      expect(de('movimentos')).toEqual({ id: 'm1', itemId: 'e1', quantidade: 4 });
+      expect(de('lembretes')).toEqual({ id: 'r1', descricao: 'Pastilha' });
+      expect(de('clubePlanos')).toEqual({ id: 'c1', nome: 'Clube' });
+      // direto na tabela, o mecânico não lê o que tem dinheiro
+      expect(await linhas(b, mec, `select id from public.registros where colecao in ('profissionais', 'estoque', 'movimentos', 'lembretes', 'clubePlanos')`)).toEqual([]);
+
+      // o mecânico tenta subir a própria comissão e baixar o custo: nada muda
+      await gravar(b, mec, o, [
+        { colecao: 'profissionais', id: 'p1', dados: { id: 'p1', nome: 'Zé', comissaoServicos: 90, comissaoPecas: 90 } },
+        { colecao: 'estoque', id: 'e1', dados: { id: 'e1', nome: 'Óleo 5W30', custo: 1, preco: 35, quantidade: 3 } },
+        { colecao: 'clubePlanos', id: 'c1', dados: { id: 'c1', nome: 'Clube', preco: 1 } },
+        { colecao: 'estoque', id: 'e2', dados: { id: 'e2', nome: 'Filtro', custo: 5, quantidade: 1 } }
+      ]);
+      const dados = async (c: string, id: string) =>
+        (await b.query('select dados from public.registros where oficina_id = $1 and colecao = $2 and id = $3', [o, c, id])).rows[0]?.dados;
+      expect(await dados('profissionais', 'p1')).toMatchObject({ comissaoServicos: 10, comissaoPecas: 5 });
+      expect(await dados('estoque', 'e1')).toEqual({ id: 'e1', nome: 'Óleo 5W30', custo: 20, preco: 35, quantidade: 3 });
+      expect(await dados('clubePlanos', 'c1')).toMatchObject({ preco: 49 });
+      expect(await dados('estoque', 'e2')).toEqual({ id: 'e2', nome: 'Filtro', quantidade: 1 });
+    }));
+
   it('a paginação do mecânico não para no meio por causa do financeiro', () =>
     emTransacao(async (b) => {
       const dono = await criarPessoa(b, pessoa('dono'));

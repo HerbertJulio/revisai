@@ -224,6 +224,8 @@ export interface MovimentoFidelidade {
   pontos: number;
   documentoId?: Id | null;
   descricao?: string;
+  /** No resgate: o desconto em reais que os pontos deram no documento (para desfazer certo). */
+  valor?: number | null;
   /** AAAA-MM-DD. */
   data: string;
   criadoEm: string;

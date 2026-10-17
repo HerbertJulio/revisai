@@ -510,7 +510,7 @@ declare
   v_equipe boolean := privado.eh_equipe(array['suporte']);
 begin
   select * into c from public.suporte_chamados where id = p_chamado for update;
-  if not found or not (c.user_id = v_uid or v_equipe) then
+  if not found or not (coalesce(c.user_id = v_uid, false) or v_equipe) then
     raise exception 'Chamado não encontrado' using errcode = '42501';
   end if;
   if coalesce(trim(p_texto), '') = '' then
@@ -544,7 +544,7 @@ declare
   v_equipe boolean := privado.eh_equipe(array['suporte']);
 begin
   select * into c from public.suporte_chamados where id = p_chamado for update;
-  if not found or not (c.user_id = auth.uid() or v_equipe) then
+  if not found or not (coalesce(c.user_id = auth.uid(), false) or v_equipe) then
     raise exception 'Chamado não encontrado' using errcode = '42501';
   end if;
   if p_situacao not in ('novo', 'respondido', 'fechado') or (not v_equipe and p_situacao <> 'fechado') then
