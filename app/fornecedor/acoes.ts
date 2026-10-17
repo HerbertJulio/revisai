@@ -29,6 +29,7 @@ import {
 } from '@/lib/loja/produtos';
 import { situacaoParteValida } from '@/lib/marketplace-dados';
 import { lerLoja, COLUNAS_LOJA } from '@/lib/loja/dados';
+import { lojaComDadosPrivados } from '@/lib/loja/privados';
 
 type Gravacao<T = object> = ({ ok: true } & T) | { ok: false; erro: string };
 
@@ -107,7 +108,7 @@ export async function quererDestaque(): Promise<Gravacao> {
   if (!a.ok) return a.erro === DEVAGAR.erro ? { ok: false, erro: 'Já recebemos o seu pedido. A equipe fala com você em breve.' } : a;
   if (a.loja.papel !== 'dono') return SO_DONO;
   const { data } = await a.sb.from('fornecedores').select(COLUNAS_LOJA).eq('id', a.loja.id).maybeSingle();
-  const loja = lerLoja(data);
+  const loja = lerLoja(await lojaComDadosPrivados(a.sb, data));
   if (!loja) return { ok: false, erro: 'Loja não encontrada.' };
   return pedirDestaque(a.sb, loja, a.conta.usuario.email);
 }

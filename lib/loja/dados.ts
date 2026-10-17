@@ -53,8 +53,9 @@ const esquemaLoja = z.object({
   criado_em: z.string()
 });
 export type LinhaLoja = z.infer<typeof esquemaLoja>;
+/** O e-mail, o CNPJ e a observação da verificação não vêm por aqui: lib/loja/privados.ts junta. */
 export const COLUNAS_LOJA =
-  'id, nome, cidade, uf, whatsapp, descricao, email, cnpj, ativo, destaque, destaque_ate, demonstracao, verificacao, verificacao_obs, prazo_entrega_horas, avisar_whatsapp, pedido_minimo, cashback_percentual, criado_em';
+  'id, nome, cidade, uf, whatsapp, descricao, ativo, destaque, destaque_ate, demonstracao, verificacao, prazo_entrega_horas, avisar_whatsapp, pedido_minimo, cashback_percentual, criado_em';
 
 /** Os prazos de entrega que a loja escolhe (em horas). */
 export const PRAZOS_DE_ENTREGA: { horas: number; nome: string }[] = [

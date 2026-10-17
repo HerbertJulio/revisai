@@ -1,6 +1,7 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { mensagemDoBanco } from '@/lib/conta-dados';
+import { comDadosPrivados } from '@/lib/loja/privados';
 import { lerAssinatura, lerPagamento, numeroOuZero } from './banco';
 import { hojeEmBrasilia } from './documento';
 import { configAsaas, configEfi, testeLigado } from './index';
@@ -95,9 +96,10 @@ export interface ExtratosDoMes {
 
 /** O extrato do mês de cada loja (vendas, comissão e mensalidade), com as cobranças do mês. */
 export async function lojasDoMes(sb: SupabaseClient, mes: string, pagamentos: PagamentoNoPainel[]): Promise<ExtratosDoMes> {
-  const { data, error } = await sb.from('fornecedores').select('id, nome, cnpj').eq('demonstracao', false).order('nome').limit(200);
+  const { data, error } = await sb.from('fornecedores').select('id, nome').eq('demonstracao', false).order('nome').limit(200);
   if (error) return { lojas: [], semExtrato: false, erro: mensagemDoBanco(error) };
-  const lojas = (data ?? []) as { id: number; nome: string; cnpj: string | null }[];
+  // o CNPJ não sai na leitura da tabela: vem da função dos dados privados (equipe e servidor)
+  const lojas = (await comDadosPrivados(sb, (data ?? []) as { id: number; nome: string }[])).linhas;
   const resultado: LojaDoMes[] = [];
   let semExtrato = false;
   for (let i = 0; i < lojas.length && !semExtrato; i += 8) {

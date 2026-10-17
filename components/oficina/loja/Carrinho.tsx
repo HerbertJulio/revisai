@@ -17,7 +17,7 @@ import { chaveDoProduto, precoComparavel } from '@/lib/precos';
 import { formatarMoeda, formatarTelefone, normalizarTelefone } from '@/lib/formatos';
 import { useHoje } from '@/lib/ganchos';
 import { useOficina } from '@/lib/store';
-import { abaixoDoMinimo, cashbackParaUsar, infoDaLoja, infoDoProduto, precoParaOficina } from '@/lib/vitrine';
+import { abaixoDoMinimo, cashbackParaUsar, infoDoProduto, prazoDoProduto, precoParaOficina } from '@/lib/vitrine';
 import { useCatalogo } from '../catalogo';
 import { FotoProduto } from '../FotoProduto';
 import { BotaoEntrar, nomeComMarca, Passo, SeloEstoqueDaLoja } from './comum';
@@ -77,7 +77,13 @@ export function Carrinho({ aberto, aoFechar, aoAcompanhar }: { aberto: boolean; 
       const disponivel = comPrecos ? cashbackParaUsar(saldo, g.subtotal) : 0;
       return {
         ...g,
-        prazo: textoDoPrazoDeEntrega(infoDaLoja(extras, g.fornecedorId)?.prazoEntregaHoras),
+        // o prazo da entrega é o do item que demora mais
+        prazo: textoDoPrazoDeEntrega(
+          g.linhas.reduce<number | null>((maior, l) => {
+            const h = prazoDoProduto(extras, l.p.id, g.fornecedorId);
+            return h != null && (maior == null || h > maior) ? h : maior;
+          }, null)
+        ),
         minimo: abaixo.find((a) => a.fornecedorId === g.fornecedorId) ?? null,
         saldo,
         disponivel,

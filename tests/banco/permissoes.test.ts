@@ -429,11 +429,33 @@ d('sistema e público', () => {
       expect((await tentar(b, null, 'select * from public.registros', [], { sistema: true })).erro).toBeTruthy();
     }));
 
-  it('o site recebe cadastro com consentimento; o catálogo é público', () =>
+  it('o site recebe cadastro com consentimento; o catálogo sai pelo servidor, sem os dados internos das lojas', () =>
     emTransacao(async (b) => {
       const lojista = await criarPessoa(b, pessoa('lojista'));
+      const visitante = await criarPessoa(b, pessoa('visitante'));
       const loja = await criarLoja(b, lojista);
-      expect(await linhas(b, null, 'select id from public.produtos where id = $1', [loja.produtoId])).toHaveLength(1);
+      await b.query(`update public.fornecedores set email = 'loja@teste.dev', cnpj = '11222333000181', verificacao_obs = 'nota da equipe' where id = $1`, [loja.fornecedorId]);
+      await b.query(`insert into public.promocoes (produto_id, titulo, preco_promocional, quantidade_minima, inicio, fim) values ($1, 'Promo', 20, 1, current_date, current_date + 10)`, [loja.produtoId]);
+      await b.query(`insert into public.impulsos (produto_id, fornecedor_id, uf, dias, valor, inicio, fim, status) values ($1, $2, 'RJ', 7, 29, current_date, current_date + 7, 'ativo')`, [loja.produtoId, loja.fornecedorId]);
+      // direto pela chave pública, sem conta: nada das tabelas da loja
+      for (const t of ['fornecedores', 'produtos', 'promocoes', 'impulsos']) expect(await linhas(b, null, `select 1 from public.${t}`)).toEqual([]);
+      // o servidor (chave do sistema) lê o catálogo para montar a vitrine
+      expect(await linhas(b, null, 'select id, preco from public.produtos where id = $1', [loja.produtoId], { sistema: true })).toHaveLength(1);
+      // quem entrou vê o catálogo e as promoções, mas não o e-mail, o CNPJ, a nota da equipe nem os anúncios das lojas
+      expect(await linhas(b, visitante, 'select id, preco from public.produtos where id = $1', [loja.produtoId])).toHaveLength(1);
+      expect(await linhas(b, visitante, 'select id from public.promocoes where produto_id = $1', [loja.produtoId])).toHaveLength(1);
+      expect(await linhas(b, visitante, 'select id from public.impulsos where fornecedor_id = $1', [loja.fornecedorId])).toEqual([]);
+      for (const c of ['email', 'cnpj', 'verificacao_obs']) {
+        expect((await tentar(b, visitante, `select ${c} from public.fornecedores where id = $1`, [loja.fornecedorId])).codigo).toBe('42501');
+        expect((await tentar(b, null, `select ${c} from public.fornecedores where id = $1`, [loja.fornecedorId], { sistema: true })).codigo).toBe('42501');
+      }
+      expect(await linhas(b, visitante, 'select * from public.lojas_dados_privados(array[$1::bigint])', [loja.fornecedorId])).toEqual([]);
+      expect(await linhas(b, null, 'select * from public.lojas_dados_privados(array[$1::bigint])', [loja.fornecedorId])).toEqual([]);
+      // a loja, a equipe e o servidor leem pela função
+      const [daLoja] = await linhas(b, lojista, 'select * from public.lojas_dados_privados(array[$1::bigint])', [loja.fornecedorId]);
+      expect(daLoja).toMatchObject({ email: 'loja@teste.dev', cnpj: '11222333000181', verificacao_obs: 'nota da equipe' });
+      expect(await linhas(b, null, 'select * from public.lojas_dados_privados(array[$1::bigint])', [loja.fornecedorId], { sistema: true })).toHaveLength(1);
+      expect(await linhas(b, lojista, 'select id, valor from public.impulsos where fornecedor_id = $1', [loja.fornecedorId])).toHaveLength(1);
       // sem conta, só pelo servidor do site (com o limite por IP); direto pela API não grava
       expect((await tentar(b, null, `insert into public.interessados (tipo, nome, whatsapp, consentimento) values ('oficina', 'Zé', '5521912345677', true)`)).erro).toBeTruthy();
       expect((await tentar(b, null, `insert into public.interessados (tipo, nome, whatsapp, consentimento) values ('oficina', 'Zé', '5521912345678', true)`, [], { sistema: true })).erro).toBeNull();

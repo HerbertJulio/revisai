@@ -26,6 +26,7 @@ import {
   infoDoProduto,
   lerExtras,
   ordenarPeloCarro,
+  prazoDoProduto,
   precoCombinadoComOficina,
   precoNaVitrine,
   precoParaOficina,
@@ -58,7 +59,8 @@ const extras: ExtrasDaVitrine = lerExtras({
   produtos: {
     '201': { estoque: 3, aplicacoes: [lerAplicacao('VW Gol 1.6 2013 a 2016'), lerAplicacao('Fox 2012-2015')] },
     '202': { estoque: 0, aplicacoes: [lerAplicacao('Onix 2017 a 2019')] },
-    '203': { estoque: null, aplicacoes: 'nada' }
+    '203': { estoque: null, aplicacoes: 'nada' },
+    '204': { estoque: null, aplicacoes: [], prazoEntregaHoras: 48 }
   },
   anuncios: [...anuncios, { impulsoId: 'x' }]
 });
@@ -72,7 +74,11 @@ describe('extras do catálogo', () => {
       ['Gol', 2013, 2016],
       ['Fox', 2012, 2015]
     ]);
-    expect(infoDoProduto(extras, 203)).toEqual({ estoque: null, aplicacoes: [] });
+    expect(infoDoProduto(extras, 203)).toEqual({ estoque: null, aplicacoes: [], prazoEntregaHoras: null });
+    // o prazo do produto vale antes do da loja; sem nenhum dos dois, nada
+    expect(prazoDoProduto(extras, 204, 2)).toBe(48);
+    expect(prazoDoProduto(extras, 202, 2)).toBe(4);
+    expect(prazoDoProduto(extras, 999, 3)).toBeNull();
     expect(extras.anuncios.map((a) => a.impulsoId)).toEqual([1, 2, 3, 4]);
     // de uma versão antiga do app, nada
     expect(lerExtras(undefined)).toEqual({ lojas: {}, produtos: {}, anuncios: [] });

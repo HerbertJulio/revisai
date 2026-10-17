@@ -3,7 +3,7 @@ import type { Catalogo, Fornecedor, Patrocinio, Produto, Promocao } from './cata
 import { CATALOGO_EXEMPLO } from './catalogo-demo';
 import { anunciosComOrcamento } from './loja/anuncios';
 import { lerAplicacoes } from './loja/dados';
-import { clientePublico } from './supabase-servidor';
+import { clienteSistema } from './supabase-servidor';
 import { EXTRAS_VAZIOS, type Anuncio, type ExtrasDaVitrine, type InfoDaLoja, type InfoDoProduto } from './vitrine';
 
 interface LinhaProduto {
@@ -54,6 +54,7 @@ interface LinhaInfoDoProduto {
   id: number;
   estoque: number | string | null;
   aplicacoes: unknown;
+  prazo_entrega_horas?: number | string | null;
 }
 
 interface LinhaPromocao {
@@ -75,28 +76,31 @@ const numeroOuNulo = (v: number | string | null | undefined): number | null => (
  * O catálogo do banco (só o que é público: lojas ativas e os produtos delas), com os preços; sem
  * configuração ou com o banco fora do ar, o de exemplo. Fica 5 minutos na memória do servidor,
  * para o banco não ser consultado a cada visita. Quem não entrou recebe o catálogo sem preços
- * (app/api/catalogo).
+ * (app/api/catalogo). O banco só entrega as tabelas da loja ao servidor (com a chave do sistema),
+ * nunca direto pela chave pública, então os filtros do que é público ficam aqui.
  * Junto, os extras da vitrine: prazo de entrega, pedido mínimo e cashback das lojas, estoque e
  * aplicações dos produtos, e os anúncios no ar (os por clique só enquanto têm teto no dia).
  */
 export async function buscarCatalogo(): Promise<{ catalogo: Catalogo; extras: ExtrasDaVitrine; erro?: string }> {
   if (guardado && Date.now() - guardado.em < VALIDADE_MS) return { catalogo: guardado.catalogo, extras: guardado.extras };
-  const sb = clientePublico();
-  if (!sb) return { catalogo: CATALOGO_EXEMPLO, extras: EXTRAS_VAZIOS, erro: 'Supabase não configurado' };
+  const sb = clienteSistema();
+  if (!sb) return { catalogo: CATALOGO_EXEMPLO, extras: EXTRAS_VAZIOS, erro: 'Supabase ou a chave do sistema não configurados' };
   try {
     const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
     const [f, p, pr, im, fx, px] = await Promise.all([
-      sb.from('fornecedores').select('id, nome, cidade, uf, demonstracao, destaque, destaque_ate, descricao').order('id'),
+      sb.from('fornecedores').select('id, nome, cidade, uf, demonstracao, destaque, destaque_ate, descricao').eq('ativo', true).order('id'),
       sb
         .from('produtos')
         .select('id, fornecedor_id, categoria, nome, marca, descricao, unidade, conteudo, preco, especificacao, intervalo_km, intervalo_meses, imagem_url, referencia_id')
+        .eq('ativo', true)
+        .eq('oculto_moderacao', false)
         .order('categoria')
         .order('preco'),
-      sb.from('promocoes').select('id, produto_id, titulo, preco_promocional, quantidade_minima, inicio, fim'),
+      sb.from('promocoes').select('id, produto_id, titulo, preco_promocional, quantidade_minima, inicio, fim').eq('ativo', true).gte('fim', hoje),
       sb.from('impulsos').select('id, produto_id, uf, inicio, fim, cpc').eq('status', 'ativo').gte('fim', hoje),
       // os extras vêm à parte: sem as colunas (banco antigo), a loja segue sem eles
-      sb.from('fornecedores').select('id, prazo_entrega_horas, pedido_minimo, cashback_percentual'),
-      sb.from('produtos').select('id, estoque, aplicacoes')
+      sb.from('fornecedores').select('id, prazo_entrega_horas, pedido_minimo, cashback_percentual').eq('ativo', true),
+      sb.from('produtos').select('id, estoque, aplicacoes, prazo_entrega_horas').eq('ativo', true).eq('oculto_moderacao', false)
     ]);
     const erro = f.error ?? p.error ?? pr.error;
     if (erro) throw erro;
@@ -151,8 +155,9 @@ export async function buscarCatalogo(): Promise<{ catalogo: Catalogo; extras: Ex
       if (!comProduto.has(Number(x.id))) continue;
       const estoque = numeroOuNulo(x.estoque);
       const aplicacoes = lerAplicacoes(x.aplicacoes);
+      const prazoEntregaHoras = numeroOuNulo(x.prazo_entrega_horas);
       // só vai o que a loja informou (o resto é "sem informação")
-      if (estoque != null || aplicacoes.length) infoProdutos[String(x.id)] = { estoque, aplicacoes };
+      if (estoque != null || aplicacoes.length || prazoEntregaHoras != null) infoProdutos[String(x.id)] = { estoque, aplicacoes, prazoEntregaHoras };
     }
     const extras: ExtrasDaVitrine = { lojas, produtos: infoProdutos, anuncios };
     const promocoes: Promocao[] = ((pr.data ?? []) as LinhaPromocao[]).map((x) => ({

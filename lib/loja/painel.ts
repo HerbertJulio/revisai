@@ -9,6 +9,7 @@ import { clienteDoUsuario } from '../supabase-servidor';
 import { contarAlertasSemResposta } from './alertas';
 import { hojeEmBrasilia } from './comum';
 import { devolucoesParaResponder } from './devolucoes';
+import { lojaComDadosPrivados } from './privados';
 import {
   COLUNAS_CONTRATO_DA_LOJA,
   COLUNAS_IMPULSO_DA_LOJA,
@@ -93,7 +94,7 @@ export const painelDaLoja = cache(async (): Promise<ResultadoPainel> => {
       console.error('[loja] painel', erro);
       return { estado: 'erro', erro: ERRO_LEITURA };
     }
-    const loja = lerLoja(f.data);
+    const loja = lerLoja(await lojaComDadosPrivados(sb, f.data));
     if (!loja) return { estado: 'sem-loja' };
     const produtos = lerProdutosDaLoja(p.data);
     const ids = produtos.map((x) => x.id);

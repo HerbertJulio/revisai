@@ -381,7 +381,8 @@ export const VERIFICACOES_LOJA = [
 ] as const satisfies readonly { id: string; nome: string; tom: Tom }[];
 export type VerificacaoLoja = (typeof VERIFICACOES_LOJA)[number]['id'];
 
-export const COLUNAS_LOJA_EQUIPE = 'id, nome, cidade, uf, whatsapp, demonstracao, ativo, destaque, destaque_ate, descricao, criado_em, cnpj, verificacao, verificacao_obs, email';
+/** O CNPJ, o e-mail e a observação da verificação vêm à parte (lib/loja/privados.ts). */
+export const COLUNAS_LOJA_EQUIPE = 'id, nome, cidade, uf, whatsapp, demonstracao, ativo, destaque, destaque_ate, descricao, criado_em, verificacao';
 export const esquemaLojaEquipe = z.object({
   id: numero,
   nome: texto,

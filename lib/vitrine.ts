@@ -44,10 +44,11 @@ export interface InfoDaLoja {
   cashbackPercentual: number;
 }
 
-/** O produto: o estoque (null quando a loja não informa) e em que carros serve. */
+/** O produto: o estoque (null quando a loja não informa), em que carros serve e o prazo de entrega dele, quando difere do da loja. */
 export interface InfoDoProduto {
   estoque: number | null;
   aplicacoes: Aplicacao[];
+  prazoEntregaHoras?: number | null;
 }
 
 /** Um anúncio no ar (impulso), por período ou por clique; o servidor já tirou os sem teto no dia. */
@@ -73,7 +74,7 @@ const numeroOuNulo = z
   .optional()
   .transform((v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v)));
 const esquemaInfoDaLoja = z.object({ prazoEntregaHoras: numeroOuNulo, pedidoMinimo: numeroOuNulo, cashbackPercentual: numeroOuNulo.transform((v) => v ?? 0) });
-const esquemaInfoDoProduto = z.object({ estoque: numeroOuNulo, aplicacoes: z.unknown().transform((a) => lerAplicacoes(a)) });
+const esquemaInfoDoProduto = z.object({ estoque: numeroOuNulo, aplicacoes: z.unknown().transform((a) => lerAplicacoes(a)), prazoEntregaHoras: numeroOuNulo });
 const esquemaAnuncio = z.object({ impulsoId: z.number().int().positive(), produtoId: z.number().int().positive(), uf: z.string().nullable(), inicio: z.string(), fim: z.string(), porClique: z.boolean() });
 
 function lerRegistro<T>(d: unknown, esquema: z.ZodType<T>): Record<string, T> {
@@ -105,6 +106,11 @@ export function infoDaLoja(extras: ExtrasDaVitrine, fornecedorId: number): InfoD
 
 export function infoDoProduto(extras: ExtrasDaVitrine, produtoId: number): InfoDoProduto | null {
   return extras.produtos[String(produtoId)] ?? null;
+}
+
+/** O prazo de entrega de um produto: o que a loja deu para ele ou, sem isso, o da loja. */
+export function prazoDoProduto(extras: ExtrasDaVitrine, produtoId: number, fornecedorId: number): number | null {
+  return infoDoProduto(extras, produtoId)?.prazoEntregaHoras ?? infoDaLoja(extras, fornecedorId)?.prazoEntregaHoras ?? null;
 }
 
 /** Os anúncios do produto que valem hoje para uma oficina do estado (o do estado antes do nacional). */

@@ -144,7 +144,7 @@ d('a fila da equipe', () => {
       const [m] = await linhas(b, suporte, `select public.moderacao_decidir($1, 'mostrar', 'Nota fiscal conferida') as r`, [d2.id]);
       expect(m.r).toEqual({ acao: 'mostrar', denuncias: 3 });
       expect(await oculto(b, c.loja.produtoId)).toBe(false);
-      expect(await linhas(b, null, 'select id from public.produtos where id = $1', [c.loja.produtoId])).toHaveLength(1);
+      expect(await linhas(b, c.donoOficina, 'select id from public.produtos where id = $1', [c.loja.produtoId])).toHaveLength(1);
       const [resolvida] = await linhas(b, suporte, 'select situacao, resolucao, resolvido_por from public.denuncias where id = $1', [d3.id]);
       expect(resolvida).toEqual({ situacao: 'descartada', resolucao: 'Nota fiscal conferida', resolvido_por: suporte.id });
       // depois de mostrar, as denúncias contam de novo do zero

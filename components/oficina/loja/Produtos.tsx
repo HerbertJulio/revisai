@@ -9,7 +9,7 @@ import { BadgeCheck, Wallet } from 'lucide-react';
 import { textoDoPrazoDeEntrega } from '@/lib/loja/dados';
 import { desconto, embalagem, nomeCategoria, patrocinado, type Fornecedor, type Produto } from '@/lib/catalogo';
 import { formatarMoeda } from '@/lib/formatos';
-import { infoDaLoja, infoDoProduto, precoNaVitrine, rotuloDoCarro, serveNoCarroDaVitrine, type CarroDoFiltro } from '@/lib/vitrine';
+import { infoDaLoja, infoDoProduto, prazoDoProduto, precoNaVitrine, rotuloDoCarro, serveNoCarroDaVitrine, type CarroDoFiltro } from '@/lib/vitrine';
 import { useCatalogo } from '../catalogo';
 import { FotoProduto } from '../FotoProduto';
 import { useAnuncios, useVistoNaVitrine } from './anuncios';
@@ -44,7 +44,7 @@ export function useVitrineDoProduto(p: Produto, uf: string, hoje: string) {
     legenda: especial ? 'Preço combinado com você' : legendaDoPreco(p, catalogo.promocoes, hoje),
     quantidade: quantidadeInicial(p, catalogo.promocoes, hoje),
     estoque: infoDoProduto(extras, p.id)?.estoque ?? null,
-    prazo: textoDoPrazoDeEntrega(infoDaLoja(extras, p.fornecedorId)?.prazoEntregaHoras),
+    prazo: textoDoPrazoDeEntrega(prazoDoProduto(extras, p.id, p.fornecedorId)),
     extras
   };
 }

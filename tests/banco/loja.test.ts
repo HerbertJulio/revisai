@@ -270,9 +270,12 @@ d('estoque, planilha e prazo da loja', () => {
       const loja = await criarLoja(b, dono);
       expect((await tentar(b, dono, 'update public.fornecedores set prazo_entrega_horas = 4, avisar_whatsapp = false where id = $1', [loja.fornecedorId])).erro).toBeNull();
       expect((await tentar(b, dono, 'update public.fornecedores set prazo_entrega_horas = 0 where id = $1', [loja.fornecedorId])).codigo).toBe('23514');
-      // o prazo aparece no catálogo público
-      const [l] = await linhas(b, null, 'select prazo_entrega_horas from public.fornecedores where id = $1', [loja.fornecedorId]);
+      // o prazo aparece no catálogo (para quem entrou e para o servidor, que monta o catálogo público)
+      const visitante = await criarPessoa(b, pessoa('visitante'));
+      const [l] = await linhas(b, visitante, 'select prazo_entrega_horas from public.fornecedores where id = $1', [loja.fornecedorId]);
       expect(l.prazo_entrega_horas).toBe(4);
+      const [s] = await linhas(b, null, 'select prazo_entrega_horas from public.fornecedores where id = $1', [loja.fornecedorId], { sistema: true });
+      expect(s.prazo_entrega_horas).toBe(4);
     }));
 });
 

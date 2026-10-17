@@ -2,6 +2,7 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { cache } from 'react';
 import { z } from 'zod';
+import { comDadosPrivados } from '../loja/privados';
 import {
   lerCadastros,
   lerFornecedores,
@@ -219,7 +220,7 @@ export async function listarLojas(sb: Cliente): Promise<Resultado<LojaAdmin[]>> 
   ]);
   const erro = f.error ?? c.error ?? p.error ?? pf.error ?? m.error ?? cv.error;
   if (erro) return falhou('lojas', erro, []);
-  const lojas = lerLojasEquipe(f.data);
+  const lojas = lerLojasEquipe((await comDadosPrivados(sb, f.data as { id: unknown }[] | null)).linhas);
   const contratos = lerContratos(c.data);
   const partes = lerPartes(pf.data);
   const membros = lerLista(esquemaMembroLoja, m.data).itens;
@@ -251,7 +252,7 @@ export async function lojasEmAnalise(sb: Cliente): Promise<Resultado<{ pendentes
   const vazio = { pendentes: [], recusadas: [], donos: {} };
   const { data, error } = await sb.from('fornecedores').select(COLUNAS_LOJA_EQUIPE).in('verificacao', ['pendente', 'recusada']).order('criado_em', { ascending: true }).limit(200);
   if (error) return falhou('lojas em análise', error, vazio);
-  const lojas = lerLojasEquipe(data);
+  const lojas = lerLojasEquipe((await comDadosPrivados(sb, data as { id: unknown }[] | null)).linhas);
   avisar('fornecedores', lojas.descartadas);
   const ids = lojas.itens.map((l) => l.id);
   const donos: Record<number, string[]> = {};

@@ -1,6 +1,7 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { mensagemDoBanco } from '@/lib/conta-dados';
+import { lojaComDadosPrivados } from '@/lib/loja/privados';
 import { clienteSistema } from '@/lib/supabase-servidor';
 import { aplicarEvento, DESCRICAO_PRO, precisaEmitirNota, type BancoCobranca } from './aplicar';
 import { bancoSupabase, gravarNota, lerAssinatura, lerPagamento, registrarPagamento } from './banco';
@@ -360,8 +361,8 @@ export function descricaoDaNota(p: Pick<LinhaPagamento, 'tipo' | 'referencia'>):
 
 async function pagadorDoPagamento(sb: SupabaseClient, p: LinhaPagamento): Promise<Pagador | null> {
   if (p.tipo === 'loja' && p.fornecedor_id != null) {
-    const { data } = await sb.from('fornecedores').select('id, nome, cnpj, email, whatsapp').eq('id', p.fornecedor_id).maybeSingle();
-    const l = data as { nome: string; cnpj: string | null; email: string | null; whatsapp: string | null } | null;
+    const { data } = await sb.from('fornecedores').select('id, nome, whatsapp').eq('id', p.fornecedor_id).maybeSingle();
+    const l = await lojaComDadosPrivados(sb, data as { id: number; nome: string; whatsapp: string | null } | null);
     if (!l?.cnpj) return null;
     return { nome: l.nome, documento: l.cnpj, email: l.email ?? '', telefone: l.whatsapp, referencia: `loja-${p.fornecedor_id}` };
   }
@@ -453,9 +454,9 @@ export async function cobrarLoja(sbEquipe: SupabaseClient, fornecedorId: number,
   if (!sistema) return { ok: false, erro: SEM_SISTEMA };
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(mes) || !Number.isFinite(valor) || valor < 1) return { ok: false, erro: 'Confira o mês e o valor (a partir de R$ 1,00).' };
 
-  const { data: loja, error } = await sbEquipe.from('fornecedores').select('id, nome, cnpj, email, whatsapp').eq('id', fornecedorId).maybeSingle();
+  const { data: loja, error } = await sbEquipe.from('fornecedores').select('id, nome, whatsapp').eq('id', fornecedorId).maybeSingle();
   if (error) return { ok: false, erro: mensagemDoBanco(error) };
-  const l = loja as { nome: string; cnpj: string | null; email: string | null; whatsapp: string | null } | null;
+  const l = await lojaComDadosPrivados(sbEquipe, loja as { id: number; nome: string; whatsapp: string | null } | null);
   if (!l) return { ok: false, erro: 'Loja não encontrada.' };
   if (!l.cnpj) return { ok: false, erro: 'A loja não tem CNPJ no cadastro; o Pix e a nota pedem o CNPJ.' };
   const { data: contrato } = await sbEquipe.from('fornecedores_contrato').select('email').eq('fornecedor_id', fornecedorId).maybeSingle();

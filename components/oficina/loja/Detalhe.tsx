@@ -18,7 +18,7 @@ import { useHoje } from '@/lib/ganchos';
 import { rotuloDaAplicacao } from '@/lib/loja/aplicacoes';
 import { textoDoPrazoDeEntrega } from '@/lib/loja/dados';
 import { origemDaReferencia, textoDoPrazo } from '@/lib/referencias';
-import { infoDaLoja, infoDoProduto, precoDeVitrine, precoParaOficina, rotuloDoCarro, serveNoCarroDaVitrine, type CarroDoFiltro } from '@/lib/vitrine';
+import { infoDaLoja, infoDoProduto, prazoDoProduto, precoDeVitrine, precoParaOficina, rotuloDoCarro, serveNoCarroDaVitrine, type CarroDoFiltro } from '@/lib/vitrine';
 import { useCatalogo } from '../catalogo';
 import { FotoProduto } from '../FotoProduto';
 import { useReferencias } from '../referencias';
@@ -77,7 +77,7 @@ export function DetalheProduto({
   const { preco, promocao, especial } = precoParaOficina(p, catalogo.promocoes, hoje, qtd, condicoes.condicoes);
   const info = infoDoProduto(extras, p.id);
   const loja = infoDaLoja(extras, p.fornecedorId);
-  const prazoEntrega = textoDoPrazoDeEntrega(loja?.prazoEntregaHoras);
+  const prazoEntrega = textoDoPrazoDeEntrega(prazoDoProduto(extras, p.id, p.fornecedorId));
   const saldo = saldoNaLoja(condicoes, p.fornecedorId);
   const serve = carro ? serveNoCarroDaVitrine(p.id, extras, carro) : null;
   const aplicacoes = info?.aplicacoes ?? [];
