@@ -61,6 +61,8 @@ export interface CopiaDaAprovacao {
   nome?: string | null;
   ip?: string | null;
   aparelho?: string | null;
+  /** A aprovação foi marcada no aparelho da oficina (WhatsApp ou na oficina), não no do cliente. */
+  marcadoNaOficina?: boolean;
   conferencia: string;
   versao: string;
   link?: string | null;
@@ -77,7 +79,7 @@ export function emailDaAprovacao(c: CopiaDaAprovacao): Omit<Email, 'para' | 'cha
     `${i.descricao}${i.quantidade !== 1 || i.unidade === 'L' ? ` (${qtd.format(i.quantidade)} ${i.unidade})` : ''}${i.valor != null ? `: ${real.format(i.valor)}` : ''}`;
   const prova = [
     `Aprovado em ${c.quando}, ${c.canal.toLowerCase()}.`,
-    [c.nome ? `Nome: ${c.nome}.` : '', c.ip ? `IP: ${c.ip}.` : '', c.aparelho ? `Aparelho: ${c.aparelho}.` : ''].filter(Boolean).join(' ')
+    [c.nome ? `Nome: ${c.nome}.` : '', c.ip ? `IP: ${c.ip}.` : '', c.aparelho ? `${c.marcadoNaOficina ? 'Marcado no aparelho da oficina' : 'Aparelho'}: ${c.aparelho}.` : ''].filter(Boolean).join(' ')
   ].filter(Boolean);
   const texto = [
     oi,

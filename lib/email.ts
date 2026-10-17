@@ -93,6 +93,7 @@ export async function enviarCopiaDaAprovacao(entrada: EntradaDaCopia): Promise<{
     nome: d.nome,
     ip: d.ip,
     aparelho: aparelhoDoAgente(d.agente),
+    marcadoNaOficina: d.canal !== 'link',
     conferencia: codigoDeConferencia(d.versao),
     versao: d.versao,
     link: await linkDesteSite(d.link)

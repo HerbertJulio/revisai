@@ -58,8 +58,10 @@ export function PainelDaAprovacao({ doc }: { doc: Documento }) {
         {a.nome ? `, por ${a.nome}` : ''}.
         {a.observacao ? <span className="text-tinta-2"> “{a.observacao}”</span> : null}
       </p>
-      {a.ip || a.agente ? (
+      {a.canal === 'link' && (a.ip || a.agente) ? (
         <p className="text-[13.5px] text-tinta-2">{[a.ip ? `IP ${a.ip}` : '', aparelhoDoAgente(a.agente)].filter(Boolean).join(' · ')}</p>
+      ) : a.agente ? (
+        <p className="text-[13.5px] text-tinta-2">Marcado no aparelho: {aparelhoDoAgente(a.agente)}</p>
       ) : null}
       <p className="text-[13.5px] text-tinta-2">
         Código de conferência <strong className="num font-mono text-tinta">{codigoDeConferencia(a.versao)}</strong>
@@ -176,9 +178,15 @@ function FolhaDoComprovante({ orcamento, mostrarValores, confere }: { orcamento:
             <strong>Resposta do cliente:</strong> {a.observacao}
           </p>
         ) : null}
-        <p>
-          <strong>IP:</strong> {a.ip || 'não se aplica'} · <strong>Aparelho:</strong> {aparelhoDoAgente(a.agente) || 'não informado'}
-        </p>
+        {a.canal === 'link' ? (
+          <p>
+            <strong>IP:</strong> {a.ip || 'não informado'} · <strong>Aparelho do cliente:</strong> {aparelhoDoAgente(a.agente) || 'não informado'}
+          </p>
+        ) : (
+          <p>
+            <strong>Marcado no aparelho da oficina:</strong> {aparelhoDoAgente(a.agente) || 'não informado'}
+          </p>
+        )}
         <p>
           <strong>Código de conferência:</strong> <span className="font-mono">{codigoDeConferencia(a.versao)}</span>
           {confere === true ? ' (confere com o orçamento)' : confere === false ? ' (o orçamento mudou depois da aprovação)' : ''}

@@ -78,5 +78,7 @@ describe('a cópia da aprovação por e-mail', () => {
     expect(e.html).toContain('Mão de obra &quot;rápida&quot;');
     expect(e.html).not.toContain('<Center>');
     expect(escaparHtml(`<a href="x">'&'</a>`)).toBe('&lt;a href=&quot;x&quot;&gt;&#39;&amp;&#39;&lt;/a&gt;');
+    // marcada no aparelho da oficina (WhatsApp ou na oficina), o aparelho não é o do cliente
+    expect(emailDaAprovacao({ ...copia, ip: null, marcadoNaOficina: true }).texto).toContain('Nome: Ana Souza. Marcado no aparelho da oficina: Chrome no Android.');
   });
 });
