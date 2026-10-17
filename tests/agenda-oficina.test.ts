@@ -16,6 +16,7 @@ import {
   quemE,
   servicosDoTexto
 } from '@/lib/agendamento';
+import { mensagemDoAviso, tipoAvisoValido } from '@/lib/avisos/mensagens';
 import { linkDeAgendamento, MENSAGEM_PADRAO, montarMensagem } from '@/lib/whatsapp';
 import type { ItemAviso } from '@/lib/avisos';
 import type { Agendamento } from '@/lib/registros-oficina';
@@ -140,6 +141,19 @@ describe('mensagens do agendamento', () => {
     expect(mensagemConfirmacao({ ...ctx, cliente: '', servico: '', carro: '', oficina: { nome: '', endereco: '', cidade: '', uf: '' } })).toBe(
       'Oi! Aqui é da oficina. Seu horário está marcado para amanhã, segunda, 19/10, às 8h30. Se precisar mudar, é só responder esta mensagem.'
     );
+  });
+});
+
+describe('aviso do pedido de horário', () => {
+  it('diz quem pediu, quando e o serviço, e leva aos pedidos da agenda', () => {
+    expect(tipoAvisoValido('agendamento_online')).toBe(true);
+    expect(mensagemDoAviso('agendamento_online', { pedidoId: 'p1', cliente: 'Maria', data: '2026-10-19', hora: '08:30', servico: 'Troca de óleo' })).toEqual({
+      titulo: 'Pedido de horário pelo link',
+      corpo: 'Maria pediu o dia 19/10 às 08:30 (Troca de óleo). Aceite ou recuse na agenda.',
+      url: '/oficina/agenda?aba=pedidos',
+      marca: 'agenda-p1'
+    });
+    expect(mensagemDoAviso('agendamento_online', {})!.corpo).toBe('Um cliente pediu um horário. Aceite ou recuse na agenda.');
   });
 });
 
