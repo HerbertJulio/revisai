@@ -1,7 +1,7 @@
 import 'server-only';
 import type { Catalogo, Fornecedor, Patrocinio, Produto, Promocao } from './catalogo';
 import { CATALOGO_EXEMPLO } from './catalogo-demo';
-import { supabaseServidor } from './supabase';
+import { clientePublico } from './supabase-servidor';
 
 interface LinhaProduto {
   id: number;
@@ -52,12 +52,14 @@ const VALIDADE_MS = 5 * 60_000;
 let guardado: { em: number; catalogo: Catalogo } | null = null;
 
 /**
- * O catálogo do banco; sem configuração ou com o banco fora do ar, o de exemplo.
- * Fica 5 minutos na memória do servidor, para o banco não ser consultado a cada visita.
+ * O catálogo do banco (só o que é público: lojas ativas e os produtos delas), com os preços; sem
+ * configuração ou com o banco fora do ar, o de exemplo. Fica 5 minutos na memória do servidor,
+ * para o banco não ser consultado a cada visita. Quem não entrou recebe o catálogo sem preços
+ * (app/api/catalogo).
  */
 export async function buscarCatalogo(): Promise<{ catalogo: Catalogo; erro?: string }> {
   if (guardado && Date.now() - guardado.em < VALIDADE_MS) return { catalogo: guardado.catalogo };
-  const sb = supabaseServidor();
+  const sb = clientePublico();
   if (!sb) return { catalogo: CATALOGO_EXEMPLO, erro: 'Supabase não configurado' };
   try {
     const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());

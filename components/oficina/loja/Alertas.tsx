@@ -7,6 +7,7 @@ import { BellRing, Check, Copy, MapPin, MessageSquareQuote, Tag } from 'lucide-r
 import Link from 'next/link';
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { comprarAlertas, desistirDoAlerta, fecharComLoja, mandarAlerta } from '@/app/oficina/acoes-loja';
+import { useConta } from '@/components/conta/ProvedorConta';
 import { Folha } from '@/components/Folha';
 import { QrCode } from '@/components/QrCode';
 import { useToast } from '@/components/Toasts';
@@ -35,10 +36,10 @@ import { chaveDoProduto, ultimoPrecoPago } from '@/lib/precos';
 import { useOficina } from '@/lib/store';
 import { useCatalogo } from '../catalogo';
 import { FotoProduto } from '../FotoProduto';
-import { usePlano } from '../plano';
-import { codigoProGuardado, useAndamento } from './andamento';
-import { nomeComMarca, Passo } from './comum';
+import { useAndamento } from './andamento';
+import { BotaoEntrar, nomeComMarca, Passo } from './comum';
 import { usePrecosPagos } from './precos';
+import { SeloDaLoja } from './reputacao';
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -126,21 +127,22 @@ export function FolhaNovoAlerta({
   const hoje = useHoje();
   const pagos = usePrecosPagos();
   const oficina = useOficina((s) => s.oficina);
-  const garantirAparelhoId = useOficina((s) => s.garantirAparelhoId);
-  const marcarAlerta = useOficina((s) => s.marcarAlerta);
+  const { oficina: daConta } = useConta();
   const { cota, guardarAlerta, atualizar } = useAndamento();
-  const plano = usePlano();
+  // o estado escrito no app vale; sem ele, o do cadastro da oficina
+  const uf = /^[A-Z]{2}$/.test(oficina.uf) ? oficina.uf : (daConta?.uf ?? '');
   const [aberto, setAberto] = useState<number | null>(null);
   // a cota aparece já no primeiro alerta
   useEffect(() => {
-    if (pedido && !cota) void atualizar({ alertas: true });
+    if (pedido && !cota) void atualizar();
   }, [pedido, cota, atualizar]);
   const [qtd, setQtd] = useState(1);
   const [preco, setPreco] = useState('');
   const [mensagem, setMensagem] = useState('');
   const [erro, setErro] = useState<string | null>(null);
   const [semCota, setSemCota] = useState(false);
-  const [enviado, setEnviado] = useState<{ lojas: number; alerta: AlertaDaOficina } | null>(null);
+  const [semConta, setSemConta] = useState(false);
+  const [enviado, setEnviado] = useState<{ lojas: number; alerta: AlertaDaOficina; uf: string } | null>(null);
   const [enviando, iniciar] = useTransition();
 
   const p = pedido?.produto ?? null;
@@ -162,6 +164,7 @@ export function FolhaNovoAlerta({
     setMensagem('');
     setErro(null);
     setSemCota(false);
+    setSemConta(false);
     setEnviado(null);
   }
 
@@ -174,16 +177,16 @@ export function FolhaNovoAlerta({
     if (!p) return;
     setErro(null);
     setSemCota(false);
+    setSemConta(false);
     const valor = lerNumero(preco);
     if (valor == null || valor <= 0) return setErro('Diga quanto quer pagar por unidade.');
     if (valor >= atual) return setErro(`A loja já vende por ${formatarMoeda(atual)}. Para esse preço é só pôr no pedido.`);
-    if (!/^[A-Z]{2}$/.test(oficina.uf)) return setErro('Escolha o estado da oficina em Ajustes: o alerta vai para as lojas do seu estado.');
+    if (!/^[A-Z]{2}$/.test(uf)) return setErro('Escolha o estado da oficina em Ajustes: o alerta vai para as lojas do seu estado.');
     iniciar(async () => {
       try {
         const r = await mandarAlerta({
-          aparelhoId: garantirAparelhoId(),
-          codigoPro: codigoProGuardado(),
-          oficina: { nome: oficina.nome, whatsapp: oficina.whatsapp, cidade: oficina.cidade, uf: oficina.uf },
+          uf: /^[A-Z]{2}$/.test(oficina.uf) ? oficina.uf : '',
+          cidade: oficina.cidade,
           produtoId: p.id,
           quantidade: qtd,
           precoAlvo: r2(valor),
@@ -193,11 +196,11 @@ export function FolhaNovoAlerta({
         if (!r.ok) {
           setErro(r.erro);
           setSemCota(!!r.semCota);
+          setSemConta(!!r.semConta);
           return;
         }
-        marcarAlerta();
         guardarAlerta(r.alerta, r.cota);
-        setEnviado({ lojas: r.lojas, alerta: r.alerta });
+        setEnviado({ lojas: r.lojas, alerta: r.alerta, uf });
       } catch {
         setErro('Sem conexão com o servidor. Confira a internet e tente de novo.');
       }
@@ -233,7 +236,7 @@ export function FolhaNovoAlerta({
             <Check size={26} aria-hidden="true" />
           </span>
           <p className="text-[17px]">
-            O pedido de {textoDoPedidoDeAlerta(enviado.alerta)} foi para {plural(enviado.lojas, 'loja', 'lojas')} do {oficina.uf}.
+            O pedido de {textoDoPedidoDeAlerta(enviado.alerta)} foi para {plural(enviado.lojas, 'loja', 'lojas')} do {enviado.uf}.
           </p>
           <p className="text-tinta-2">
             As lojas têm até {formatarDiaHora(enviado.alerta.expiraEm)} para responder. As respostas aparecem aqui na Loja, em Em andamento. Você escolhe a melhor e o pedido sai com o preço combinado.
@@ -247,10 +250,10 @@ export function FolhaNovoAlerta({
       aberta={!!pedido}
       aoFechar={fechar}
       titulo="Pedir preço menor"
-      descricao={p ? `Para as lojas ${oficina.uf ? `do ${oficina.uf}` : 'do seu estado'} que vendem ${nomeCategoria(p.categoria).toLowerCase()}.` : undefined}
+      descricao={p ? `Para as lojas ${uf ? `do ${uf}` : 'do seu estado'} que vendem ${nomeCategoria(p.categoria).toLowerCase()}.` : undefined}
       rodape={
         <div className="flex w-full flex-wrap items-center justify-between gap-2">
-          <LinhaDaCota cota={cota} teste={plano.tipo === 'teste'} />
+          <LinhaDaCota cota={cota} teste={daConta?.plano === 'teste'} />
           <div className="ml-auto flex gap-2">
             <Botao variante="fantasma" onClick={fechar}>
               Cancelar
@@ -305,7 +308,9 @@ export function FolhaNovoAlerta({
           {erro ? (
             <div className="flex flex-col items-start gap-2 rounded-lg bg-atraso-claro px-3 py-2.5 text-[14px] text-atraso" role="alert">
               <p>{erro}</p>
-              {semCota ? (
+              {semConta ? (
+                <BotaoEntrar rotulo="Entrar" pequeno />
+              ) : semCota ? (
                 cota?.tipo === 'pro' ? (
                   <Botao tamanho="pequeno" variante="escuro" onClick={aoComprar}>
                     Comprar mais alertas
@@ -351,7 +356,6 @@ export function LinhaDaCota({ cota, teste }: { cota: CotaAlertas | null; teste?:
 export function FolhaAlerta({ alertaId, aoFechar, aoAcompanhar }: { alertaId: string | null; aoFechar: () => void; aoAcompanhar: (codigo: string) => void }) {
   const { alertas, atualizar, ajustarAlerta } = useAndamento();
   const toast = useToast();
-  const garantirAparelhoId = useOficina((s) => s.garantirAparelhoId);
   const alerta = alertas.find((a) => a.id === alertaId) ?? null;
   const [escolhida, setEscolhida] = useState<string | null>(null);
   const [cancelando, iniciarCancelar] = useTransition();
@@ -374,15 +378,15 @@ export function FolhaAlerta({ alertaId, aoFechar, aoAcompanhar }: { alertaId: st
     if (!alerta) return;
     iniciarCancelar(async () => {
       try {
-        const r = await desistirDoAlerta(garantirAparelhoId(), alerta.id);
+        const r = await desistirDoAlerta(alerta.id);
         if (!r.ok) {
           toast({ texto: r.erro, tom: 'erro' });
-          void atualizar({ alertas: true });
+          void atualizar();
           return;
         }
         ajustarAlerta(alerta.id, { status: 'cancelado' });
         toast({ texto: 'Alerta cancelado.' });
-        void atualizar({ alertas: true });
+        void atualizar();
         fechar();
       } catch {
         toast({ texto: 'Sem conexão. O alerta não foi cancelado.', tom: 'erro' });
@@ -530,7 +534,6 @@ function CartaoProposta({
 }) {
   const oficina = useOficina((s) => s.oficina);
   const salvarOficina = useOficina((s) => s.salvarOficina);
-  const garantirAparelhoId = useOficina((s) => s.garantirAparelhoId);
   const registrarPedido = useOficina((s) => s.registrarPedido);
   const { atualizar } = useAndamento();
   // a loja negociou esta quantidade: dá para pedir do mínimo dela até o que o alerta pediu
@@ -546,13 +549,11 @@ function CartaoProposta({
 
   function fazer() {
     setErro(null);
-    if (!oficina.nome.trim()) return setErro('Escreva o nome da oficina em Ajustes.');
     if (r.preco == null || !r.produto) return setErro('Esta proposta não vale mais.');
     const vista = { preco: r.preco, produto: r.produto.id, minimo: r.quantidadeMinima ?? 1 };
     iniciar(async () => {
       try {
         const res = await fecharComLoja({
-          aparelhoId: garantirAparelhoId(),
           alertaId: alerta.id,
           respostaId: r.id,
           quantidade: qtd,
@@ -560,13 +561,13 @@ function CartaoProposta({
           precoEsperado: vista.preco,
           produtoEsperado: vista.produto,
           minimoEsperado: vista.minimo,
-          oficina: { nome: oficina.nome, whatsapp: oficina.whatsapp, cidade: oficina.cidade, uf: oficina.uf, endereco: oficina.endereco },
+          contato: { whatsapp: oficina.whatsapp, cidade: oficina.cidade, uf: /^[A-Z]{2}$/.test(oficina.uf) ? oficina.uf : '', endereco: oficina.endereco },
           observacao: obs
         });
         if (!res.ok) {
           setErro(res.erro);
           // a proposta pode ter mudado ou acabado: traz a versão nova para a oficina conferir
-          void atualizar({ alertas: true });
+          void atualizar();
           return;
         }
         registrarPedido(
@@ -610,6 +611,7 @@ function CartaoProposta({
           <p className="text-[13.5px] text-tinta-3">
             {[r.cidade, outroProduto ? nomeComMarca(r.produto!) : ''].filter(Boolean).join(', ')}
           </p>
+          <SeloDaLoja fornecedorId={r.fornecedorId} compacto />
           <p className="mt-1 text-[15px] font-semibold">{resumoDaResposta(r, r.produto)}</p>
           {r.prazoEntrega ? (
             <p className="flex items-center gap-1.5 text-[13.5px] text-tinta-2">
@@ -669,7 +671,7 @@ function CartaoProposta({
 
 export function ListaDeAlertas({ aoAbrir, aoComprar }: { aoAbrir: (id: string) => void; aoComprar: () => void }) {
   const { alertas, cota } = useAndamento();
-  const plano = usePlano();
+  const { oficina: daConta } = useConta();
   if (!alertas.length) return null;
   return (
     <section className="flex flex-col gap-3" aria-labelledby="t-alertas">
@@ -678,7 +680,7 @@ export function ListaDeAlertas({ aoAbrir, aoComprar }: { aoAbrir: (id: string) =
           <h2 id="t-alertas" className="text-[21px]">
             Alertas de preço
           </h2>
-          <LinhaDaCota cota={cota} teste={plano.tipo === 'teste'} />
+          <LinhaDaCota cota={cota} teste={daConta?.plano === 'teste'} />
         </div>
         {cota?.tipo === 'pro' ? (
           <button type="button" onClick={aoComprar} className="text-[14.5px] font-semibold text-caneta hover:underline">
@@ -713,6 +715,7 @@ export function ListaDeAlertas({ aoAbrir, aoComprar }: { aoAbrir: (id: string) =
 
 export function FolhaPacotes({ aberta, aoFechar }: { aberta: boolean; aoFechar: () => void }) {
   const oficina = useOficina((s) => s.oficina);
+  const { oficina: daConta } = useConta();
   const toast = useToast();
   const [escolha, setEscolha] = useState<number>(PACOTES_ALERTAS[0].quantidade);
   const [erro, setErro] = useState<string | null>(null);
@@ -727,11 +730,11 @@ export function FolhaPacotes({ aberta, aoFechar }: { aberta: boolean; aoFechar: 
 
   function pedir() {
     setErro(null);
-    const codigo = codigoProGuardado();
-    if (!codigo) return setErro('Os pacotes são para quem tem o Pro. Ative o código em Ajustes, na parte Plano.');
+    if (!daConta) return setErro('Entre na sua conta para comprar alertas.');
+    if (daConta.plano !== 'pro') return setErro('Os pacotes são para quem tem o Pro em dia. Veja o plano em Ajustes.');
     iniciar(async () => {
       try {
-        const r = await comprarAlertas({ codigoPro: codigo, quantidade: escolha, oficina: { nome: oficina.nome, whatsapp: oficina.whatsapp, cidade: oficina.cidade, uf: oficina.uf } });
+        const r = await comprarAlertas({ quantidade: escolha, whatsapp: oficina.whatsapp });
         if (!r.ok) return setErro(r.erro);
         setFeito({ pix: r.pix, valor: r.valor });
       } catch {

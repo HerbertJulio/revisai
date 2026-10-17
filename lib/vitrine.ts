@@ -14,6 +14,24 @@ export const ORDENS: { id: Ordem; nome: string }[] = [
   { id: 'nome', nome: 'Nome (A a Z)' }
 ];
 
+/** Sem os preços (quem não entrou na conta), não dá para ordenar por preço nem por desconto. */
+export function ordensDisponiveis(comPrecos: boolean): { id: Ordem; nome: string }[] {
+  return comPrecos ? ORDENS : ORDENS.filter((o) => o.id === 'relevancia' || o.id === 'nome');
+}
+
+/**
+ * O catálogo para quem não entrou na conta: os produtos e as lojas, sem os preços e sem as
+ * promoções (preço 0 quer dizer "sem preço"). Os patrocinados continuam.
+ */
+export function semPrecos(c: Catalogo): Catalogo {
+  return { ...c, produtos: c.produtos.map((p) => ({ ...p, preco: 0 })), promocoes: [] };
+}
+
+/** O produto veio com preço (o catálogo de quem entrou). */
+export function temPreco(p: Pick<Produto, 'preco'>): boolean {
+  return Number.isFinite(p.preco) && p.preco > 0;
+}
+
 export interface FiltrosLoja {
   busca: string;
   categoria: Categoria | null;

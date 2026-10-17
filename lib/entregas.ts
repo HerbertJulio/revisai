@@ -2,14 +2,16 @@ import 'server-only';
 
 // O pedido depois de enviado: a oficina acompanha a parte de cada loja, paga por Pix direto para a
 // loja e vê a entrega no mapa; a loja confirma o pagamento e manda o link para o entregador; o
-// celular do entregador manda a posição. Tudo pelo servidor, com a chave da equipe no cabeçalho.
-// A oficina é reconhecida pelo número do aparelho junto com o código do pedido.
+// celular do entregador manda a posição.
+// A oficina fala com o banco como a pessoa que entrou (o banco só mostra as partes da oficina
+// dela). As funções da loja, do entregador e da rotina diária ainda usam a chave do sistema.
 
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { createHash, randomBytes } from 'node:crypto';
 import { z } from 'zod';
-import { clienteEquipe } from './equipe';
-import { DIAS_DO_LINK, pixLiberado, type ParteAcompanhada, type PedidoAcompanhado, type SituacaoPagamento } from './entregas-dados';
+import { DIAS_DO_LINK, montarPedidos, type LinhaDaParte, type LinhaDoHistorico, type PedidoAcompanhado, type SituacaoPagamento } from './entregas-dados';
 import { codigoPix, normalizarChavePix, type TipoChavePix } from './pix';
+import { clienteSistema } from './supabase-servidor';
 
 export type Gravacao<T = object> = ({ ok: true } & T) | { ok: false; erro: string };
 
@@ -73,126 +75,146 @@ const SEM_POSICAO = { entrega_lat: null, entrega_lng: null, entrega_precisao: nu
 
 // ---------------------------------------------------------------- oficina
 
-/** Os pedidos deste aparelho com a situação de cada loja. */
-export async function acompanharPedidos(aparelhoId: string, codigos: string[]): Promise<{ dados: PedidoAcompanhado[]; erro: string | null }> {
-  const sb = clienteEquipe();
-  if (!sb) return { dados: [], erro: SEM_BANCO };
-  const peds = await sb.from('pedidos').select('id, codigo, itens, total, criado_em').eq('aparelho_id', aparelhoId).in('codigo', codigos);
-  if (peds.error) {
-    console.error('[entregas] pedidos', peds.error);
-    return { dados: [], erro: ERRO };
-  }
-  const pedidos = (peds.data ?? []) as { id: number; codigo: string; itens: unknown; total: number | string; criado_em: string }[];
-  if (!pedidos.length) return { dados: [], erro: null };
-  const partes = await sb.from('pedidos_fornecedores').select(COLUNAS_PARTE).in('pedido_id', pedidos.map((p) => Number(p.id)));
-  if (partes.error) {
-    console.error('[entregas] partes', partes.error);
-    return { dados: [], erro: ERRO };
-  }
-  const linhas = (partes.data ?? []).flatMap((x) => {
-    const r = esquemaParte.safeParse(x);
+/** Quantos dias de pedidos a oficina acompanha (os mais velhos já terminaram). */
+export const DIAS_ACOMPANHADOS = 45;
+
+const COLUNAS_PARTE_DA_OFICINA =
+  'id, codigo, fornecedor_id, status, subtotal, itens, pagamento, pagamento_em, entrega_previsao, entrega_saiu_em, entrega_lat, entrega_lng, entrega_precisao, entrega_posicao_em, entregue_em, cancelado_motivo, cancelado_por, criado_em, atualizado_em';
+
+const esquemaParteDaOficina = z.object({
+  id: numero,
+  codigo: z.string(),
+  fornecedor_id: numero,
+  status: z.enum(['novo', 'em_contato', 'confirmado', 'saiu_entrega', 'entregue', 'cancelado']),
+  subtotal: numero,
+  itens: z.unknown(),
+  pagamento: z.enum(['pendente', 'informado', 'confirmado']),
+  pagamento_em: textoOuNulo,
+  entrega_previsao: textoOuNulo,
+  entrega_saiu_em: textoOuNulo,
+  entrega_lat: numeroOuNulo,
+  entrega_lng: numeroOuNulo,
+  entrega_precisao: numeroOuNulo,
+  entrega_posicao_em: textoOuNulo,
+  entregue_em: textoOuNulo,
+  cancelado_motivo: textoOuNulo,
+  cancelado_por: textoOuNulo,
+  criado_em: z.string(),
+  atualizado_em: z.string()
+});
+
+const esquemaHistorico = z.object({
+  parte_id: numero,
+  quando: z.string(),
+  campo: z.string(),
+  de: textoOuNulo,
+  para: textoOuNulo,
+  quem: z.string(),
+  motivo: textoOuNulo
+});
+
+function lerLinhas<T>(esquema: z.ZodType<T>, dados: unknown): T[] {
+  return (Array.isArray(dados) ? dados : []).flatMap((x) => {
+    const r = esquema.safeParse(x);
     return r.success ? [r.data] : [];
   });
-  const ids = [...new Set(linhas.map((l) => l.fornecedor_id))];
-  const [forn, pix] = ids.length
-    ? await Promise.all([sb.from('fornecedores').select('id, nome, whatsapp').in('id', ids), sb.from('fornecedores_pix').select('fornecedor_id').in('fornecedor_id', ids)])
-    : [{ data: [], error: null }, { data: [], error: null }];
-  if (forn.error || pix.error) console.error('[entregas] lojas', forn.error ?? pix.error);
-  const lojas = new Map((forn.data ?? []).map((f: { id: number; nome: string; whatsapp: string | null }) => [Number(f.id), f]));
-  const comPix = new Set((pix.data ?? []).map((x: { fornecedor_id: number }) => Number(x.fornecedor_id)));
-  const dados = pedidos.map((p): PedidoAcompanhado => {
-    const itens = itensDe(p.itens);
-    return {
-      codigo: p.codigo,
-      criadoEm: p.criado_em,
-      total: Number(p.total),
-      partes: linhas
-        .filter((l) => l.pedido_id === Number(p.id))
-        .map(
-          (l): ParteAcompanhada => ({
-            fornecedorId: l.fornecedor_id,
-            fornecedor: lojas.get(l.fornecedor_id)?.nome ?? 'Loja',
-            whatsapp: lojas.get(l.fornecedor_id)?.whatsapp ?? null,
-            status: l.status,
-            subtotal: l.subtotal,
-            itens: itens
-              .filter((i) => i.fornecedor_id === l.fornecedor_id)
-              .map((i) => ({ nome: i.nome, quantidade: i.quantidade, precoUnitario: i.preco_unitario, combinado: i.combinado })),
-            pagamento: l.pagamento,
-            pagamentoEm: l.pagamento_em,
-            pix: comPix.has(l.fornecedor_id),
-            entrega: {
-              previsao: l.entrega_previsao,
-              saiuEm: l.entrega_saiu_em,
-              posicao:
-                l.status === 'saiu_entrega' && l.entrega_lat != null && l.entrega_lng != null && l.entrega_posicao_em
-                  ? { lat: l.entrega_lat, lng: l.entrega_lng, precisao: l.entrega_precisao, em: l.entrega_posicao_em }
-                  : null,
-              entregueEm: l.entregue_em
-            },
-            atualizadoEm: l.atualizado_em
-          })
-        )
-    };
-  });
-  return { dados, erro: null };
 }
 
-async function parteDaOficina(aparelhoId: string, codigo: string, fornecedorId: number) {
-  const sb = clienteEquipe();
-  if (!sb) return null;
-  const ped = await sb.from('pedidos').select('id').eq('aparelho_id', aparelhoId).eq('codigo', codigo).maybeSingle();
-  if (ped.error || !ped.data) return null;
-  const parte = await sb.from('pedidos_fornecedores').select(COLUNAS_PARTE).eq('pedido_id', Number(ped.data.id)).eq('fornecedor_id', fornecedorId).maybeSingle();
-  if (parte.error || !parte.data) return null;
-  const r = esquemaParte.safeParse(parte.data);
-  return r.success ? r.data : null;
+/**
+ * Os pedidos da oficina dos últimos 45 dias, com a situação de cada loja e o histórico. O banco só
+ * devolve as partes da oficina de quem entrou; o filtro por oficina_id escolhe entre as oficinas
+ * da conta.
+ */
+export async function acompanharPedidos(sb: SupabaseClient, oficinaId: string): Promise<{ dados: PedidoAcompanhado[]; erro: string | null }> {
+  const desde = new Date(Date.now() - DIAS_ACOMPANHADOS * 86_400_000).toISOString();
+  const partes = await sb
+    .from('pedidos_fornecedores')
+    .select(COLUNAS_PARTE_DA_OFICINA)
+    .eq('oficina_id', oficinaId)
+    .gte('criado_em', desde)
+    .order('criado_em', { ascending: false })
+    .limit(200);
+  if (partes.error) {
+    console.error('[entregas] partes da oficina', partes.error);
+    return { dados: [], erro: ERRO };
+  }
+  const linhas: LinhaDaParte[] = lerLinhas(esquemaParteDaOficina, partes.data).filter((l) => /^[A-Z0-9]{6}$/.test(l.codigo));
+  if (!linhas.length) return { dados: [], erro: null };
+  const idsPartes = linhas.map((l) => l.id);
+  const idsLojas = [...new Set(linhas.map((l) => l.fornecedor_id))];
+  const [hist, forn, pix] = await Promise.all([
+    sb.from('pedidos_historico').select('parte_id, quando, campo, de, para, quem, motivo').in('parte_id', idsPartes).order('quando').limit(2000),
+    sb.from('fornecedores').select('id, nome, whatsapp').in('id', idsLojas),
+    sb.rpc('lojas_com_pix', { p_ids: idsLojas })
+  ]);
+  if (hist.error) console.error('[entregas] histórico', hist.error);
+  if (forn.error) console.error('[entregas] lojas', forn.error);
+  const lojas = new Map(((forn.data ?? []) as { id: number | string; nome: string; whatsapp: string | null }[]).map((f) => [Number(f.id), { nome: f.nome, whatsapp: f.whatsapp }]));
+  // sem a lista (banco antigo ou fora do ar), o botão do Pix aparece e a loja sem chave avisa na hora
+  const comPix = pix.error || !Array.isArray(pix.data) ? null : new Set((pix.data as (number | string)[]).map(Number));
+  if (pix.error) console.error('[entregas] lojas com Pix', pix.error);
+  const historico: LinhaDoHistorico[] = lerLinhas(esquemaHistorico, hist.data);
+  return { dados: montarPedidos(linhas, historico, lojas, (id) => (comPix ? comPix.has(id) : true)), erro: null };
 }
 
-/** O Pix copia e cola da parte de uma loja, com o valor dela. */
-export async function pixDaParte(aparelhoId: string, codigo: string, fornecedorId: number): Promise<Gravacao<{ codigo: string; valor: number; recebedor: string }>> {
-  const sb = clienteEquipe();
-  if (!sb) return { ok: false, erro: SEM_BANCO };
-  const parte = await parteDaOficina(aparelhoId, codigo, fornecedorId);
-  if (!parte) return { ok: false, erro: 'Pedido não encontrado neste aparelho.' };
-  if (parte.status === 'cancelado') return { ok: false, erro: 'Este pedido foi cancelado.' };
-  // a chave da loja só aparece para pedido que a loja confirmou (não para qualquer pedido feito à toa)
-  if (!pixLiberado(parte.status)) return { ok: false, erro: 'O Pix aparece quando a loja confirmar o pedido.' };
-  if (parte.pagamento === 'confirmado') return { ok: false, erro: 'A loja já confirmou o pagamento.' };
-  const { data, error } = await sb.from('fornecedores_pix').select('tipo, chave, nome, cidade').eq('fornecedor_id', fornecedorId).maybeSingle();
+/** O que o banco diz quando a oficina pede o Pix ou avisa que pagou. */
+function erroDoPix(e: { code?: string; message?: string }): string {
+  if (e.code === 'RV021') return 'O Pix aparece quando a loja confirmar o pedido.';
+  if (e.code === 'RV022') return 'Esta loja ainda não cadastrou a chave Pix. Combine o pagamento com ela.';
+  if (e.code === '42501') return /Pagamento só depois/.test(e.message ?? '') ? 'O Pix aparece quando a loja confirmar o pedido.' : 'Pedido não encontrado nesta oficina.';
+  if (e.code === '28000') return 'Sua sessão terminou. Entre de novo.';
+  return ERRO;
+}
+
+const esquemaPixDaParte = z.object({
+  tipo: z.enum(['cnpj', 'cpf', 'email', 'telefone', 'aleatoria']),
+  chave: z.string(),
+  nome: z.string(),
+  cidade: z.string(),
+  valor: numero,
+  codigo: z.string(),
+  trocadaEm: textoOuNulo
+});
+
+/**
+ * O Pix copia e cola da parte de uma loja, com o valor dela. O banco só entrega a chave da loja
+ * para a oficina dona do pedido, e só depois de a loja confirmar.
+ */
+export async function pixDaParte(sb: SupabaseClient, parteId: number): Promise<Gravacao<{ codigo: string; valor: number; recebedor: string; trocadaEm: string | null }>> {
+  const { data, error } = await sb.rpc('pix_da_parte', { p_parte: parteId });
   if (error) {
-    console.error('[entregas] pix', error);
+    if (!/^(RV02[12]|42501|28000)$/.test(error.code ?? '')) console.error('[entregas] pix da parte', error);
+    return { ok: false, erro: erroDoPix(error) };
+  }
+  const r = esquemaPixDaParte.safeParse(data);
+  if (!r.success) {
+    console.error('[entregas] pix da parte fora do formato', r.error.issues[0]);
     return { ok: false, erro: ERRO };
   }
-  if (!data) return { ok: false, erro: 'Esta loja ainda não cadastrou a chave Pix. Combine o pagamento com ela.' };
-  const pix = data as { tipo: TipoChavePix; chave: string; nome: string; cidade: string };
-  const chave = normalizarChavePix(pix.tipo, pix.chave);
+  const pix = r.data;
+  const chave = normalizarChavePix(pix.tipo as TipoChavePix, pix.chave);
   if (!chave) return { ok: false, erro: 'A chave Pix da loja está com problema. Combine o pagamento com ela.' };
   return {
     ok: true,
-    codigo: codigoPix({ chave, nome: pix.nome, cidade: pix.cidade, valor: parte.subtotal, txid: `RVS${codigo}${fornecedorId}`, descricao: `Pedido ${codigo} Revisai` }),
-    valor: parte.subtotal,
-    recebedor: pix.nome
+    codigo: codigoPix({ chave, nome: pix.nome, cidade: pix.cidade, valor: pix.valor, txid: `RVS${pix.codigo}${parteId}`, descricao: `Pedido ${pix.codigo} Revisai` }),
+    valor: pix.valor,
+    recebedor: pix.nome,
+    trocadaEm: pix.trocadaEm
   };
 }
 
-/** A oficina avisa que pagou; a loja confere no extrato e confirma. */
-export async function informarPagamento(aparelhoId: string, codigo: string, fornecedorId: number): Promise<Gravacao> {
-  const sb = clienteEquipe();
-  if (!sb) return { ok: false, erro: SEM_BANCO };
-  const parte = await parteDaOficina(aparelhoId, codigo, fornecedorId);
-  if (!parte) return { ok: false, erro: 'Pedido não encontrado neste aparelho.' };
-  if (parte.pagamento !== 'pendente') return { ok: true };
-  const { error } = await sb
-    .from('pedidos_fornecedores')
-    .update({ pagamento: 'informado', pagamento_em: new Date().toISOString(), atualizado_em: new Date().toISOString() })
-    .eq('id', parte.id)
-    .eq('pagamento', 'pendente');
+/** A oficina avisa que pagou; a loja confere no extrato e confirma. O banco aceita só depois da confirmação da loja. */
+export async function informarPagamento(sb: SupabaseClient, parteId: number): Promise<Gravacao> {
+  const { data, error } = await sb.from('pedidos_fornecedores').update({ pagamento: 'informado' }).eq('id', parteId).eq('pagamento', 'pendente').select('id').maybeSingle();
   if (error) {
-    console.error('[entregas] informar pagamento', error);
-    return { ok: false, erro: ERRO };
+    if (error.code !== '42501') console.error('[entregas] informar pagamento', error);
+    return { ok: false, erro: erroDoPix(error) };
   }
-  return { ok: true };
+  if (data) return { ok: true };
+  // nada mudou: já estava avisado (ou confirmado), ou a parte não é desta oficina
+  const atual = await sb.from('pedidos_fornecedores').select('pagamento').eq('id', parteId).maybeSingle();
+  if (atual.error) return { ok: false, erro: ERRO };
+  return atual.data ? { ok: true } : { ok: false, erro: 'Pedido não encontrado nesta oficina.' };
 }
 
 // ---------------------------------------------------------------- loja
@@ -222,7 +244,7 @@ export interface PixDaLoja {
 }
 
 export async function lerPixDaLoja(fornecedorId: number): Promise<PixDaLoja | null> {
-  const sb = clienteEquipe();
+  const sb = clienteSistema();
   if (!sb) return null;
   const { data } = await sb.from('fornecedores_pix').select('tipo, chave, nome, cidade').eq('fornecedor_id', fornecedorId).maybeSingle();
   return (data as PixDaLoja | null) ?? null;
@@ -234,7 +256,7 @@ export async function salvarPixDaLoja(fornecedorId: number, entrada: unknown): P
   const d = r.data;
   const chave = normalizarChavePix(d.tipo, d.chave);
   if (!chave) return { ok: false, erro: ERRO_CHAVE[d.tipo] };
-  const sb = clienteEquipe();
+  const sb = clienteSistema();
   if (!sb) return { ok: false, erro: SEM_BANCO };
   const { error } = await sb
     .from('fornecedores_pix')
@@ -247,7 +269,7 @@ export async function salvarPixDaLoja(fornecedorId: number, entrada: unknown): P
 }
 
 async function parteDaLoja(fornecedorId: number, parteId: number) {
-  const sb = clienteEquipe();
+  const sb = clienteSistema();
   if (!sb) return null;
   const { data, error } = await sb.from('pedidos_fornecedores').select(COLUNAS_PARTE).eq('id', parteId).eq('fornecedor_id', fornecedorId).maybeSingle();
   if (error || !data) return null;
@@ -257,7 +279,7 @@ async function parteDaLoja(fornecedorId: number, parteId: number) {
 
 /** A loja marca que o pedido saiu: gera o link do entregador (o banco guarda só o hash). */
 export async function saidaParaEntrega(fornecedorId: number, parteId: number, previsao: string): Promise<Gravacao<{ token: string }>> {
-  const sb = clienteEquipe();
+  const sb = clienteSistema();
   if (!sb) return { ok: false, erro: SEM_BANCO };
   const parte = await parteDaLoja(fornecedorId, parteId);
   if (!parte) return { ok: false, erro: 'Pedido não encontrado.' };
@@ -284,7 +306,7 @@ export async function saidaParaEntrega(fornecedorId: number, parteId: number, pr
 }
 
 export async function confirmarPagamento(fornecedorId: number, parteId: number, confirmado: boolean): Promise<Gravacao> {
-  const sb = clienteEquipe();
+  const sb = clienteSistema();
   if (!sb) return { ok: false, erro: SEM_BANCO };
   const agora = new Date().toISOString();
   const { data, error } = await sb
@@ -318,7 +340,7 @@ export interface DadosDaEntrega {
 
 /** O que o entregador vê pelo link (ou null se o link não vale mais). */
 export async function dadosDaEntrega(token: string): Promise<DadosDaEntrega | null> {
-  const sb = clienteEquipe();
+  const sb = clienteSistema();
   if (!sb) return null;
   const parte = await sb
     .from('pedidos_fornecedores')
@@ -352,7 +374,7 @@ export async function dadosDaEntrega(token: string): Promise<DadosDaEntrega | nu
 }
 
 export async function registrarPosicao(token: string, pos: { lat: number; lng: number; precisao: number | null }): Promise<Gravacao> {
-  const sb = clienteEquipe();
+  const sb = clienteSistema();
   if (!sb) return { ok: false, erro: SEM_BANCO };
   const { data, error } = await sb
     .from('pedidos_fornecedores')
@@ -375,7 +397,7 @@ export async function registrarPosicao(token: string, pos: { lat: number; lng: n
 }
 
 export async function concluirEntrega(token: string): Promise<Gravacao> {
-  const sb = clienteEquipe();
+  const sb = clienteSistema();
   if (!sb) return { ok: false, erro: SEM_BANCO };
   const agora = new Date().toISOString();
   const { data, error } = await sb
@@ -400,7 +422,7 @@ export type { SituacaoPagamento };
  * para de valer e a última posição dele é apagada.
  */
 export async function limparEntregasVelhas(): Promise<number> {
-  const sb = clienteEquipe();
+  const sb = clienteSistema();
   if (!sb) return 0;
   const { data, error } = await sb
     .from('pedidos_fornecedores')

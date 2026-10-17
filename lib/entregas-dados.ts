@@ -40,7 +40,21 @@ export interface PosicaoEntrega {
   em: string;
 }
 
+export type QuemMudou = 'loja' | 'oficina' | 'equipe' | 'entregador' | 'sistema';
+
+/** Uma mudança na parte do pedido (situação ou pagamento), como o banco registrou. */
+export interface MudancaDaParte {
+  quando: string;
+  campo: 'status' | 'pagamento';
+  de: string | null;
+  para: string | null;
+  quem: QuemMudou;
+  motivo: string | null;
+}
+
 export interface ParteAcompanhada {
+  /** O número da parte no banco (é por ele que a oficina paga e avisa que pagou). */
+  id: number;
   fornecedorId: number;
   fornecedor: string;
   whatsapp: string | null;
@@ -52,6 +66,10 @@ export interface ParteAcompanhada {
   /** A loja cadastrou a chave Pix. */
   pix: boolean;
   entrega: { previsao: string | null; saiuEm: string | null; posicao: PosicaoEntrega | null; entregueEm: string | null };
+  /** Quem cancelou e por quê (só na parte cancelada). */
+  cancelamento: { por: 'loja' | 'oficina' | 'equipe' | null; motivo: string | null } | null;
+  /** As mudanças de situação e de pagamento, da mais antiga para a mais nova. */
+  historico: MudancaDaParte[];
   atualizadoEm: string;
 }
 
@@ -60,6 +78,155 @@ export interface PedidoAcompanhado {
   criadoEm: string;
   total: number;
   partes: ParteAcompanhada[];
+}
+
+/** Uma parte como a oficina lê no banco (pedidos_fornecedores, com as colunas copiadas do pedido). */
+export interface LinhaDaParte {
+  id: number;
+  codigo: string;
+  fornecedor_id: number;
+  status: SituacaoParte;
+  subtotal: number;
+  itens: unknown;
+  pagamento: SituacaoPagamento;
+  pagamento_em: string | null;
+  entrega_previsao: string | null;
+  entrega_saiu_em: string | null;
+  entrega_lat: number | null;
+  entrega_lng: number | null;
+  entrega_precisao: number | null;
+  entrega_posicao_em: string | null;
+  entregue_em: string | null;
+  cancelado_motivo: string | null;
+  cancelado_por: string | null;
+  criado_em: string;
+  atualizado_em: string;
+}
+
+export interface LinhaDoHistorico {
+  parte_id: number;
+  quando: string;
+  campo: string;
+  de: string | null;
+  para: string | null;
+  quem: string;
+  motivo: string | null;
+}
+
+const QUEM: readonly QuemMudou[] = ['loja', 'oficina', 'equipe', 'entregador', 'sistema'];
+
+type ItemDaParte = ParteAcompanhada['itens'][number] & { fornecedor?: string };
+
+function itensDaParte(dados: unknown): ItemDaParte[] {
+  return (Array.isArray(dados) ? dados : []).flatMap((x) => {
+    if (!x || typeof x !== 'object') return [];
+    const i = x as Record<string, unknown>;
+    const quantidade = Number(i.quantidade);
+    const precoUnitario = Number(i.preco_unitario);
+    if (!Number.isFinite(quantidade) || !Number.isFinite(precoUnitario)) return [];
+    return [{ nome: String(i.nome ?? ''), quantidade, precoUnitario, combinado: i.combinado === true, fornecedor: typeof i.fornecedor === 'string' ? i.fornecedor : undefined }];
+  });
+}
+
+/**
+ * Junta as partes da oficina por pedido (o código), com o histórico de cada uma, o nome e o
+ * WhatsApp da loja e se ela aceita Pix pelo app. Os pedidos mais novos vêm primeiro.
+ */
+export function montarPedidos(
+  partes: LinhaDaParte[],
+  historico: LinhaDoHistorico[],
+  lojas: Map<number, { nome: string; whatsapp: string | null }>,
+  comPix: (fornecedorId: number) => boolean
+): PedidoAcompanhado[] {
+  const porParte = new Map<number, MudancaDaParte[]>();
+  for (const h of [...historico].sort((a, b) => (a.quando < b.quando ? -1 : a.quando > b.quando ? 1 : 0))) {
+    if (h.campo !== 'status' && h.campo !== 'pagamento') continue;
+    const lista = porParte.get(h.parte_id) ?? [];
+    lista.push({ quando: h.quando, campo: h.campo, de: h.de, para: h.para, quem: QUEM.includes(h.quem as QuemMudou) ? (h.quem as QuemMudou) : 'sistema', motivo: h.motivo });
+    porParte.set(h.parte_id, lista);
+  }
+  const pedidos = new Map<string, PedidoAcompanhado>();
+  for (const l of partes) {
+    const itens = itensDaParte(l.itens);
+    const loja = lojas.get(l.fornecedor_id);
+    const parte: ParteAcompanhada = {
+      id: l.id,
+      fornecedorId: l.fornecedor_id,
+      // a loja que saiu do ar some do catálogo: fica o nome que veio no pedido
+      fornecedor: loja?.nome ?? itens.find((i) => i.fornecedor)?.fornecedor ?? 'Loja',
+      whatsapp: loja?.whatsapp ?? null,
+      status: l.status,
+      subtotal: l.subtotal,
+      itens: itens.map(({ nome, quantidade, precoUnitario, combinado }) => ({ nome, quantidade, precoUnitario, combinado })),
+      pagamento: l.pagamento,
+      pagamentoEm: l.pagamento_em,
+      pix: comPix(l.fornecedor_id),
+      entrega: {
+        previsao: l.entrega_previsao,
+        saiuEm: l.entrega_saiu_em,
+        posicao:
+          l.status === 'saiu_entrega' && l.entrega_lat != null && l.entrega_lng != null && l.entrega_posicao_em
+            ? { lat: l.entrega_lat, lng: l.entrega_lng, precisao: l.entrega_precisao, em: l.entrega_posicao_em }
+            : null,
+        entregueEm: l.entregue_em
+      },
+      cancelamento:
+        l.status === 'cancelado'
+          ? { por: l.cancelado_por === 'loja' || l.cancelado_por === 'oficina' || l.cancelado_por === 'equipe' ? l.cancelado_por : null, motivo: l.cancelado_motivo?.trim() || null }
+          : null,
+      historico: porParte.get(l.id) ?? [],
+      atualizadoEm: l.atualizado_em
+    };
+    const atual = pedidos.get(l.codigo);
+    if (!atual) pedidos.set(l.codigo, { codigo: l.codigo, criadoEm: l.criado_em, total: l.subtotal, partes: [parte] });
+    else {
+      atual.partes.push(parte);
+      atual.total = Math.round((atual.total + l.subtotal) * 100) / 100;
+      if (l.criado_em < atual.criadoEm) atual.criadoEm = l.criado_em;
+    }
+  }
+  return [...pedidos.values()]
+    .map((p) => ({ ...p, partes: p.partes.sort((a, b) => a.fornecedor.localeCompare(b.fornecedor, 'pt-BR') || a.id - b.id) }))
+    .sort((a, b) => (a.criadoEm < b.criadoEm ? 1 : a.criadoEm > b.criadoEm ? -1 : 0));
+}
+
+const NOMES_DA_SITUACAO: Record<string, string> = {
+  novo: 'recebido',
+  em_contato: 'em contato',
+  confirmado: 'confirmado',
+  saiu_entrega: 'saiu para entrega',
+  entregue: 'entregue',
+  cancelado: 'cancelado'
+};
+
+const QUEM_FEZ: Record<QuemMudou, string> = { loja: 'a loja', oficina: 'você', equipe: 'a equipe do Revisaí', entregador: 'o entregador', sistema: 'o Revisaí' };
+
+/** A mudança numa frase curta: "Confirmado pela loja", "Você avisou que pagou". */
+export function textoDaMudanca(m: MudancaDaParte): string {
+  if (m.campo === 'pagamento') {
+    if (m.para === 'informado') return m.quem === 'oficina' ? 'Você avisou que pagou' : 'Pagamento avisado';
+    if (m.para === 'confirmado') return `Pagamento confirmado por ${QUEM_FEZ[m.quem]}`;
+    if (m.para === 'pendente') return `Pagamento voltou para pendente (${QUEM_FEZ[m.quem]})`;
+    return 'Pagamento mudou';
+  }
+  const nome = NOMES_DA_SITUACAO[m.para ?? ''] ?? 'mudou';
+  if (m.para === 'cancelado') return `Cancelado por ${QUEM_FEZ[m.quem]}${m.motivo ? `: ${m.motivo}` : ''}`;
+  if (m.para === 'entregue' && m.quem === 'entregador') return 'Entregue (marcado pelo entregador)';
+  if (m.para === 'confirmado' && m.de === 'saiu_entrega') return `Voltou para confirmado (${QUEM_FEZ[m.quem]})`;
+  return `${nome.charAt(0).toUpperCase()}${nome.slice(1)} por ${QUEM_FEZ[m.quem]}`;
+}
+
+/** Por que a parte foi cancelada, para a oficina. */
+export function textoDoCancelamento(c: NonNullable<ParteAcompanhada['cancelamento']>): string {
+  const quem = c.por === 'oficina' ? 'Você cancelou esta parte do pedido' : c.por === 'equipe' ? 'A equipe do Revisaí cancelou esta parte do pedido' : 'A loja cancelou esta parte do pedido';
+  return c.motivo ? `${quem}: ${c.motivo}${/[.!?]$/.test(c.motivo) ? '' : '.'}` : `${quem}.`;
+}
+
+/** A loja trocou a chave Pix há pouco (até 7 dias): vale conferir o nome de quem recebe. */
+export function pixTrocadoHaPouco(trocadaEm: string | null | undefined, agora: number): boolean {
+  if (!trocadaEm) return false;
+  const t = Date.parse(trocadaEm);
+  return Number.isFinite(t) && agora - t < 7 * 86_400_000 && agora >= t - 60_000;
 }
 
 /** A oficina vê o Pix da loja depois que a loja confirma o pedido. */
@@ -161,15 +328,9 @@ export function mudancasDaSituacao(status: SituacaoParte, atual: { entrega_saiu_
 
 // ---------------------------------------------------------------- entradas
 
-export const esquemaAcompanhar = z.object({
-  aparelhoId: z.uuid(),
-  codigos: z.array(z.string().regex(/^[A-Z0-9]{6}$/)).min(1).max(30)
-});
-
-export const esquemaParteDaOficina = z.object({
-  aparelhoId: z.uuid(),
-  codigo: z.string().regex(/^[A-Z0-9]{6}$/),
-  fornecedorId: z.number().int().positive()
+/** A parte do pedido que a oficina paga ou avisa que pagou (o banco confere se é dela). */
+export const esquemaParte = z.object({
+  parteId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER)
 });
 
 export const esquemaPosicao = z.object({

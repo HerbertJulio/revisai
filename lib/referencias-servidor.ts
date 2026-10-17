@@ -1,6 +1,6 @@
 import 'server-only';
 import type { Referencia } from './referencias';
-import { supabaseServidor } from './supabase';
+import { clientePublico } from './supabase-servidor';
 import type { Categoria } from './tipos';
 
 interface Linha {
@@ -51,7 +51,7 @@ let guardado: { em: number; lista: Referencia[] } | null = null;
 /** As referências aprovadas da base (o público só vê essas). Fica 30 minutos na memória. */
 export async function buscarReferencias(): Promise<{ referencias: Referencia[]; erro?: string }> {
   if (guardado && Date.now() - guardado.em < VALIDADE_MS) return { referencias: guardado.lista };
-  const sb = supabaseServidor();
+  const sb = clientePublico();
   if (!sb) return { referencias: [], erro: 'Supabase não configurado' };
   const { data, error } = await sb.from('produtos_referencia').select(COLUNAS_REFERENCIA).order('categoria').order('marca').order('linha');
   if (error) {
