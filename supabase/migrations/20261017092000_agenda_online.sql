@@ -259,7 +259,8 @@ begin
       from public.agendamentos_online o
      where o.oficina_id = p_oficina
        and o.data between p_de and p_ate
-       and (o.situacao = 'novo'
+       -- pedido sem resposta segura o horário só por 24 horas (pedidos de mentira não fecham a agenda)
+       and ((o.situacao = 'novo' and o.criado_em > now() - interval '24 hours')
             or (o.situacao = 'aceito' and not exists (
                   select 1 from public.registros x where x.oficina_id = o.oficina_id and x.colecao = 'agendamentos' and x.id = o.agendamento_id)))
   ),

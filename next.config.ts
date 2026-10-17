@@ -17,7 +17,8 @@ const localSupabase = dev ? ' http://127.0.0.1:54321 ws://127.0.0.1:54321' : '';
 
 const csp = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${dev ? " 'unsafe-eval'" : ''}`,
+  // a verificação de pessoa no login (Cloudflare Turnstile), quando ligada
+  `script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com${dev ? " 'unsafe-eval'" : ''}`,
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self'",
   "img-src 'self' data: blob:",
@@ -27,7 +28,7 @@ const csp = [
   "manifest-src 'self'",
   "worker-src 'self' blob:",
   // o mapa da entrega (OpenStreetMap) na tela do pedido
-  'frame-src https://www.openstreetmap.org',
+  'frame-src https://www.openstreetmap.org https://challenges.cloudflare.com',
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",

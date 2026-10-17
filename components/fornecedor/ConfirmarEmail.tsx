@@ -8,6 +8,7 @@ import { MailCheck } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { mensagemDeEntrada } from '@/components/conta/FormEntrar';
 import { Botao, Campo, classeEntrada } from '@/components/ui';
+import { Captcha } from '@/components/conta/Captcha';
 import { clienteNavegador, type ConfigPublica } from '@/lib/supabase-navegador';
 
 export function ConfirmarEmail({
@@ -28,15 +29,22 @@ export function ConfirmarEmail({
   const [codigo, setCodigo] = useState('');
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
+  const [captcha, setCaptcha] = useState<string | null>(null);
+  const [rodadaCaptcha, setRodadaCaptcha] = useState(0);
 
   async function pedir() {
     if (!config) return setErro('O login não está ligado neste servidor.');
+    if (config.captcha && !captcha) return setErro('Espere a verificação de segurança terminar e tente de novo.');
     setOcupado(true);
     setErro(null);
     try {
       const { error } = await clienteNavegador(config).auth.signInWithOtp({
         email,
-        options: { shouldCreateUser: false, emailRedirectTo: `${location.origin}/auth/confirmar?para=${encodeURIComponent('/fornecedor/conta')}` }
+        options: {
+          shouldCreateUser: false,
+          emailRedirectTo: `${location.origin}/auth/confirmar?para=${encodeURIComponent('/fornecedor/conta')}`,
+          ...(captcha ? { captchaToken: captcha } : {})
+        }
       });
       if (error) return setErro(mensagemDeEntrada(error));
       setPasso('codigo');
@@ -44,6 +52,10 @@ export function ConfirmarEmail({
       setErro('Sem conexão agora. Tente de novo.');
     } finally {
       setOcupado(false);
+      if (config.captcha) {
+        setCaptcha(null);
+        setRodadaCaptcha((r) => r + 1);
+      }
     }
   }
 
@@ -80,6 +92,7 @@ export function ConfirmarEmail({
               {erro}
             </p>
           ) : null}
+          {config?.captcha ? <Captcha chave={config.captcha} aoResolver={setCaptcha} rodada={rodadaCaptcha} /> : null}
           <div className="flex flex-wrap justify-end gap-2">
             <Botao variante="fantasma" tamanho="pequeno" onClick={aoVoltar}>
               Voltar

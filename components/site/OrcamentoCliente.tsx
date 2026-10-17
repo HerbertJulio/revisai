@@ -87,6 +87,9 @@ function Orcamento({ d }: { d: DadosOrcamento }) {
           ) : null}
           {d.o.w ? <span>WhatsApp {formatarTelefone(d.o.w)}</span> : null}
         </p>
+        <p className="mt-1 text-[13px] text-tinta-3">
+          Este orçamento foi montado no aparelho da oficina e veio no próprio link, sem passar pelo Revisaí. Antes de aprovar, confira se o WhatsApp acima é mesmo o da sua oficina.
+        </p>
       </header>
 
       <section className="flex flex-wrap items-center gap-3">

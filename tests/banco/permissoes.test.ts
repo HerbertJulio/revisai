@@ -416,8 +416,10 @@ d('sistema e público', () => {
       const lojista = await criarPessoa(b, pessoa('lojista'));
       const loja = await criarLoja(b, lojista);
       expect(await linhas(b, null, 'select id from public.produtos where id = $1', [loja.produtoId])).toHaveLength(1);
-      expect((await tentar(b, null, `insert into public.interessados (tipo, nome, whatsapp, consentimento) values ('oficina', 'Zé', '5521912345678', true)`)).erro).toBeNull();
-      expect((await tentar(b, null, `insert into public.interessados (tipo, nome, whatsapp, consentimento) values ('oficina', 'Zé', '5521912345679', false)`)).erro).toBeTruthy();
+      // sem conta, só pelo servidor do site (com o limite por IP); direto pela API não grava
+      expect((await tentar(b, null, `insert into public.interessados (tipo, nome, whatsapp, consentimento) values ('oficina', 'Zé', '5521912345677', true)`)).erro).toBeTruthy();
+      expect((await tentar(b, null, `insert into public.interessados (tipo, nome, whatsapp, consentimento) values ('oficina', 'Zé', '5521912345678', true)`, [], { sistema: true })).erro).toBeNull();
+      expect((await tentar(b, null, `insert into public.interessados (tipo, nome, whatsapp, consentimento) values ('oficina', 'Zé', '5521912345679', false)`, [], { sistema: true })).erro).toBeTruthy();
       expect((await tentar(b, null, 'select * from public.interessados')).linhas).toEqual([]);
     }));
 });

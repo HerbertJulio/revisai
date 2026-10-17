@@ -9,6 +9,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 export interface ConfigPublica {
   url: string;
   chave: string;
+  /** A chave do site do Turnstile, quando a verificação de pessoa está ligada no login. */
+  captcha?: string | null;
 }
 
 let cliente: SupabaseClient | null = null;

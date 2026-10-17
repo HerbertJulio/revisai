@@ -616,3 +616,15 @@ begin
   return jsonb_build_object('ok', true, 'quando', now());
 end;
 $$;
+
+-- ------------------------------------------------------------------ cadastros do site só pelo servidor
+
+-- o formulário do site manda pelo servidor (com limite por IP); sem conta, direto pela API, ninguém
+-- grava. Quem tem conta (a loja pedindo o Destaque, a oficina pedindo pacote) continua gravando.
+drop policy if exists "Interessados se cadastram com consentimento" on public.interessados;
+drop policy if exists "Sistema guarda os interessados" on public.interessados;
+drop policy if exists "Contas mandam cadastros" on public.interessados;
+create policy "Sistema guarda os interessados" on public.interessados for insert to anon
+  with check ((select privado.sistema_autorizado()) and consentimento and situacao = 'novo');
+create policy "Contas mandam cadastros" on public.interessados for insert to authenticated
+  with check (consentimento and situacao = 'novo');

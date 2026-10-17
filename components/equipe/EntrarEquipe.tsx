@@ -4,6 +4,7 @@ import { KeyRound, LockKeyhole, Mail, Smartphone } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition, type FormEvent, type ReactNode } from 'react';
 import { comecarCadastroDoApp, conferirCodigo, confirmarCadastroDoApp, confirmarCodigoDoApp, pedirCodigo, sairDaEquipe } from '@/app/admin/entrar/acoes';
+import { Captcha } from '@/components/conta/Captcha';
 import { Logo } from '@/components/marca';
 import { QrCode } from '@/components/QrCode';
 import { Botao, Campo, classeEntrada } from '@/components/ui';
@@ -41,8 +42,10 @@ function CampoCodigo({ id, rotulo, valor, aoMudar, erro, dica }: { id: string; r
 }
 
 /** Os passos da entrada: e-mail e código; depois o app autenticador (cadastrar ou confirmar). */
-export function EntrarEquipe({ passo, email: emailDaSessao }: { passo: 'email' | 'cadastrar' | 'confirmar'; email?: string }) {
+export function EntrarEquipe({ passo, email: emailDaSessao, captcha: chaveCaptcha = null }: { passo: 'email' | 'cadastrar' | 'confirmar'; email?: string; captcha?: string | null }) {
   const router = useRouter();
+  const [captcha, setCaptcha] = useState<string | null>(null);
+  const [rodadaCaptcha, setRodadaCaptcha] = useState(0);
   const [ocupado, iniciar] = useTransition();
   const [erro, setErro] = useState<string | null>(null);
   const [email, setEmail] = useState('');
@@ -75,12 +78,22 @@ export function EntrarEquipe({ passo, email: emailDaSessao }: { passo: 'email' |
         className="flex flex-col gap-4"
         onSubmit={(e: FormEvent) => {
           e.preventDefault();
-          rodar(() => pedirCodigo(email), () => setCodigoEnviado(true));
+          if (chaveCaptcha && !captcha) {
+            setErro('Espere a verificação de segurança terminar e tente de novo.');
+            return;
+          }
+          const token = captcha;
+          if (chaveCaptcha) {
+            setCaptcha(null);
+            setRodadaCaptcha((r) => r + 1);
+          }
+          rodar(() => pedirCodigo(email, token), () => setCodigoEnviado(true));
         }}
       >
         <Campo rotulo="E-mail" erro={erro} htmlFor="eq-email">
           <input id="eq-email" type="email" inputMode="email" autoComplete="email" autoCapitalize="none" spellCheck={false} value={email} onChange={(e) => setEmail(e.target.value)} className={classeEntrada} autoFocus required />
         </Campo>
+        {chaveCaptcha ? <Captcha chave={chaveCaptcha} aoResolver={setCaptcha} rodada={rodadaCaptcha} /> : null}
         <Botao type="submit" variante="escuro" tamanho="grande" disabled={ocupado}>
           <Mail size={18} aria-hidden="true" /> {ocupado ? 'Mandando…' : 'Receber o código'}
         </Botao>
