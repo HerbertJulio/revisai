@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { criarLoja, criarOficina, criarPessoa, emTransacao, fechar, linhas, pessoa, temBanco, tentar, type Banco } from './ajuda';
+import { criarEquipe, criarLoja, criarOficina, criarPessoa, emTransacao, fechar, linhas, pessoa, temBanco, tentar, type Banco } from './ajuda';
 
 const d = temBanco ? describe : describe.skip;
 
@@ -264,5 +264,79 @@ d('estoque, planilha e prazo da loja', () => {
       // o prazo aparece no catálogo público
       const [l] = await linhas(b, null, 'select prazo_entrega_horas from public.fornecedores where id = $1', [loja.fornecedorId]);
       expect(l.prazo_entrega_horas).toBe(4);
+    }));
+});
+
+/** 'AAAA-MM' do mês em Brasília de um instante. */
+function mesEmBrasilia(d: Date): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit' }).format(d).slice(0, 7);
+}
+
+d('extrato da loja (base da cobrança)', () => {
+  it('soma as partes confirmadas do mês, a comissão de cada uma e a mensalidade do Destaque', () =>
+    emTransacao(async (b) => {
+      const x = await pedidos(b, 5);
+      const [p1, p2, p3, p4] = x.partes;
+      expect((await muda(b, x.lojista, p1, `status = 'confirmado'`)).erro).toBeNull();
+      expect((await muda(b, x.lojista, p2, `status = 'confirmado'`)).erro).toBeNull();
+      expect((await muda(b, x.lojista, p2, `status = 'saiu_entrega'`)).erro).toBeNull();
+      expect((await muda(b, x.lojista, p3, `status = 'confirmado'`)).erro).toBeNull();
+      expect((await muda(b, x.lojista, p3, `status = 'entregue'`)).erro).toBeNull();
+      expect((await muda(b, x.lojista, p4, `status = 'cancelado', cancelado_motivo = 'A oficina desistiu'`)).erro).toBeNull();
+      // p5 continua novo: não entra
+      await b.query(`insert into public.fornecedores_contrato (fornecedor_id, plano, comissao_percentual, mensalidade) values ($1, 'destaque', 4, 99)`, [x.loja.fornecedorId]);
+      await b.query(`update public.fornecedores set destaque = true, destaque_ate = '2026-12-31' where id = $1`, [x.loja.fornecedorId]);
+      const mes = mesEmBrasilia(new Date());
+      const [r] = await linhas(b, x.lojista, 'select public.extrato_da_loja($1, $2) as e', [x.loja.fornecedorId, mes]);
+      const e = r.e as { fornecedorId: number; nome: string; mes: string; partes: { parteId: number; situacao: string; subtotal: number; comissaoPercentual: number; comissao: number; codigo: string; data: string }[]; totalVendas: number; totalComissao: number; mensalidade: number; destaqueAte: string; total: number };
+      expect(e.fornecedorId).toBe(x.loja.fornecedorId);
+      expect(e.mes).toBe(mes);
+      expect(e.partes.map((p) => p.parteId).sort()).toEqual([p1, p2, p3].sort());
+      expect(e.partes.map((p) => p.situacao).sort()).toEqual(['confirmado', 'entregue', 'saiu_entrega']);
+      const sub = Number(e.partes[0].subtotal);
+      const pct = Number(e.partes[0].comissaoPercentual);
+      expect(Number(e.partes[0].comissao)).toBeCloseTo(Math.round(sub * pct) / 100, 2);
+      expect(Number(e.totalVendas)).toBeCloseTo(sub * 3, 2);
+      expect(Number(e.totalComissao)).toBeCloseTo((Math.round(sub * pct) / 100) * 3, 2);
+      expect(Number(e.mensalidade)).toBe(99);
+      expect(e.destaqueAte).toBe('2026-12-31');
+      expect(Number(e.total)).toBeCloseTo(Number(e.totalComissao) + 99, 2);
+      expect(Object.keys(e).sort()).toEqual(['destaqueAte', 'fornecedorId', 'mensalidade', 'mes', 'nome', 'partes', 'total', 'totalComissao', 'totalVendas']);
+      expect(Object.keys(e.partes[0]).sort()).toEqual(['codigo', 'comissao', 'comissaoPercentual', 'data', 'parteId', 'situacao', 'subtotal']);
+
+      // a parte criada antes da meia-noite do dia 1 (em Brasília) é do mês anterior
+      const [ini] = (await b.query(`select (date_trunc('month', now() at time zone 'America/Sao_Paulo') at time zone 'America/Sao_Paulo') as inicio`)).rows;
+      await b.query('set local session_replication_role = replica');
+      await b.query(`update public.pedidos_fornecedores set criado_em = $2::timestamptz - interval '1 hour' where id = $1`, [p3, ini.inicio]);
+      await b.query('set local session_replication_role = origin');
+      const anterior = mesEmBrasilia(new Date(new Date(ini.inicio).getTime() - 3600_000));
+      const [agora] = await linhas(b, x.lojista, 'select public.extrato_da_loja($1, $2) as e', [x.loja.fornecedorId, mes]);
+      expect((agora.e as { partes: unknown[] }).partes).toHaveLength(2);
+      const [antes] = await linhas(b, x.lojista, 'select public.extrato_da_loja($1, $2) as e', [x.loja.fornecedorId, anterior]);
+      expect((antes.e as { partes: { parteId: number }[] }).partes.map((p) => p.parteId)).toEqual([p3]);
+      // sem contrato Destaque, sem mensalidade
+      await b.query(`update public.fornecedores_contrato set plano = 'vitrine' where fornecedor_id = $1`, [x.loja.fornecedorId]);
+      const [vitrine] = await linhas(b, x.lojista, 'select public.extrato_da_loja($1, $2) as e', [x.loja.fornecedorId, mes]);
+      expect(Number((vitrine.e as { mensalidade: number }).mensalidade)).toBe(0);
+    }));
+
+  it('a loja (dono ou vendedor) e o financeiro veem; os outros não', () =>
+    emTransacao(async (b) => {
+      const x = await pedidos(b, 1);
+      const mes = mesEmBrasilia(new Date());
+      const vendedor = await criarPessoa(b, pessoa('vendedor'));
+      await b.query(`insert into public.fornecedor_membros (fornecedor_id, user_id, papel, email) values ($1, $2, 'vendedor', $3)`, [x.loja.fornecedorId, vendedor.id, vendedor.email]);
+      const financeiro = await criarPessoa(b, pessoa('financeiro', { totpHa: 60 }));
+      await criarEquipe(b, financeiro, 'financeiro');
+      const suporte = await criarPessoa(b, pessoa('suporte', { totpHa: 60 }));
+      await criarEquipe(b, suporte, 'suporte');
+      const sql = 'select public.extrato_da_loja($1, $2)';
+      expect((await tentar(b, vendedor, sql, [x.loja.fornecedorId, mes])).erro).toBeNull();
+      expect((await tentar(b, financeiro, sql, [x.loja.fornecedorId, mes])).erro).toBeNull();
+      expect((await tentar(b, suporte, sql, [x.loja.fornecedorId, mes])).codigo).toBe('42501');
+      expect((await tentar(b, x.dono, sql, [x.loja.fornecedorId, mes])).codigo).toBe('42501');
+      expect((await tentar(b, null, sql, [x.loja.fornecedorId, mes])).codigo).toBe('42501');
+      expect((await tentar(b, null, sql, [x.loja.fornecedorId, mes], { sistema: true })).erro).toBeNull();
+      expect((await tentar(b, x.lojista, sql, [x.loja.fornecedorId, '2026-13'])).codigo).toBe('22023');
     }));
 });

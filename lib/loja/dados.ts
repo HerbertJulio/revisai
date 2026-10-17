@@ -327,6 +327,92 @@ export function lerContratoDaLoja(d: unknown): ContratoDaLoja | null {
   return r.success ? { plano: r.data.plano, comissaoPercentual: r.data.comissao_percentual, mensalidade: r.data.mensalidade } : null;
 }
 
+// ---------------------------------------------------------------- extrato (base da cobrança)
+
+export interface ParteDoExtrato {
+  parteId: number;
+  codigo: string;
+  /** Quando a oficina fez o pedido. */
+  data: string;
+  situacao: SituacaoParte;
+  subtotal: number;
+  comissaoPercentual: number;
+  comissao: number;
+}
+
+export interface ExtratoDaLoja {
+  fornecedorId: number;
+  nome: string;
+  /** 'AAAA-MM' */
+  mes: string;
+  partes: ParteDoExtrato[];
+  totalVendas: number;
+  totalComissao: number;
+  mensalidade: number;
+  destaqueAte: string | null;
+  total: number;
+}
+
+const situacao = z.enum(['novo', 'em_contato', 'confirmado', 'saiu_entrega', 'entregue', 'cancelado']);
+
+export function lerExtratoDaLoja(d: unknown): ExtratoDaLoja | null {
+  const r = z
+    .object({
+      fornecedorId: numero,
+      nome: z.string(),
+      mes: z.string(),
+      partes: z.array(z.unknown()).catch([]),
+      totalVendas: numero,
+      totalComissao: numero,
+      mensalidade: numero,
+      destaqueAte: texto,
+      total: numero
+    })
+    .safeParse(d);
+  if (!r.success) return null;
+  const partes = ler(
+    z.object({
+      parteId: numero,
+      codigo: z.string().nullish().transform((v) => v ?? '------'),
+      data: z.string(),
+      situacao,
+      subtotal: numero,
+      comissaoPercentual: numero,
+      comissao: numero
+    }),
+    r.data.partes
+  );
+  return { ...r.data, partes };
+}
+
+const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+
+/** '2026-10' vira 'outubro de 2026'. */
+export function nomeDoMes(mes: string): string {
+  const [a, m] = mes.split('-').map(Number);
+  return MESES[m - 1] ? `${MESES[m - 1]} de ${a}` : mes;
+}
+
+export function mesValido(mes: string | null | undefined): mes is string {
+  return typeof mes === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(mes);
+}
+
+/** Os últimos n meses ('AAAA-MM'), do mais novo ao mais velho, a partir de hoje ('AAAA-MM-DD'). */
+export function ultimosMeses(hoje: string, n = 12): string[] {
+  let a = Number(hoje.slice(0, 4));
+  let m = Number(hoje.slice(5, 7));
+  const lista: string[] = [];
+  for (let i = 0; i < n; i++) {
+    lista.push(`${a}-${String(m).padStart(2, '0')}`);
+    m -= 1;
+    if (m === 0) {
+      m = 12;
+      a -= 1;
+    }
+  }
+  return lista;
+}
+
 // ---------------------------------------------------------------- equipe
 
 export interface MembroDaLoja {
