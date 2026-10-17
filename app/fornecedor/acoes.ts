@@ -11,6 +11,7 @@ import { permitido } from '@/lib/limite';
 import { responderAlerta } from '@/lib/loja/alertas';
 import { salvarCashback } from '@/lib/loja/cashback';
 import { removerCondicao, salvarCondicao } from '@/lib/loja/clientes';
+import { responderDevolucao } from '@/lib/loja/devolucoes';
 import { avisarTrocaDePix, lojaParaAviso } from '@/lib/loja/avisos';
 import { cancelarConviteDaLoja, convidarParaLoja, mudarPapelNaLoja, tirarDaLoja, type ResultadoConvite, type ResultadoPapel } from '@/lib/loja/equipe';
 import { confirmarPagamento, mudarSituacao, saidaParaEntrega } from '@/lib/loja/pedidos';
@@ -156,6 +157,19 @@ export async function removerCondicaoDaOficina(id: number): Promise<Gravacao> {
   const r = await removerCondicao(a.sb, a.loja.id, id);
   if (r.ok) atualizar();
   return r;
+}
+
+// ---------------------------------------------------------------- garantia e devolução
+
+/** A loja responde a devolução: pede informação (situação "aberta"), aceita, recusa ou resolve. */
+export async function responderDevolucaoDaLoja(id: string, entrada: unknown): Promise<Gravacao> {
+  if (typeof id !== 'string') return { ok: false, erro: 'Pedido de devolução inválido.' };
+  const a = await acesso('devolucao', 120);
+  if (!a.ok) return a;
+  const r = await responderDevolucao(a.sb, a.loja.id, id, entrada);
+  if (!r.ok) return r;
+  atualizar();
+  return { ok: true };
 }
 
 // ---------------------------------------------------------------- alertas de preço

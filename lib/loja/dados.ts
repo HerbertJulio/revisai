@@ -534,6 +534,147 @@ export function lerMovimentosDeCashback(d: unknown): MovimentoDeCashback[] {
   ).map((m) => ({ id: m.id, tipo: m.tipo, valor: m.valor, criadoEm: m.criado_em, codigo: m.parte?.codigo ?? null, oficina: m.parte?.oficina_nome ?? null }));
 }
 
+// ---------------------------------------------------------------- garantia e devolução
+
+export type SituacaoDevolucao = 'aberta' | 'aceita' | 'recusada' | 'resolvida';
+export type TipoDevolucao = 'devolucao' | 'garantia';
+
+export const SITUACOES_DEVOLUCAO: Record<SituacaoDevolucao, { nome: string; tom: 'oleo' | 'ok' | 'atraso' | 'caneta' | 'neutro' }> = {
+  aberta: { nome: 'Aberta', tom: 'oleo' },
+  aceita: { nome: 'Aceita', tom: 'caneta' },
+  recusada: { nome: 'Recusada', tom: 'atraso' },
+  resolvida: { nome: 'Resolvida', tom: 'ok' }
+};
+
+export const TIPOS_DEVOLUCAO: Record<TipoDevolucao, string> = { devolucao: 'Devolução', garantia: 'Garantia' };
+
+export interface ItemDaDevolucao {
+  produtoId: number;
+  nome: string;
+  quantidade: number;
+  precoUnitario: number | null;
+}
+
+export interface FotoDaDevolucao {
+  /** No bucket "links", na pasta da oficina. */
+  caminho: string;
+  /** No próprio site (a regra de segurança das páginas só deixa carregar imagens dele). */
+  url: string;
+}
+
+/** Uma marca curta do caminho (FNV-1a), para o endereço mudar quando a foto daquela posição muda. */
+function marcaDoCaminho(caminho: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < caminho.length; i++) h = Math.imul(h ^ caminho.charCodeAt(i), 0x01000193) >>> 0;
+  return h.toString(36);
+}
+
+/** O endereço da foto no próprio site: o servidor confere quem pode ver e entrega a imagem. */
+export function enderecoDaFotoDaDevolucao(id: string, indice: number, caminho?: string): string {
+  return `/fornecedor/devolucoes/foto/${encodeURIComponent(id)}/${indice}${caminho ? `?v=${marcaDoCaminho(caminho)}` : ''}`;
+}
+
+export interface Devolucao {
+  id: string;
+  parteId: number;
+  oficinaId: string;
+  fornecedorId: number;
+  codigo: string | null;
+  tipo: TipoDevolucao;
+  motivo: string;
+  /** Vazio = a compra toda. */
+  itens: ItemDaDevolucao[];
+  fotos: FotoDaDevolucao[];
+  situacao: SituacaoDevolucao;
+  resposta: string | null;
+  respondidaEm: string | null;
+  resolvidaEm: string | null;
+  criadoEm: string;
+  atualizadoEm: string;
+  oficina: { nome: string | null; whatsapp: string | null; cidade: string | null; uf: string | null };
+  loja: { nome: string | null; whatsapp: string | null };
+  compra: { subtotal: number | null; entregueEm: string | null };
+}
+
+export const COLUNAS_DEVOLUCAO =
+  'id, parte_id, oficina_id, fornecedor_id, codigo, tipo, motivo, itens, fotos, situacao, resposta, respondida_em, resolvida_em, criado_em, atualizado_em, parte:pedidos_fornecedores(oficina_nome, oficina_whatsapp, oficina_cidade, oficina_uf, subtotal, entregue_em), loja:fornecedores(nome, whatsapp)';
+
+const esquemaDevolucao = z.object({
+  id: z.string(),
+  parte_id: numero,
+  oficina_id: z.string(),
+  fornecedor_id: numero,
+  codigo: texto,
+  tipo: z.enum(['devolucao', 'garantia']).catch('devolucao'),
+  motivo: z.string(),
+  itens: z.unknown(),
+  fotos: z.unknown(),
+  situacao: z.enum(['aberta', 'aceita', 'recusada', 'resolvida']),
+  resposta: texto,
+  respondida_em: texto,
+  resolvida_em: texto,
+  criado_em: z.string(),
+  atualizado_em: z.string(),
+  parte: z.object({ oficina_nome: texto, oficina_whatsapp: texto, oficina_cidade: texto, oficina_uf: texto, subtotal: numeroOuNulo, entregue_em: texto }).nullish(),
+  loja: z.object({ nome: texto, whatsapp: texto }).nullish()
+});
+
+const esquemaItemDaDevolucao = z.object({ produto_id: numero, nome: z.string(), quantidade: numero, preco_unitario: numeroOuNulo.optional() });
+
+/** As devoluções lidas do banco; url monta o endereço de cada foto (padrão: a rota do próprio site). */
+export function lerDevolucoes(d: unknown, url: (id: string, indice: number, caminho: string) => string = enderecoDaFotoDaDevolucao): Devolucao[] {
+  return ler(esquemaDevolucao, d).map((x) => ({
+    id: x.id,
+    parteId: x.parte_id,
+    oficinaId: x.oficina_id,
+    fornecedorId: x.fornecedor_id,
+    codigo: x.codigo,
+    tipo: x.tipo,
+    motivo: x.motivo,
+    itens: ler(esquemaItemDaDevolucao, x.itens).map((i) => ({ produtoId: i.produto_id, nome: i.nome, quantidade: i.quantidade, precoUnitario: i.preco_unitario ?? null })),
+    fotos: (Array.isArray(x.fotos) ? x.fotos : []).flatMap((caminho, i) => (typeof caminho === 'string' ? [{ caminho, url: url(x.id, i, caminho) }] : [])),
+    situacao: x.situacao,
+    resposta: x.resposta,
+    respondidaEm: x.respondida_em,
+    resolvidaEm: x.resolvida_em,
+    criadoEm: x.criado_em,
+    atualizadoEm: x.atualizado_em,
+    oficina: { nome: x.parte?.oficina_nome ?? null, whatsapp: x.parte?.oficina_whatsapp ?? null, cidade: x.parte?.oficina_cidade ?? null, uf: x.parte?.oficina_uf ?? null },
+    loja: { nome: x.loja?.nome ?? null, whatsapp: x.loja?.whatsapp ?? null },
+    compra: { subtotal: x.parte?.subtotal ?? null, entregueEm: x.parte?.entregue_em ?? null }
+  }));
+}
+
+/** O valor dos itens pedidos de volta (sem itens, o da compra toda). */
+export function valorDaDevolucao(d: Pick<Devolucao, 'itens' | 'compra'>): number | null {
+  if (!d.itens.length) return d.compra.subtotal;
+  if (d.itens.some((i) => i.precoUnitario == null)) return null;
+  return Math.round(d.itens.reduce((s, i) => s + i.quantidade * (i.precoUnitario ?? 0), 0) * 100) / 100;
+}
+
+/**
+ * De quem é a vez: aberta sem resposta (ou que a oficina mudou depois da resposta) e aceita esperam a
+ * loja; aberta com pergunta da loja espera a oficina; recusada e resolvida, ninguém.
+ */
+export function aguardaQuem(d: Pick<Devolucao, 'situacao' | 'respondidaEm' | 'atualizadoEm'>): 'loja' | 'oficina' | null {
+  if (d.situacao === 'aceita') return 'loja';
+  if (d.situacao !== 'aberta') return null;
+  if (!d.respondidaEm || Date.parse(d.atualizadoEm) > Date.parse(d.respondidaEm)) return 'loja';
+  return 'oficina';
+}
+
+/** O que cada lado pode fazer com a devolução agora (o banco confere de novo). */
+export function acoesDaDevolucao(situacao: SituacaoDevolucao, lado: 'loja' | 'oficina'): { situacoes: SituacaoDevolucao[]; responder: boolean; editar: boolean; desistir: boolean } {
+  if (lado === 'loja')
+    return {
+      situacoes: situacao === 'aberta' ? ['aceita', 'recusada'] : situacao === 'recusada' ? ['aceita'] : situacao === 'aceita' ? ['resolvida'] : [],
+      responder: situacao !== 'resolvida',
+      editar: false,
+      desistir: false
+    };
+  return { situacoes: situacao === 'aceita' ? ['resolvida'] : [], responder: false, editar: situacao === 'aberta', desistir: situacao === 'aberta' };
+}
+
 // ---------------------------------------------------------------- equipe
 
 export interface MembroDaLoja {

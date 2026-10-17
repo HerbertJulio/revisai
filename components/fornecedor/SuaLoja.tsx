@@ -145,7 +145,7 @@ export function CadastroDaLoja({ loja, dono }: { loja: LinhaLoja; dono: boolean 
             ligado={avisar}
             aoMudar={setAvisar}
             rotulo="Avisos no WhatsApp da loja"
-            descricao="Pedido novo, alerta de preço da região e troca da chave Pix, para quando o painel está fechado."
+            descricao="Pedido novo, pedido de devolução, alerta de preço da região e troca da chave Pix, para quando o painel está fechado."
           />
         </div>
       </div>

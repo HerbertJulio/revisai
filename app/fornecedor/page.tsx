@@ -66,8 +66,9 @@ export default async function InicioDaLoja() {
         </>
       }
     >
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+      <div className={`grid grid-cols-2 gap-3 sm:grid-cols-3 ${painel.devolucoesAbertas ? 'xl:grid-cols-6' : 'xl:grid-cols-5'}`}>
         <Numero rotulo="Pedidos novos" valor={String(novos)} href="/fornecedor/pedidos" detalhe={pagos ? `${plural(pagos, 'pagamento para conferir', 'pagamentos para conferir')}` : undefined} />
+        {painel.devolucoesAbertas ? <Numero rotulo="Devoluções para responder" valor={String(painel.devolucoesAbertas)} href="/fornecedor/devolucoes" /> : null}
         <Numero rotulo="Alertas para responder" valor={String(painel.alertasNovos)} href="/fornecedor/alertas" />
         <Numero rotulo="Vendas no mês" valor={formatarMoeda(vendas)} detalhe={`${formatarMoeda(comissao)} de comissão`} />
         <Numero rotulo="Produtos à venda" valor={String(ativos)} href="/fornecedor/produtos" />

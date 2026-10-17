@@ -546,3 +546,137 @@ d('cashback pago pela loja', () => {
     }));
 });
 
+d('garantia e devolução', () => {
+  const abrir = (b: Banco, p: Parameters<typeof linhas>[1], parte: number, extra: { motivo?: string; fotos?: string[]; itens?: unknown[]; sql?: string; valores?: unknown[] } = {}) =>
+    tentar(
+      b,
+      p,
+      `insert into public.devolucoes (parte_id, motivo, fotos, itens${extra.sql ? `, ${extra.sql}` : ''}) values ($1, $2, $3::jsonb, $4::jsonb${(extra.valores ?? []).map((_, i) => `, $${i + 5}`).join('')}) returning id, oficina_id, fornecedor_id, codigo, situacao, itens`,
+      [parte, extra.motivo ?? 'Veio a viscosidade errada', JSON.stringify(extra.fotos ?? []), JSON.stringify(extra.itens ?? []), ...(extra.valores ?? [])]
+    );
+  const mexe = (b: Banco, p: Parameters<typeof linhas>[1], id: unknown, sql: string, valores: unknown[] = []) =>
+    tentar(b, p, `update public.devolucoes set ${sql} where id = $1 returning situacao, resposta, respondida_por, respondida_em, resolvida_em, motivo`, [id, ...valores]);
+
+  it('a oficina pede depois da entrega; a loja, a oficina e o código vêm da compra; itens e fotos são conferidos', () =>
+    emTransacao(async (b) => {
+      const x = await pedidos(b, 1);
+      const [p1] = x.partes;
+      const [{ oficina_id: oficina, codigo }] = (await b.query('select oficina_id, codigo from public.pedidos_fornecedores where id = $1', [p1])).rows;
+      // antes da entrega, não
+      expect((await abrir(b, x.dono, p1)).erro).toMatch(/depois que a compra for entregue/);
+      expect((await muda(b, x.lojista, p1, `status = 'confirmado'`)).erro).toBeNull();
+      expect((await muda(b, x.lojista, p1, `status = 'entregue'`)).erro).toBeNull();
+      // itens que não são da compra, quantidade a mais, item repetido e foto de outra pasta: não
+      expect((await abrir(b, x.dono, p1, { itens: [{ produto_id: 999999, quantidade: 1 }] })).codigo).toBe('22023');
+      expect((await abrir(b, x.dono, p1, { itens: [{ produto_id: x.loja.produtoId, quantidade: 2 }] })).codigo).toBe('22023');
+      expect((await abrir(b, x.dono, p1, { itens: [{ produto_id: x.loja.produtoId, quantidade: 1 }, { produto_id: x.loja.produtoId, quantidade: 1 }] })).codigo).toBe('22023');
+      expect((await abrir(b, x.dono, p1, { fotos: ['00000000-0000-0000-0000-000000000000/devolucoes/a.webp'] })).codigo).toBe('22023');
+      expect((await abrir(b, x.dono, p1, { fotos: [`${oficina}/devolucoes/../a.webp`] })).codigo).toBe('22023');
+      expect((await abrir(b, x.dono, p1, { motivo: 'x' })).codigo).toBe('23514');
+      // tentando escolher a loja e a situação: o banco põe as da compra e "aberta"
+      const outra = await criarLoja(b, null, { nome: 'Outra' });
+      const r = await abrir(b, x.dono, p1, {
+        fotos: [`${oficina}/devolucoes/foto-1.webp`],
+        itens: [{ produto_id: x.loja.produtoId, quantidade: 1 }],
+        sql: 'fornecedor_id, situacao, resposta',
+        valores: [outra.fornecedorId, 'resolvida', 'aceita por mim mesmo']
+      });
+      expect(r.erro).toBeNull();
+      const dev = r.linhas[0];
+      expect(dev).toMatchObject({ oficina_id: oficina, fornecedor_id: String(x.loja.fornecedorId), codigo, situacao: 'aberta' });
+      expect(dev.itens).toEqual([{ produto_id: x.loja.produtoId, nome: 'Óleo 5W30 1L', quantidade: 1, preco_unitario: 40 }]);
+      // uma em andamento por compra
+      expect((await abrir(b, x.dono, p1)).codigo).toBe('23505');
+      // quem é de fora não vê nem pede pela compra dos outros (a mesma resposta de compra que não existe)
+      const rival = await criarPessoa(b, pessoa('rival'));
+      await criarLoja(b, rival, { nome: 'Rival' });
+      const estranha = await criarPessoa(b, pessoa('estranha'));
+      await criarOficina(b, estranha);
+      expect(await linhas(b, rival, 'select id from public.devolucoes')).toHaveLength(0);
+      expect(await linhas(b, estranha, 'select id from public.devolucoes')).toHaveLength(0);
+      expect((await abrir(b, estranha, p1)).codigo).toBe('P0002');
+      expect((await abrir(b, estranha, 987654321)).codigo).toBe('P0002');
+      expect((await mexe(b, rival, dev.id, `situacao = 'aceita', resposta = 'pode trazer'`)).linhas).toHaveLength(0);
+      // os dois lados veem
+      expect(await linhas(b, x.dono, 'select id from public.devolucoes')).toHaveLength(1);
+      expect(await linhas(b, x.lojista, 'select id from public.devolucoes')).toHaveLength(1);
+      const tabelas = (await b.query(`select tablename from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'devolucoes'`)).rows;
+      expect(tabelas).toHaveLength(1);
+    }));
+
+  it('a loja pede informação, aceita ou recusa e resolve; a oficina muda só enquanto está aberta e confirma a resolução', () =>
+    emTransacao(async (b) => {
+      const x = await pedidos(b, 2);
+      const [p1, p2] = x.partes;
+      for (const p of [p1, p2]) {
+        expect((await muda(b, x.lojista, p, `status = 'confirmado'`)).erro).toBeNull();
+        expect((await muda(b, x.lojista, p, `status = 'entregue'`)).erro).toBeNull();
+      }
+      const id = (await abrir(b, x.dono, p1)).linhas[0].id;
+      // a loja não muda o que a oficina escreveu; a oficina não responde
+      expect((await mexe(b, x.lojista, id, `motivo = 'outra coisa qualquer'`)).codigo).toBe('42501');
+      expect((await mexe(b, x.dono, id, `resposta = 'aceito eu mesmo'`)).codigo).toBe('42501');
+      expect((await mexe(b, x.dono, id, `situacao = 'aceita'`)).erro).toMatch(/não vale/);
+      // a loja pede mais informação sem decidir; a oficina completa
+      const pergunta = await mexe(b, x.lojista, id, `resposta = '  Mande uma foto da etiqueta, por favor  '`);
+      expect(pergunta.linhas[0]).toMatchObject({ situacao: 'aberta', resposta: 'Mande uma foto da etiqueta, por favor', respondida_por: x.lojista.id });
+      expect((await mexe(b, x.dono, id, `motivo = 'Veio 5W40, pedi 5W30. Foto da etiqueta junto.'`)).erro).toBeNull();
+      // recusar pede a razão; aceitar não
+      expect((await mexe(b, x.lojista, id, `situacao = 'recusada', resposta = null`)).erro).toMatch(/por que a devolução foi recusada/);
+      const aceita = await mexe(b, x.lojista, id, `situacao = 'aceita', resposta = 'Pode trazer na loja, trocamos na hora.'`);
+      expect(aceita.erro).toBeNull();
+      expect(aceita.linhas[0].respondida_em).toBeTruthy();
+      // aceita: a oficina não muda mais o pedido nem desiste; confirma que resolveu
+      expect((await mexe(b, x.dono, id, `motivo = 'mudei de ideia sobre o motivo'`)).erro).toMatch(/só muda enquanto está aberto/);
+      expect(await linhas(b, x.dono, 'delete from public.devolucoes where id = $1 returning id', [id])).toHaveLength(0);
+      const resolvida = await mexe(b, x.dono, id, `situacao = 'resolvida'`);
+      expect(resolvida.erro).toBeNull();
+      expect(resolvida.linhas[0].resolvida_em).toBeTruthy();
+      // resolvida é o fim para os dois lados
+      expect((await mexe(b, x.lojista, id, `resposta = 'mais uma coisa'`)).erro).toMatch(/já foi resolvida/);
+      expect((await mexe(b, x.lojista, id, `situacao = 'aceita'`)).erro).toMatch(/já foi resolvida/);
+      // a outra compra: a oficina desiste enquanto está aberta
+      const outro = (await abrir(b, x.dono, p2)).linhas[0].id;
+      expect(await linhas(b, x.lojista, 'delete from public.devolucoes where id = $1 returning id', [outro])).toHaveLength(0);
+      expect(await linhas(b, x.dono, 'delete from public.devolucoes where id = $1 returning id', [outro])).toHaveLength(1);
+      // a recusa pode virar aceite; a loja não pula de aberta para resolvida
+      const terceira = (await abrir(b, x.dono, p2)).linhas[0].id;
+      expect((await mexe(b, x.lojista, terceira, `situacao = 'resolvida'`)).erro).toMatch(/não vale/);
+      expect((await mexe(b, x.lojista, terceira, `situacao = 'recusada', resposta = 'A peça foi instalada e veio sem a caixa.'`)).erro).toBeNull();
+      expect((await mexe(b, x.lojista, terceira, `situacao = 'aceita', resposta = 'Conferimos de novo: trocamos.'`)).erro).toBeNull();
+    }));
+
+  it('prazo de 90 dias, no máximo 3 pedidos por compra; o suporte acompanha e intervém, o financeiro só vê', () =>
+    emTransacao(async (b) => {
+      const x = await pedidos(b, 2);
+      const [p1, p2] = x.partes;
+      for (const p of [p1, p2]) {
+        expect((await muda(b, x.lojista, p, `status = 'confirmado'`)).erro).toBeNull();
+        expect((await muda(b, x.lojista, p, `status = 'entregue'`)).erro).toBeNull();
+      }
+      await b.query(`set local session_replication_role = replica`);
+      await b.query(`update public.pedidos_fornecedores set entregue_em = now() - interval '100 days' where id = $1`, [p2]);
+      await b.query(`set local session_replication_role = origin`);
+      expect((await abrir(b, x.dono, p2)).erro).toMatch(/90 dias/);
+      // três pedidos recusados na mesma compra; o quarto não
+      for (let i = 0; i < 3; i++) {
+        const id = (await abrir(b, x.dono, p1)).linhas[0].id;
+        expect((await mexe(b, x.lojista, id, `situacao = 'recusada', resposta = 'Sem defeito na peça.'`)).erro).toBeNull();
+      }
+      expect((await abrir(b, x.dono, p1)).erro).toMatch(/já teve 3 pedidos/);
+      // a equipe: o suporte (com segundo fator) vê e muda; o financeiro só vê
+      const suporte = await criarPessoa(b, pessoa('suporte', { totpHa: 60 }));
+      await criarEquipe(b, suporte, 'suporte');
+      const financeiro = await criarPessoa(b, pessoa('financeiro', { totpHa: 60 }));
+      await criarEquipe(b, financeiro, 'financeiro');
+      const [ultima] = await linhas(b, suporte, 'select id from public.devolucoes where fornecedor_id = $1 limit 1', [x.loja.fornecedorId]);
+      expect(await linhas(b, financeiro, 'select id from public.devolucoes where fornecedor_id = $1', [x.loja.fornecedorId])).toHaveLength(3);
+      expect((await mexe(b, financeiro, ultima.id, `situacao = 'aceita'`)).linhas).toHaveLength(0);
+      const intervencao = await mexe(b, suporte, ultima.id, `situacao = 'aceita', resposta = 'A equipe do Revisaí conferiu: a loja troca a peça.'`);
+      expect(intervencao.erro).toBeNull();
+      expect(intervencao.linhas[0]).toMatchObject({ situacao: 'aceita', respondida_por: suporte.id });
+      // o suporte também abre fora do prazo, pela oficina
+      expect((await abrir(b, suporte, p2)).erro).toBeNull();
+    }));
+});
+

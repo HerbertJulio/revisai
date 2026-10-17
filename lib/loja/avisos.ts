@@ -4,22 +4,28 @@ import { configWhatsApp } from '../agente/whatsapp-cloud';
 import { formatarMoeda } from '../formatos';
 
 // Avisos para a loja pelo WhatsApp, para quando o painel está fechado: pedido novo, alerta de preço
-// novo da região e troca da chave Pix pedida. Mensagem que a empresa começa precisa de modelo
+// novo da região, troca da chave Pix pedida e pedido de devolução ou garantia. Mensagem que a empresa começa precisa de modelo
 // aprovado na Meta; sem o modelo configurado, nada é mandado (o painel ao vivo continua avisando).
 // Variáveis (cada uma é o nome do modelo na Meta):
 //   WHATSAPP_MODELO_LOJA_PEDIDO  {{1}} código do pedido, {{2}} oficina, {{3}} total
 //   WHATSAPP_MODELO_LOJA_ALERTA  {{1}} produto, {{2}} cidade da oficina
 //   WHATSAPP_MODELO_LOJA_PIX     {{1}} loja, {{2}} quando a chave nova vale
+//   WHATSAPP_MODELO_LOJA_DEVOLUCAO {{1}} código da compra, {{2}} oficina, {{3}} "devolução" ou "garantia"
 //   WHATSAPP_MODELO_IDIOMA       idioma dos modelos (padrão pt_BR)
 // A loja desliga os avisos em Sua loja (fornecedores.avisar_whatsapp).
 
 const VERSAO = process.env.WHATSAPP_API_VERSAO?.trim() || 'v23.0';
 const MAXIMO_DE_LOJAS_POR_ALERTA = 20;
 
-type Modelo = 'pedido' | 'alerta' | 'pix';
+type Modelo = 'pedido' | 'alerta' | 'pix' | 'devolucao';
 
 function nomeDoModelo(m: Modelo): string | null {
-  const v = { pedido: process.env.WHATSAPP_MODELO_LOJA_PEDIDO, alerta: process.env.WHATSAPP_MODELO_LOJA_ALERTA, pix: process.env.WHATSAPP_MODELO_LOJA_PIX }[m];
+  const v = {
+    pedido: process.env.WHATSAPP_MODELO_LOJA_PEDIDO,
+    alerta: process.env.WHATSAPP_MODELO_LOJA_ALERTA,
+    pix: process.env.WHATSAPP_MODELO_LOJA_PIX,
+    devolucao: process.env.WHATSAPP_MODELO_LOJA_DEVOLUCAO
+  }[m];
   return v?.trim() || null;
 }
 
@@ -121,4 +127,18 @@ export async function avisarLojasDoAlerta(sb: SupabaseClient, alertaId: string):
   let n = 0;
   for (const loja of await lojas(sb, escolhidas)) if (await mandarModelo(loja.whatsapp, 'alerta', [alerta.titulo, alerta.oficina_cidade ?? alerta.oficina_uf])) n++;
   return n;
+}
+
+/**
+ * Pedido de devolução ou garantia novo: avisa a loja da compra. Para a oficina chamar depois de abrir o
+ * pedido (com o cliente dela: ela lê a própria devolução e o contato público da loja).
+ */
+export async function avisarLojaDaDevolucao(sb: SupabaseClient, devolucaoId: string): Promise<boolean> {
+  const { data, error } = await sb.from('devolucoes').select('fornecedor_id, codigo, tipo, parte:pedidos_fornecedores(oficina_nome)').eq('id', devolucaoId).maybeSingle();
+  if (error || !data) return false;
+  const d = data as { fornecedor_id: number | string; codigo: string | null; tipo: string; parte: { oficina_nome: string | null } | { oficina_nome: string | null }[] | null };
+  const parte = Array.isArray(d.parte) ? d.parte[0] : d.parte;
+  const loja = await lojaParaAviso(sb, Number(d.fornecedor_id));
+  if (!loja) return false;
+  return mandarModelo(loja.whatsapp, 'devolucao', [d.codigo ?? '', parte?.oficina_nome ?? 'uma oficina', d.tipo === 'garantia' ? 'garantia' : 'devolução']);
 }

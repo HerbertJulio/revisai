@@ -8,6 +8,7 @@ import { COLUNAS_PROMOCAO, lerPromocoesCompletas, type LinhaPromocao } from '../
 import { clienteDoUsuario } from '../supabase-servidor';
 import { contarAlertasSemResposta } from './alertas';
 import { hojeEmBrasilia } from './comum';
+import { devolucoesParaResponder } from './devolucoes';
 import {
   COLUNAS_CONTRATO_DA_LOJA,
   COLUNAS_IMPULSO_DA_LOJA,
@@ -43,6 +44,8 @@ export interface PainelDaLoja {
   pedidos: PedidoDaLoja[];
   /** Alertas de preço abertos que a loja ainda não respondeu. */
   alertasNovos: number;
+  /** Pedidos de devolução abertos esperando a loja. */
+  devolucoesAbertas: number;
   hoje: string;
 }
 
@@ -102,7 +105,10 @@ export const painelDaLoja = cache(async (): Promise<ResultadoPainel> => {
     const partes = (pf.data ?? []) as { id: number | string }[];
     const historico = await historicoDas(sb, partes.map((x) => Number(x.id)));
     const categorias = [...new Set(produtos.filter((x) => x.ativo).map((x) => x.categoria))];
-    const alertasNovos = loja.ativo && loja.uf ? await contarAlertasSemResposta(sb, id, loja.uf, categorias).catch(() => 0) : 0;
+    const [alertasNovos, devolucoesAbertas] = await Promise.all([
+      loja.ativo && loja.uf ? contarAlertasSemResposta(sb, id, loja.uf, categorias).catch(() => 0) : Promise.resolve(0),
+      devolucoesParaResponder(sb, id).catch(() => 0)
+    ]);
     return {
       estado: 'ok',
       sb,
@@ -118,6 +124,7 @@ export const painelDaLoja = cache(async (): Promise<ResultadoPainel> => {
         impulsos: lerImpulsosDaLoja(i.data),
         pedidos: lerPedidosDaLoja(pf.data, historico, id),
         alertasNovos,
+        devolucoesAbertas,
         hoje: hojeEmBrasilia()
       }
     };

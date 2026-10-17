@@ -1,8 +1,8 @@
 'use client';
 
-// O painel da loja ao vivo: pedido novo, oficina que avisou que pagou, pedido cancelado pela oficina
-// e alerta de preço novo da região chegam na hora (tempo real do banco, com as regras de quem vê o
-// quê). Aparecem num aviso na tela, no título da aba e, se a pessoa deixar, como notificação do
+// O painel da loja ao vivo: pedido novo, oficina que avisou que pagou, pedido cancelado pela oficina,
+// pedido de devolução ou garantia e alerta de preço novo da região chegam na hora (tempo real do
+// banco, com as regras de quem vê o quê). Aparecem num aviso na tela, no título da aba e, se a pessoa deixar, como notificação do
 // navegador. Se o tempo real cair, a página se atualiza sozinha a cada 2 minutos enquanto está aberta.
 
 import type { RealtimeChannel } from '@supabase/supabase-js';
@@ -90,6 +90,7 @@ export function AoVivo({ config, fornecedorId, uf, pedidos }: { config: { url: s
   // as funções mudam a cada render; o canal usa a versão mais nova sem reabrir a conexão
   const aoPedido = useRef<(evento: string, linha: Linha) => void>(() => {});
   const aoAlerta = useRef<(linha: Linha) => void>(() => {});
+  const aoDevolucao = useRef<(evento: string, linha: Linha) => void>(() => {});
   useEffect(() => {
     aoPedido.current = (evento, linha) => {
       const id = Number(linha.id);
@@ -110,6 +111,15 @@ export function AoVivo({ config, fornecedorId, uf, pedidos }: { config: { url: s
       const titulo = texto(linha.titulo) || 'um produto';
       novidade('Alerta de preço novo', `${titulo}${texto(linha.oficina_cidade) ? ` em ${texto(linha.oficina_cidade)}` : ''}`, '/fornecedor/alertas');
     };
+    aoDevolucao.current = (evento, linha) => {
+      const compra = texto(linha.codigo) ? `compra ${texto(linha.codigo)}` : 'compra de uma oficina';
+      if (evento === 'INSERT') return novidade(texto(linha.tipo) === 'garantia' ? 'Pedido de garantia' : 'Pedido de devolução', compra, '/fornecedor/devolucoes');
+      // a oficina mudou o pedido depois da pergunta da loja
+      const respondida = Date.parse(texto(linha.respondida_em));
+      if (evento === 'UPDATE' && texto(linha.situacao) === 'aberta' && respondida && Date.parse(texto(linha.atualizado_em)) > respondida)
+        return novidade('A oficina completou o pedido de devolução', compra, '/fornecedor/devolucoes');
+      atualizar();
+    };
   });
 
   // tempo real do banco (com a sessão da pessoa: o banco só manda o que ela pode ver)
@@ -128,6 +138,7 @@ export function AoVivo({ config, fornecedorId, uf, pedidos }: { config: { url: s
           .on('postgres_changes', { event: '*', schema: 'public', table: 'pedidos_fornecedores', filter: `fornecedor_id=eq.${fornecedorId}` }, (p) =>
             aoPedido.current(p.eventType, (p.new ?? {}) as Linha)
           );
+        canal.on('postgres_changes', { event: '*', schema: 'public', table: 'devolucoes', filter: `fornecedor_id=eq.${fornecedorId}` }, (p) => aoDevolucao.current(p.eventType, (p.new ?? {}) as Linha));
         if (uf) canal.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'alertas_preco', filter: `oficina_uf=eq.${uf}` }, (p) => aoAlerta.current((p.new ?? {}) as Linha));
         canal.subscribe();
       } catch {
