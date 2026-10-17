@@ -133,29 +133,50 @@ export async function assinarPro(sbUsuario: SupabaseClient, oficina: OficinaQueA
 
   if (criada.primeira) {
     const p = criada.primeira;
-    await registrarPagamento(sistema, {
-      provedor: provedor.nome,
-      externo: p.externo,
-      tipo: 'pro',
-      oficinaId: oficina.id,
-      fornecedorId: null,
-      assinaturaId: String(id),
-      valor: p.valor > 0 ? p.valor : valor,
-      vencimento: p.vencimento ?? primeiroVencimento,
-      metodo: d.metodo,
-      descricao: DESCRICAO_PRO,
-      link: p.link,
-      pix: p.pixCopiaECola,
-      boleto: p.boletoLinha,
-      userId
-    });
-    if (p.situacao === 'pago') await aplicarEProcessar(provedor.nome, { id: `assinar:${p.externo}`, tipo: 'pago', externo: p.externo, pagoEm: p.pagoEm, assinatura: null, cobranca: null });
+    try {
+      await registrarPagamento(sistema, {
+        provedor: provedor.nome,
+        externo: p.externo,
+        tipo: 'pro',
+        oficinaId: oficina.id,
+        fornecedorId: null,
+        assinaturaId: String(id),
+        valor: p.valor > 0 ? p.valor : valor,
+        vencimento: p.vencimento ?? primeiroVencimento,
+        metodo: d.metodo,
+        descricao: DESCRICAO_PRO,
+        link: p.link,
+        pix: p.pixCopiaECola,
+        boleto: p.boletoLinha,
+        userId
+      });
+      if (p.situacao === 'pago') await aplicarEProcessar(provedor.nome, { id: `assinar:${p.externo}`, tipo: 'pago', externo: p.externo, pagoEm: p.pagoEm, assinatura: null, cobranca: null });
+    } catch (e) {
+      // a assinatura ficou guardada; a cobrança chega pelo aviso do gateway ou pela conferência da tela
+      console.error('[cobranca] guardar a primeira cobrança', e instanceof Error ? e.message : e);
+    }
   }
 
-  // a anterior sai do gateway (no banco ela já foi cancelada)
-  if (anterior && anterior.assinatura_externa !== criada.assinaturaExterna) {
-    const r = await cancelarNoGateway(anterior);
-    if (!r.ok) console.error('[cobranca] cancelar a assinatura anterior', anterior.id, r.erro);
+  // as que esta trocou (a anterior, e alguma criada ao mesmo tempo) saem do gateway
+  const trocadas = new Map<string, LinhaAssinatura>();
+  if (anterior) trocadas.set(anterior.id, anterior);
+  const { data: recentes } = await sistema
+    .from('assinaturas_pro')
+    .select(COLUNAS_ASSINATURA)
+    .eq('oficina_id', oficina.id)
+    .eq('situacao', 'cancelada')
+    .neq('id', String(id))
+    .gte('cancelada_em', new Date(Date.now() - 5 * 60_000).toISOString());
+  for (const l of recentes ?? []) {
+    const a = lerAssinatura(l as Record<string, unknown>);
+    trocadas.set(a.id, a);
+  }
+  for (const a of trocadas.values()) {
+    if (a.assinatura_externa === criada.assinaturaExterna && a.provedor === provedor.nome) continue;
+    const r = await cancelarNoGateway(a);
+    if (!r.ok) console.error('[cobranca] cancelar a assinatura trocada', a.id, r.erro);
+    // as cobranças em aberto da assinatura trocada não valem mais
+    else if (a.assinatura_externa) await sistema.rpc('cobranca_assinatura_cancelada', { p_provedor: a.provedor, p_externa: a.assinatura_externa });
   }
   return { ok: true };
 }
@@ -224,8 +245,10 @@ export async function conferirPagamentos(oficinaId: string): Promise<Res<{ mudou
       console.error('[cobranca] conferir', linha.id, e instanceof Error ? e.message : e);
     }
   }
-  // cobranças novas da assinatura que o aviso não trouxe (a renovação do mês)
-  if (viva?.assinatura_externa && viva.situacao !== 'pendente') {
+  // cobranças da assinatura que o aviso não trouxe (a renovação do mês, ou a primeira que não
+  // ficou guardada)
+  const linhas = (data ?? []) as { assinatura_id?: string | null }[];
+  if (viva?.assinatura_externa && !linhas.some((l) => l.assinatura_id === viva.id)) {
     const provedor = provedorPorNome(viva.provedor);
     try {
       for (const c of provedor ? await provedor.cobrancasDaAssinatura(viva.assinatura_externa) : []) {
