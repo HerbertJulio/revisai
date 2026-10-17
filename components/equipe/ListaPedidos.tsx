@@ -15,6 +15,7 @@ import {
   type SituacaoPedido
 } from '@/lib/equipe-dados';
 import { formatarMoeda, formatarTelefone } from '@/lib/formatos';
+import { SITUACOES_PAGAMENTO, SITUACOES_PARTE } from '@/lib/marketplace-dados';
 import { linkWhatsApp } from '@/lib/whatsapp';
 import { CampoBusca, ChipSituacao, combina, Filtro, LinhaDeFiltros, MostrarMais, paraBusca, POR_PAGINA, SeletorSituacao } from './comum';
 
@@ -26,13 +27,16 @@ export function ListaPedidos({
   pedidos,
   agora,
   comFiltros = true,
-  vazio
+  vazio,
+  podeMudar = true
 }: {
   pedidos: Pedido[];
   agora: number;
   comFiltros?: boolean;
   /** O que mostrar quando não há pedidos (no resumo, por exemplo). */
   vazio?: ReactNode;
+  /** O papel da pessoa muda a situação (o suporte); os outros só veem. */
+  podeMudar?: boolean;
 }) {
   const toast = useToast();
   const [, iniciar] = useTransition();
@@ -107,7 +111,7 @@ export function ListaPedidos({
       {visiveis.length ? (
         <div className="flex flex-col gap-3">
           {visiveis.map((p) => (
-            <CartaoPedido key={p.id} pedido={p} agora={agora} aoMudar={mudar} />
+            <CartaoPedido key={p.id} pedido={p} agora={agora} aoMudar={podeMudar ? mudar : null} />
           ))}
           <MostrarMais total={filtrados.length} mostrando={visiveis.length} aoMostrar={() => setLimite((l) => l + POR_PAGINA)} />
         </div>
@@ -126,6 +130,9 @@ export function ListaPedidos({
   );
 }
 
+const parte = (id: string) => SITUACOES_PARTE.find((s) => s.id === id);
+const pagamento = (id: string) => SITUACOES_PAGAMENTO.find((s) => s.id === id);
+
 function CartaoPedido({
   pedido: p,
   agora,
@@ -133,7 +140,8 @@ function CartaoPedido({
 }: {
   pedido: Pedido;
   agora: number;
-  aoMudar: (p: Pedido, s: SituacaoPedido, comDesfazer?: boolean) => void;
+  /** null quando o papel só vê. */
+  aoMudar: ((p: Pedido, s: SituacaoPedido, comDesfazer?: boolean) => void) | null;
 }) {
   const s = situacao(p.status);
   const grupos = porFornecedor(p.itens);
@@ -178,6 +186,22 @@ function CartaoPedido({
           </div>
         ))}
         {p.observacao ? <p className="rounded-xl bg-papel-2 px-3 py-2 text-[14px] text-tinta-2">{p.observacao}</p> : null}
+        {p.partes?.length ? (
+          <ul className="flex flex-col gap-1.5" aria-label="Situação em cada loja">
+            {p.partes.map((x) => {
+              const s = parte(x.status);
+              const pg = pagamento(x.pagamento);
+              return (
+                <li key={x.fornecedorId} className="flex flex-wrap items-center gap-2 text-[14px]">
+                  <span className="font-semibold">{x.fornecedor}</span>
+                  <ChipSituacao nome={s?.nome ?? x.status} tom={s?.tom ?? 'neutro'} />
+                  {pg ? <ChipSituacao nome={pg.nome} tom={pg.tom} /> : null}
+                  <span className="num text-tinta-3">{formatarMoeda(x.subtotal)}</span>
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
       </div>
 
       <footer className="flex flex-wrap items-center gap-2 border-t border-linha px-4 py-3 sm:px-5">
@@ -188,14 +212,20 @@ function CartaoPedido({
             rel="noopener noreferrer"
             className={classeBotao('whatsapp', 'pequeno')}
             onClick={() => {
-              if (p.status === 'novo') aoMudar(p, 'em_contato', true);
+              if (p.status === 'novo' && aoMudar) aoMudar(p, 'em_contato', true);
             }}
           >
             <MessageCircle size={16} aria-hidden="true" />
             Chamar {formatarTelefone(p.oficina_whatsapp)}
           </a>
         ) : null}
-        <SeletorSituacao valor={p.status} opcoes={SITUACOES_PEDIDO} aoMudar={(v) => aoMudar(p, v)} rotulo={`Situação do pedido ${p.codigo}`} />
+        {aoMudar ? (
+          <SeletorSituacao valor={p.status} opcoes={SITUACOES_PEDIDO} aoMudar={(v) => aoMudar(p, v)} rotulo={`Situação do pedido ${p.codigo}`} />
+        ) : (
+          <span className="ml-auto">
+            <ChipSituacao nome={s.nome} tom={s.tom} />
+          </span>
+        )}
       </footer>
     </article>
   );

@@ -6,7 +6,7 @@ import { useToast } from '@/components/Toasts';
 import { Botao, Chip, Vazio, classeEntrada } from '@/components/ui';
 import { contarPor, dataCurta, quandoFoi } from '@/lib/equipe-dados';
 import { formatarMoeda, plural } from '@/lib/formatos';
-import type { ImpulsoAdmin } from '@/lib/marketplace';
+import type { ImpulsoEquipe as ImpulsoAdmin } from '@/lib/equipe/tipos';
 import { SITUACOES_IMPULSO, type SituacaoImpulso } from '@/lib/marketplace-dados';
 import { Filtro, LinhaDeFiltros } from './comum';
 
