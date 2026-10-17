@@ -243,6 +243,26 @@ $$;
 revoke all on function privado.veio_da_api() from public;
 grant execute on function privado.veio_da_api() to anon, authenticated;
 
+/**
+ * A mudança é só o "on delete set null" de uma chave estrangeira: dentro de outro gatilho (a ação
+ * da chave roda como gatilho da tabela apagada), só as colunas da lista mudaram e todas para nulo.
+ * Os gatilhos que protegem as linhas deixam essa passar, senão apagar uma oficina ou uma conta trava.
+ */
+create or replace function privado.so_desligou(p_velho jsonb, p_novo jsonb, p_colunas text[])
+returns boolean
+language sql
+volatile
+set search_path = ''
+as $$
+  select pg_trigger_depth() > 1
+     and (p_novo - p_colunas) = (p_velho - p_colunas)
+     and exists (select 1 from unnest(p_colunas) c where (p_novo -> c) is distinct from (p_velho -> c))
+     and not exists (select 1 from unnest(p_colunas) c
+                      where (p_novo -> c) is distinct from (p_velho -> c) and (p_novo -> c) <> 'null'::jsonb);
+$$;
+revoke all on function privado.so_desligou(jsonb, jsonb, text[]) from public;
+grant execute on function privado.so_desligou(jsonb, jsonb, text[]) to anon, authenticated;
+
 -- ------------------------------------------------------------------ convites
 
 create table public.convites (

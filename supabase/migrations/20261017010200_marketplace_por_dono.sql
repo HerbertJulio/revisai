@@ -377,6 +377,10 @@ declare
   v_quem text;
   v_ok boolean;
 begin
+  -- a oficina foi apagada: a parte fica com a loja, sem a oficina
+  if privado.so_desligou(to_jsonb(old), to_jsonb(new), array['oficina_id']) then
+    return new;
+  end if;
   -- o entregador (pelas funções entrega_*) só mexe na posição e no "entregue"
   if coalesce(current_setting('revisai.entregador', true), '') = 'sim' then
     if new.status is distinct from old.status and not (old.status = 'saiu_entrega' and new.status = 'entregue') then

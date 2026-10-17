@@ -86,6 +86,10 @@ declare
   v_quantidade numeric;
   v_itens jsonb := '[]'::jsonb;
 begin
+  -- quem abriu ou respondeu apagou a conta: a devolução fica, sem a pessoa
+  if tg_op = 'UPDATE' and privado.so_desligou(to_jsonb(old), to_jsonb(new), array['aberta_por', 'respondida_por']) then
+    return new;
+  end if;
   select pf.id, pf.oficina_id, pf.fornecedor_id, pf.codigo, pf.status, pf.itens, coalesce(pf.entregue_em, pf.atualizado_em) as entregue_em
     into v_parte
     from public.pedidos_fornecedores pf

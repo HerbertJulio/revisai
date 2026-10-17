@@ -48,6 +48,14 @@ export async function GET(req: NextRequest) {
   }
 
   const rotina = await passo('rotina', () => rpc('rotina_diaria'));
+  // cada passo da rotina do banco roda separado e anota o próprio erro (erro_<passo>) sem parar os outros
+  if (rotina && typeof rotina === 'object') {
+    for (const [chave, valor] of Object.entries(rotina as Record<string, unknown>)) {
+      if (!chave.startsWith('erro')) continue;
+      console.error(`[cron] rotina: ${chave}`, valor);
+      erros.push(`rotina: ${chave}`);
+    }
+  }
   const plataforma = await passo('rotina da plataforma', () => rpc('plataforma_rotina'));
   const chaves = await passo('chaves da cota', () => rpc('limpar_uso_chaves'));
   const parados = await passo('montagens paradas', destravarParados);
