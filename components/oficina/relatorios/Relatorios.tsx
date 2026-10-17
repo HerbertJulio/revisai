@@ -137,11 +137,13 @@ function TelaRelatorios() {
       >
         {margem.linhas.length ? (
           <>
-            <dl className="grid grid-cols-3 gap-2.5">
-              <Numero rotulo="Vendido" valor={formatarMoeda(margem.venda)} nota="com custo conhecido" />
-              <Numero rotulo="Custo" valor={formatarMoeda(margem.custo)} nota="da última compra" />
-              <Numero rotulo="Margem" valor={formatarMoeda(margem.margem)} nota={margem.percentual != null ? `${formatarNumero(margem.percentual, 1)}% da venda` : 'sem custo conhecido'} />
-            </dl>
+            {margem.linhas.some((l) => l.custo != null) ? (
+              <dl className="grid grid-cols-3 gap-2.5">
+                <Numero rotulo="Vendido" valor={formatarMoeda(margem.venda)} nota="com custo conhecido" />
+                <Numero rotulo="Custo" valor={formatarMoeda(margem.custo)} nota="da última compra" />
+                <Numero rotulo="Margem" valor={formatarMoeda(margem.margem)} nota={margem.percentual != null ? `${formatarNumero(margem.percentual, 1)}% da venda` : 'sem venda'} />
+              </dl>
+            ) : null}
             {margem.linhasSemCusto ? (
               <p className="rounded-xl bg-oleo-claro px-3.5 py-2.5 text-[14px] text-oleo-tinta">
                 {formatarMoeda(margem.vendaSemCusto)} em peças sem custo conhecido ({margem.linhasSemCusto} {margem.linhasSemCusto === 1 ? 'linha' : 'linhas'}): a peça não saiu do estoque ou o estoque não tem o preço de compra. Elas ficam fora da margem.

@@ -42,7 +42,7 @@ export function Caixa({ dia, aoMudarDia, hoje, aoAbrir }: { dia: string; aoMudar
         <button type="button" onClick={() => aoMudarDia(somarDias(dia, -1))} className="grid h-11 w-11 place-items-center rounded-[10px] border border-linha bg-papel text-tinta-2 hover:border-tinta-3" aria-label="Dia anterior">
           <ChevronLeft size={19} />
         </button>
-        <input type="date" className={`${classeEntrada} w-auto`} value={dia} max={hoje} onChange={(e) => e.target.value && aoMudarDia(e.target.value)} aria-label="Dia do caixa" />
+        <input type="date" className={`${classeEntrada} max-w-44`} value={dia} max={hoje} onChange={(e) => e.target.value && aoMudarDia(e.target.value)} aria-label="Dia do caixa" />
         <button
           type="button"
           onClick={() => aoMudarDia(somarDias(dia, 1))}

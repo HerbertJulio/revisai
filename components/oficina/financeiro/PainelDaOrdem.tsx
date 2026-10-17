@@ -34,6 +34,8 @@ function Painel({ doc }: { doc: Documento }) {
   const [receber, setReceber] = useState(false);
   const [aberta, setAberta] = useState<string | null>(null);
   const semValor = p.total <= 0 && !p.lancamentos.length;
+  // o que o cliente (ou a maquininha) ainda vai pagar, lançado ou não; o botão Receber é para o que falta lançar
+  const faltaReceber = Math.max(0, Math.round((p.total - p.recebido) * 100) / 100);
 
   return (
     <section className="flex flex-col gap-3 rounded-xl px-3.5 py-3 ring-1 ring-linha" aria-label="Pagamento da ordem">
@@ -48,20 +50,22 @@ function Painel({ doc }: { doc: Documento }) {
         <p className="text-[14px] text-tinta-3">A ordem ainda está sem valor.</p>
       ) : (
         <>
-          <dl className="grid grid-cols-3 gap-2 text-[13px]">
+          <dl className="grid grid-cols-2 gap-2 text-[13px]">
             <div className="rounded-lg bg-papel-2 px-2.5 py-2">
               <dt className="text-tinta-3">Recebido</dt>
               <dd className="num text-[16px] font-extrabold">{formatarMoeda(p.recebido)}</dd>
             </div>
-            <div className="rounded-lg bg-papel-2 px-2.5 py-2">
-              <dt className="text-tinta-3">Em aberto</dt>
-              <dd className="num text-[16px] font-extrabold">{formatarMoeda(p.aReceber)}</dd>
-            </div>
-            <div className={`rounded-lg px-2.5 py-2 ${p.falta > 0 ? 'bg-oleo-claro text-oleo-tinta' : 'bg-papel-2'}`}>
-              <dt className={p.falta > 0 ? '' : 'text-tinta-3'}>{p.falta < 0 ? 'Lançado a mais' : 'Falta receber'}</dt>
-              <dd className="num text-[16px] font-extrabold">{formatarMoeda(Math.abs(p.falta))}</dd>
+            <div className={`rounded-lg px-2.5 py-2 ${faltaReceber > 0 ? 'bg-oleo-claro text-oleo-tinta' : 'bg-papel-2'}`}>
+              <dt className={faltaReceber > 0 ? '' : 'text-tinta-3'}>Falta receber</dt>
+              <dd className="num text-[16px] font-extrabold">{formatarMoeda(faltaReceber)}</dd>
             </div>
           </dl>
+          {p.aReceber > 0 ? <p className="text-[13.5px] text-tinta-2">{formatarMoeda(p.aReceber)} já lançado para receber depois (fiado, boleto ou maquininha):</p> : null}
+          {p.falta < 0 ? (
+            <p className="rounded-lg bg-atraso-claro px-2.5 py-2 text-[13.5px] text-atraso" role="alert">
+              Lançado {formatarMoeda(-p.falta)} a mais que o total da OS. Confira os recebimentos abaixo.
+            </p>
+          ) : null}
           {p.lancamentos.length ? (
             <ul className="flex flex-col divide-y divide-linha text-[14px]">
               {p.lancamentos.map((l) => (
