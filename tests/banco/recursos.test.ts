@@ -50,9 +50,9 @@ d('links do cliente', () => {
       expect((ver.v as { dados: { total: number }; oficina: { nome: string } }).dados.total).toBe(350);
       expect((ver.v as { oficina: { nome: string } }).oficina.nome).toBe('Oficina Teste');
       // responder com ação inválida não vale
-      expect((await tentar(b, null, `select public.responder_link($1, '{"acao":"assinar"}'::jsonb)`, [token])).codigo).toBe('22023');
-      expect((await tentar(b, null, `select public.responder_link($1, '{"acao":"aprovar","recusadas":[]}'::jsonb, '200.1.2.3', 'Celular')`, [token])).erro).toBeNull();
-      expect((await tentar(b, null, `select public.responder_link($1, '{"acao":"recusar"}'::jsonb)`, [token])).codigo).toBe('RV051');
+      expect((await tentar(b, null, `select public.responder_link($1, '{"acao":"assinar"}'::jsonb)`, [token], { sistema: true })).codigo).toBe('22023');
+      expect((await tentar(b, null, `select public.responder_link($1, '{"acao":"aprovar","recusadas":[]}'::jsonb, '200.1.2.3', 'Celular')`, [token], { sistema: true })).erro).toBeNull();
+      expect((await tentar(b, null, `select public.responder_link($1, '{"acao":"recusar"}'::jsonb)`, [token], { sistema: true })).codigo).toBe('RV051');
       const [l] = await linhas(b, dono, `select resposta from public.links_publicos where oficina_id = $1`, [o]);
       expect(l.resposta).toMatchObject({ acao: 'aprovar', ip: '200.1.2.3', agente: 'Celular' });
       expect((l.resposta as { hashDoQueViu: string }).hashDoQueViu).toMatch(/^[0-9a-f]{64}$/);

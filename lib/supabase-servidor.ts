@@ -1,6 +1,7 @@
 import 'server-only';
 import { createServerClient } from '@supabase/ssr';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { createHash, createHmac } from 'node:crypto';
 import { cookies, headers } from 'next/headers';
 import { cache } from 'react';
 
@@ -47,6 +48,17 @@ export function clienteSistema(): SupabaseClient | null {
   return sistema;
 }
 
+/**
+ * A assinatura do IP para o banco: HMAC-SHA256 do IP com o hash da chave do sistema (o mesmo hash
+ * que o banco guarda em privado.chaves). O banco só usa o IP do cabeçalho quando a assinatura bate.
+ */
+export function provaDoIp(ip: string): string | null {
+  const k = chaveDoSistema();
+  if (!k) return null;
+  const segredo = createHash('sha256').update(k).digest('hex');
+  return createHmac('sha256', segredo).update(ip).digest('hex');
+}
+
 /** O IP de quem fez a requisição (a Vercel põe o primeiro em x-forwarded-for). */
 export async function ipDoPedido(): Promise<string> {
   const h = await headers();
@@ -70,8 +82,9 @@ export const clienteDoUsuario = cache(async (equipe = false): Promise<SupabaseCl
   if (!c) return null;
   const jar = await cookies();
   const ip = await ipDoPedido();
+  const prova = provaDoIp(ip);
   return createServerClient(c.url, c.chave, {
-    global: { headers: { 'x-revisai-ip': ip } },
+    global: { headers: prova ? { 'x-revisai-ip': ip, 'x-revisai-ip-prova': prova } : { 'x-revisai-ip': ip } },
     cookies: {
       getAll: () => jar.getAll(),
       setAll(lista) {

@@ -61,7 +61,7 @@ describe.skipIf(!temBanco)('jornada da ordem no banco', () => {
       await criarOficina(b, outro, 'Outra Oficina');
       const [p] = await linhas(b, dono, `select public.publicar_link($1, 'orcamento', 'orc-1', '{"v":1}'::jsonb) as r`, [o]);
       const token = (p.r as { token: string }).token;
-      await linhas(b, null, `select public.responder_link($1, '{"acao":"aprovar","recusadas":[],"nome":"Ana","hashAprovado":"${'a'.repeat(64)}"}'::jsonb, '200.1.2.3', 'Celular')`, [token]);
+      await linhas(b, null, `select public.responder_link($1, '{"acao":"aprovar","recusadas":[],"nome":"Ana","hashAprovado":"${'a'.repeat(64)}"}'::jsonb, '200.1.2.3', 'Celular')`, [token], { sistema: true });
       const [l] = await linhas(b, dono, `select id, resposta from public.links_publicos where oficina_id = $1 and processado_em is null and resposta is not null`, [o]);
       expect(l.resposta).toMatchObject({ acao: 'aprovar', nome: 'Ana', hashAprovado: 'a'.repeat(64), ip: '200.1.2.3', agente: 'Celular' });
       expect((await linhas(b, outro, 'select public.link_processado($1) as ok', [l.id]))[0].ok).toBe(false);

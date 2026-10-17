@@ -121,7 +121,7 @@ d('avisos dos eventos', () => {
       const o = await criarOficina(b, dono);
       const dados = JSON.stringify({ titulo: 'Troca de óleo', cliente: 'Maria' });
       const link = await rpc<{ token: string }>(b, dono, `public.publicar_link($1, 'orcamento', 'orc-aviso', $2::jsonb)`, [o, dados]);
-      await rpc(b, null, `public.responder_link($1, '{"acao": "aprovar"}'::jsonb)`, [link.token]);
+      await rpc(b, null, `public.responder_link($1, '{"acao": "aprovar"}'::jsonb)`, [link.token], true);
       await rpc(b, dono, `public.publicar_link($1, 'orcamento', 'orc-aviso', $2::jsonb, 90, null, true)`, [o, dados]);
       const avisos = await fila(b, `tipo = 'link_resposta' and destino ->> 'oficina_id' = $1`, [o]);
       expect(avisos).toHaveLength(1);

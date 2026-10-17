@@ -394,3 +394,225 @@ begin
   );
 end;
 $$;
+
+-- ------------------------------------------------------------------ IP que vale como prova
+
+/**
+ * O IP de quem fez a requisição, só quando o servidor do Revisaí assinou: o cabeçalho
+ * x-revisai-ip qualquer um manda direto para a API; a assinatura (HMAC do IP com o hash da chave
+ * do sistema, que só o servidor e o banco conhecem) não. Sem assinatura certa, null.
+ */
+create or replace function privado.ip_confiavel()
+returns text
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  v_h json;
+  v_ip text;
+  v_prova text;
+  v_segredo text;
+begin
+  begin
+    v_h := nullif(current_setting('request.headers', true), '')::json;
+  exception when others then
+    return null;
+  end;
+  v_ip := left(v_h ->> 'x-revisai-ip', 64);
+  v_prova := lower(v_h ->> 'x-revisai-ip-prova');
+  if v_ip is null or v_prova is null then
+    return null;
+  end if;
+  select hash into v_segredo from privado.chaves where nome = 'sistema';
+  if v_segredo is null then
+    return null;
+  end if;
+  if encode(extensions.hmac(convert_to(v_ip, 'UTF8'), convert_to(v_segredo, 'UTF8'), 'sha256'), 'hex') = v_prova then
+    return v_ip;
+  end if;
+  return null;
+end;
+$$;
+revoke all on function privado.ip_confiavel() from public, anon, authenticated;
+
+/** Grava quem da equipe (ou o sistema) mudou o quê, com o IP assinado pelo servidor. */
+create or replace function privado.auditar()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_equipe privado.equipe%rowtype;
+  v_chave text;
+begin
+  select * into v_equipe from privado.equipe e where e.user_id = v_uid;
+  if not found and not privado.sistema_autorizado() then
+    return coalesce(new, old);
+  end if;
+  v_chave := coalesce(to_jsonb(coalesce(new, old)) ->> 'id', to_jsonb(coalesce(new, old)) ->> 'fornecedor_id', to_jsonb(coalesce(new, old)) ->> 'user_id', to_jsonb(coalesce(new, old)) ->> 'codigo');
+  insert into privado.auditoria (user_id, email, papel, acao, tabela, registro, antes, depois, ip)
+  values (
+    v_uid,
+    v_equipe.email,
+    coalesce(v_equipe.papel, 'sistema'),
+    lower(tg_op),
+    tg_table_schema || '.' || tg_table_name,
+    left(v_chave, 120),
+    case when tg_op in ('UPDATE', 'DELETE') then to_jsonb(old) end,
+    case when tg_op in ('INSERT', 'UPDATE') then to_jsonb(new) end,
+    privado.ip_confiavel()
+  );
+  return coalesce(new, old);
+end;
+$$;
+
+/** O aceite dos termos, com o IP assinado pelo servidor (o que vem do navegador não vale como prova). */
+create or replace function public.aceitar_termos(p_documentos text[], p_ip text default null, p_agente text default null)
+returns integer
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  v_doc text;
+  v_n integer := 0;
+  v_ip text := coalesce(privado.ip_confiavel(), case when privado.sistema_autorizado() then left(p_ip, 64) end);
+begin
+  if auth.uid() is null then
+    raise exception 'Entre na sua conta' using errcode = '28000';
+  end if;
+  foreach v_doc in array p_documentos loop
+    if public.versoes_dos_termos() ? v_doc then
+      insert into public.aceites (user_id, documento, versao, ip, agente)
+      values (auth.uid(), v_doc, public.versoes_dos_termos() ->> v_doc, v_ip, left(p_agente, 300))
+      on conflict (user_id, documento, versao) do nothing;
+      v_n := v_n + 1;
+    end if;
+  end loop;
+  return v_n;
+end;
+$$;
+
+create or replace function public.equipe_entrar(p_aparelho text, p_descricao text default null, p_ip text default null)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_email text := lower(coalesce(auth.jwt() ->> 'email', ''));
+  v_conv privado.equipe_convites%rowtype;
+  v_papel text;
+  v_novo boolean := false;
+  v_ip text := privado.ip_confiavel();
+begin
+  if v_uid is null or coalesce(auth.jwt() ->> 'aal', '') <> 'aal2' then
+    return jsonb_build_object('papel', null);
+  end if;
+  select * into v_conv from privado.equipe_convites where email = v_email;
+  if found then
+    insert into privado.equipe (user_id, email, nome, papel, criado_por)
+    values (v_uid, v_email, v_conv.nome, v_conv.papel, v_conv.criado_por)
+    on conflict (user_id) do update set papel = excluded.papel, ativo = true;
+    delete from privado.equipe_convites where email = v_email;
+  end if;
+  select papel into v_papel from privado.equipe where user_id = v_uid and ativo;
+  if v_papel is null then
+    return jsonb_build_object('papel', null);
+  end if;
+  if p_aparelho ~ '^[0-9a-f]{64}$' then
+    insert into privado.equipe_aparelhos (user_id, aparelho, descricao, ip)
+    values (v_uid, p_aparelho, left(p_descricao, 200), v_ip)
+    on conflict (user_id, aparelho) do update set ultimo_em = now(), ip = excluded.ip
+    returning (xmax = 0) into v_novo;
+    if v_novo then
+      insert into privado.auditoria (user_id, email, papel, acao, tabela, registro, depois, ip)
+      values (v_uid, v_email, v_papel, 'aparelho_novo', 'privado.equipe_aparelhos', left(p_aparelho, 16), jsonb_build_object('descricao', left(p_descricao, 200)), v_ip);
+    end if;
+  end if;
+  insert into privado.auditoria (user_id, email, papel, acao, ip) values (v_uid, v_email, v_papel, 'entrou', v_ip);
+  return jsonb_build_object('papel', v_papel, 'aparelhoNovo', v_novo);
+end;
+$$;
+
+/**
+ * O cliente responde pelo link (aprova ou recusa o orçamento, assina o checklist, avisa que pagou).
+ * Só pelo servidor do Revisaí, com a chave do sistema: o IP e o aparelho guardados como prova vêm
+ * dele, e não de quem chamasse a API direto. Os itens recusados têm que ser do orçamento mostrado.
+ */
+create or replace function public.responder_link(p_token text, p_resposta jsonb, p_ip text default null, p_agente text default null)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  l public.links_publicos%rowtype;
+  -- sem ação, a ação é vazia: um NULL não pode pular nenhuma das conferências abaixo
+  v_acao text := coalesce(p_resposta ->> 'acao', '');
+  v_cobranca boolean;
+  v_ids text[];
+begin
+  if not privado.sistema_autorizado() then
+    raise exception 'Sem permissão' using errcode = '42501';
+  end if;
+  if p_token !~ '^[A-Za-z0-9_-]{43}$' or jsonb_typeof(p_resposta) is distinct from 'object' or pg_column_size(p_resposta) > 120000 then
+    raise exception 'Resposta inválida' using errcode = '22023';
+  end if;
+  select * into l from public.links_publicos
+   where token_hash = encode(sha256(convert_to(p_token, 'UTF8')), 'hex') and not revogado and expira_em > now()
+   for update;
+  if not found then
+    raise exception 'O link não vale mais' using errcode = 'RV050';
+  end if;
+  if l.tipo = 'orcamento' and v_acao not in ('aprovar', 'recusar') then
+    raise exception 'Resposta inválida' using errcode = '22023';
+  end if;
+  if l.tipo = 'orcamento' and p_resposta ? 'recusadas' then
+    if jsonb_typeof(p_resposta -> 'recusadas') is distinct from 'array' then
+      raise exception 'Resposta inválida' using errcode = '22023';
+    end if;
+    select coalesce(array_agg(x ->> 'id'), '{}') into v_ids
+      from jsonb_array_elements(case when jsonb_typeof(l.dados -> 'linhas') = 'array' then l.dados -> 'linhas' else '[]'::jsonb end) x;
+    if exists (select 1 from jsonb_array_elements(p_resposta -> 'recusadas') r
+                where jsonb_typeof(r) <> 'string' or not ((r #>> '{}') = any (v_ids))) then
+      raise exception 'Resposta inválida' using errcode = '22023';
+    end if;
+  end if;
+  if l.tipo = 'checklist' and v_acao <> 'assinar' then
+    raise exception 'Resposta inválida' using errcode = '22023';
+  end if;
+  v_cobranca := l.tipo in ('pagamento', 'clube');
+  if v_cobranca and v_acao is distinct from 'paguei' then
+    raise exception 'Resposta inválida' using errcode = '22023';
+  end if;
+  if l.tipo = 'clube' and coalesce(p_resposta ->> 'competencia', '') !~ '^[0-9]{4}-(0[1-9]|1[0-2])$' then
+    raise exception 'Resposta inválida' using errcode = '22023';
+  end if;
+  if l.tipo not in ('orcamento', 'checklist', 'pagamento', 'clube') then
+    raise exception 'Este link não recebe resposta' using errcode = '22023';
+  end if;
+  if l.respondido_em is not null and not coalesce(v_cobranca and l.processado_em is not null, false) then
+    raise exception 'Já respondido' using errcode = 'RV051';
+  end if;
+  if l.respondido_em is not null then
+    -- o aviso anterior já foi tratado: limpa antes, para a oficina ser avisada de novo
+    update public.links_publicos set resposta = null, respondido_em = null, processado_em = null where id = l.id;
+  end if;
+  update public.links_publicos
+     set resposta = p_resposta || jsonb_build_object(
+           'quando', now(), 'ip', left(p_ip, 64), 'agente', left(p_agente, 300),
+           'versao', l.atualizado_em, 'hashDoQueViu', encode(sha256(convert_to(l.dados::text, 'UTF8')), 'hex')),
+         respondido_em = now()
+   where id = l.id;
+  return jsonb_build_object('ok', true, 'quando', now());
+end;
+$$;

@@ -376,7 +376,10 @@ set search_path = ''
 as $$
 begin
   if old.respondido_em is null and new.respondido_em is not null then
-    perform privado.avisar('link_resposta', jsonb_build_object('oficina_id', new.oficina_id),
+    perform privado.avisar('link_resposta',
+      case when new.tipo in ('pagamento', 'clube')
+           then jsonb_build_object('oficina_id', new.oficina_id, 'papeis', jsonb_build_array('dono', 'gerente'))
+           else jsonb_build_object('oficina_id', new.oficina_id) end,
       jsonb_build_object('linkId', new.id, 'tipoLink', new.tipo, 'ref', new.ref, 'acao', new.resposta ->> 'acao',
         'titulo', coalesce(new.dados ->> 'titulo', new.dados ->> 'carro', new.dados ->> 'numero'),
         'cliente', coalesce(new.dados ->> 'cliente', new.resposta ->> 'nome')));
@@ -458,6 +461,8 @@ begin
     select m.user_id, lower(coalesce(nullif(m.email, ''), u.email))
       from public.oficina_membros m left join auth.users u on u.id = m.user_id
      where m.oficina_id = v_oficina
+       -- aviso de dinheiro (cobrança do cliente, clube) vai só para quem cuida do dinheiro
+       and (not (p_destino ? 'papeis') or m.papel in (select jsonb_array_elements_text(p_destino -> 'papeis')))
     union
     select u.id, lower(coalesce(u.email, p_destino ->> 'email'))
       from auth.users u

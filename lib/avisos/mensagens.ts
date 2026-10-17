@@ -140,6 +140,14 @@ export function mensagemDoAviso(tipo: string, dados: Dados): MensagemAviso | nul
       const tipoLink = texto(d, 'tipoLink');
       const quem = texto(d, 'cliente') || 'O cliente';
       const sobre = texto(d, 'titulo');
+      if (acao === 'paguei' && (tipoLink === 'pagamento' || tipoLink === 'clube')) {
+        return {
+          titulo: 'Cliente avisou que pagou',
+          corpo: `${quem} avisou que pagou${sobre ? ` (${sobre})` : ''}. Confira o Pix e confirme.`,
+          url: tipoLink === 'clube' ? '/oficina/clube' : ROTAS_AVISO.link_resposta,
+          marca: `link-${texto(d, 'linkId')}`
+        };
+      }
       const corpo =
         tipoLink === 'checklist'
           ? `${quem} assinou o checklist de entrada${sobre ? ` (${sobre})` : ''}.`
