@@ -48,6 +48,8 @@ d('estranhos nas funções da venda faturada, da API, da moderação e do limite
         ['select public.compra_registrar_bloqueio($1, 5000)', [c.oficina]],
         ['select public.compra_registrar_bloqueio($1, $2)', [null, null]],
         ['select public.equipe_bloqueios_de_compra(30)', []],
+        ['select public.equipe_limite_de_compra($1, 99999)', [c.oficina]],
+        ['select public.equipe_limite_de_compra($1, $2)', [null, null]],
         ['select public.equipe_bloqueios_de_compra(null)', []]
       ];
       for (const [sql, params] of chamadas) {

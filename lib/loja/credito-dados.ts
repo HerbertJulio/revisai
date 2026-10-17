@@ -137,7 +137,10 @@ export interface Fatura {
   oficinaId: string | null;
   oficina: string;
   whatsapp: string;
+  /** O que a oficina deve: o subtotal menos o cashback usado na compra. */
   valor: number;
+  /** O cashback da loja usado nesta compra (já fora do valor). */
+  cashback: number;
   status: SituacaoParte;
   pagamento: SituacaoPagamentoParte;
   pagamentoEm: string | null;
@@ -147,7 +150,7 @@ export interface Fatura {
   criadoEm: string;
 }
 
-export const COLUNAS_FATURA = 'id, pedido_id, codigo, oficina_id, oficina_nome, oficina_whatsapp, subtotal, status, pagamento, pagamento_em, prazo_dias, vencimento, entregue_em, criado_em';
+export const COLUNAS_FATURA = 'id, pedido_id, codigo, oficina_id, oficina_nome, oficina_whatsapp, subtotal, cashback, status, pagamento, pagamento_em, prazo_dias, vencimento, entregue_em, criado_em';
 
 export function lerFaturas(d: unknown): Fatura[] {
   return ler(
@@ -159,6 +162,7 @@ export function lerFaturas(d: unknown): Fatura[] {
       oficina_nome: z.string().nullish().transform((v) => v ?? 'Oficina'),
       oficina_whatsapp: z.string().nullish().transform((v) => v ?? ''),
       subtotal: numero,
+      cashback: numero.nullish().transform((v) => v ?? 0),
       status: z.enum(['novo', 'em_contato', 'confirmado', 'saiu_entrega', 'entregue', 'cancelado']),
       pagamento: z.enum(['pendente', 'informado', 'confirmado']).catch('pendente'),
       pagamento_em: texto,
@@ -175,7 +179,8 @@ export function lerFaturas(d: unknown): Fatura[] {
     oficinaId: x.oficina_id,
     oficina: x.oficina_nome,
     whatsapp: x.oficina_whatsapp,
-    valor: x.subtotal,
+    valor: Math.max(0, Math.round((x.subtotal - x.cashback) * 100) / 100),
+    cashback: x.cashback,
     status: x.status,
     pagamento: x.pagamento,
     pagamentoEm: x.pagamento_em,

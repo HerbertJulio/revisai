@@ -39,14 +39,15 @@ export async function pedir(
   b: Banco,
   c: { donoOficina: Pessoa; oficina: string },
   itens: { produto_id: number; quantidade: number }[],
-  pagamentos: Record<string, unknown> | null = null
+  pagamentos: Record<string, unknown> | null = null,
+  cashback: Record<string, number> | null = null
 ): Promise<Pedido> {
   const [p] = await linhas(
     b,
     c.donoOficina,
-    `insert into public.pedidos (codigo, oficina_id, oficina_nome, oficina_whatsapp, itens, pagamentos)
-     values ($1, $2, 'x', '5521911112222', $3::jsonb, $4::jsonb) returning id`,
-    [codigoNovo(), c.oficina, JSON.stringify(itens), pagamentos ? JSON.stringify(pagamentos) : null]
+    `insert into public.pedidos (codigo, oficina_id, oficina_nome, oficina_whatsapp, itens, pagamentos, cashback)
+     values ($1, $2, 'x', '5521911112222', $3::jsonb, $4::jsonb, $5::jsonb) returning id`,
+    [codigoNovo(), c.oficina, JSON.stringify(itens), pagamentos ? JSON.stringify(pagamentos) : null, cashback ? JSON.stringify(cashback) : null]
   );
   const r = await b.query('select id, fornecedor_id, subtotal, forma_pagamento, prazo_dias from public.pedidos_fornecedores where pedido_id = $1 order by fornecedor_id', [p.id]);
   return {
@@ -60,10 +61,11 @@ export async function tentarPedir(
   b: Banco,
   c: { donoOficina: Pessoa; oficina: string },
   itens: { produto_id: number; quantidade: number }[],
-  pagamentos: Record<string, unknown> | null = null
+  pagamentos: Record<string, unknown> | null = null,
+  cashback: Record<string, number> | null = null
 ): Promise<{ codigo: string | null; erro: string | null; detail: string | null; hint: string | null; pedido: Pedido | null }> {
   try {
-    const pedido = await pedir(b, c, itens, pagamentos);
+    const pedido = await pedir(b, c, itens, pagamentos, cashback);
     return { codigo: null, erro: null, detail: null, hint: null, pedido };
   } catch (e) {
     const x = e as { code?: string; message?: string; detail?: string; hint?: string };

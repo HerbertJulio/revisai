@@ -25,6 +25,7 @@ function fatura(extra: Partial<Fatura>): Fatura {
     oficina: 'Oficina do Zé',
     whatsapp: '5521999990000',
     valor: 100,
+    cashback: 0,
     status: 'entregue',
     pagamento: 'pendente',
     pagamentoEm: null,
@@ -99,6 +100,7 @@ describe('faturas da venda faturada', () => {
         oficina_nome: 'Oficina',
         oficina_whatsapp: '5521911112222',
         subtotal: '150.00',
+        cashback: '20.50',
         status: 'entregue',
         pagamento: 'pendente',
         pagamento_em: null,
@@ -109,7 +111,8 @@ describe('faturas da venda faturada', () => {
       },
       { id: 'x' }
     ]);
-    expect(lidas).toEqual([expect.objectContaining({ id: 7, valor: 150, prazoDias: 28, vencimento: '2026-11-14', codigo: 'XYZ999' })]);
+    // o valor da fatura é o que a oficina deve: o subtotal menos o cashback usado
+    expect(lidas).toEqual([expect.objectContaining({ id: 7, valor: 129.5, cashback: 20.5, prazoDias: 28, vencimento: '2026-11-14', codigo: 'XYZ999' })]);
   });
 });
 

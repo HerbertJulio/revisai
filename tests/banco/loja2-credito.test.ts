@@ -126,6 +126,28 @@ d('venda faturada: o pedido', () => {
     }));
 });
 
+d('venda faturada: o cashback sai do que a oficina deve', () => {
+  it('o cashback usado na compra baixa o que ela pesa no limite e no que está em aberto', () =>
+    emTransacao(async (b) => {
+      const c = await cenario(b, { comprou: true });
+      await darCredito(b, c.lojista, c.loja.fornecedorId, c.oficina, 200, 30);
+      // a oficina tem R$ 50 de cashback nesta loja
+      await b.query(`insert into public.cashback_movimentos (oficina_id, fornecedor_id, valor, tipo) values ($1, $2, 50, 'credito')`, [c.oficina, c.loja.fornecedorId]);
+      const faturado = { [c.loja.fornecedorId]: 'faturado' };
+      // 200 de compra, 50 de cashback: deve 150 e cabe no limite de 200
+      const p = await pedir(b, c, [{ produto_id: c.loja.produtoId, quantidade: 2 }], faturado, { [c.loja.fornecedorId]: 50 });
+      const [parte] = await linhas(b, c.lojista, 'select subtotal, cashback, forma_pagamento from public.pedidos_fornecedores where id = $1', [p.partes[0].id]);
+      expect([Number(parte.subtotal), Number(parte.cashback), parte.forma_pagamento]).toEqual([200, 50, 'faturado']);
+      const [r] = await linhas(b, c.lojista, 'select public.loja_creditos($1) as r', [c.loja.fornecedorId]);
+      expect((r.r as { aberto: number }[])[0].aberto).toBe(150);
+      const [o] = await linhas(b, c.donoOficina, 'select public.credito_da_oficina($1) as r', [c.oficina]);
+      expect((o.r as { livre: number }[])[0].livre).toBe(50);
+      // mais 100 sem cashback: 150 + 100 passa de 200 (livres 50)
+      const passou = await tentarPedir(b, c, [{ produto_id: c.loja.produtoId, quantidade: 1 }], faturado);
+      expect([passou.codigo, Number(passou.detail)]).toEqual(['RV061', 50]);
+    }));
+});
+
 d('venda faturada: vencimento', () => {
   it('vence na entrega mais o prazo; forma, prazo e vencimento não mudam pelo app (só a equipe)', () =>
     emTransacao(async (b) => {

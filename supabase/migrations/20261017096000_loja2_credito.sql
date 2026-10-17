@@ -4,6 +4,8 @@
 -- crédito e o saldo em aberto na hora de criar a parte da loja, guarda o prazo na parte e marca o
 -- vencimento quando ela é entregue (entrega + prazo). O risco do crédito é da loja: o Revisaí não
 -- garante o pagamento. Nada aqui redefine public.calcular_pedido: são gatilhos à parte.
+-- O que a oficina deve na parte é o subtotal menos o cashback usado nela (pedidos_fornecedores.cashback,
+-- de 20261017040100); na hora de criar a parte, o cashback ainda vem do pedido (pedidos.cashback).
 
 -- ------------------------------------------------------------------ dinheiro no jeito brasileiro
 
@@ -154,9 +156,10 @@ create trigger pedidos_loja2_pagamentos before insert on public.pedidos
 
 /**
  * A parte da loja nasce com a forma de pagamento que a oficina escolheu. Faturado só com linha de
- * crédito ativa (RV062), e o que está em aberto (faturado não pago e não cancelado) mais esta parte
- * cabe no limite (RV061, com o valor livre em detail e a loja em hint). A linha fica travada até o fim
- * da transação, para dois pedidos ao mesmo tempo não passarem do limite.
+ * crédito ativa (RV062), e o que está em aberto (faturado não pago e não cancelado, sem o cashback
+ * usado) mais o que esta parte vai custar (subtotal menos o cashback pedido para a loja) cabe no
+ * limite (RV061, com o valor livre em detail e a loja em hint). A linha fica travada até o fim da
+ * transação, para dois pedidos ao mesmo tempo não passarem do limite.
  */
 create or replace function privado.loja2_faturado_da_parte()
 returns trigger
@@ -166,12 +169,15 @@ set search_path = ''
 as $$
 declare
   v_forma text;
+  v_cashback text;
   c public.lojas_credito%rowtype;
   v_nome text;
   v_aberto numeric(12, 2);
+  v_devido numeric(12, 2);
   v_livre numeric(12, 2);
 begin
-  select p.pagamentos ->> new.fornecedor_id::text into v_forma from public.pedidos p where p.id = new.pedido_id;
+  select p.pagamentos ->> new.fornecedor_id::text, p.cashback ->> new.fornecedor_id::text into v_forma, v_cashback
+    from public.pedidos p where p.id = new.pedido_id;
   new.vencimento := null;
   if coalesce(v_forma, 'pix') <> 'faturado' then
     new.forma_pagamento := 'pix';
@@ -186,11 +192,13 @@ begin
     raise exception 'A % não vende faturado para esta oficina. Escolha Pix para essa loja', coalesce(v_nome, 'loja')
       using errcode = 'RV062', hint = new.fornecedor_id::text;
   end if;
-  select coalesce(sum(pf.subtotal), 0) into v_aberto
+  select coalesce(sum(pf.subtotal - coalesce(pf.cashback, 0)), 0) into v_aberto
     from public.pedidos_fornecedores pf
    where pf.fornecedor_id = new.fornecedor_id and pf.oficina_id = new.oficina_id
      and pf.forma_pagamento = 'faturado' and pf.status <> 'cancelado' and pf.pagamento <> 'confirmado';
-  if v_aberto + coalesce(new.subtotal, 0) > c.limite then
+  -- o cashback pedido para a loja sai do que a parte vai custar (a função do cashback confere depois)
+  v_devido := greatest(coalesce(new.subtotal, 0) - case when coalesce(v_cashback, '') ~ '^[0-9]{1,9}(\.[0-9]{1,2})?$' then v_cashback::numeric else 0 end, 0);
+  if v_aberto + v_devido > c.limite then
     v_livre := greatest(c.limite - v_aberto, 0);
     raise exception 'O limite faturado na % não cobre esta compra. Estão livres R$ %', coalesce(v_nome, 'loja'), privado.loja2_reais(v_livre)
       using errcode = 'RV061', detail = v_livre::text, hint = new.fornecedor_id::text;
@@ -279,8 +287,8 @@ begin
       ) c
       left join public.lojas_credito l on l.fornecedor_id = p_fornecedor and l.oficina_id = c.oficina_id
       left join lateral (
-        select sum(pf.subtotal) as aberto,
-               sum(pf.subtotal) filter (where pf.vencimento < v_hoje) as vencido,
+        select sum(pf.subtotal - coalesce(pf.cashback, 0)) as aberto,
+               sum(pf.subtotal - coalesce(pf.cashback, 0)) filter (where pf.vencimento < v_hoje) as vencido,
                count(*)::integer as faturas
           from public.pedidos_fornecedores pf
          where pf.fornecedor_id = p_fornecedor and pf.oficina_id = c.oficina_id
@@ -313,7 +321,7 @@ begin
       from public.lojas_credito l
       join public.fornecedores f on f.id = l.fornecedor_id and f.ativo
       left join lateral (
-        select sum(pf.subtotal) as aberto
+        select sum(pf.subtotal - coalesce(pf.cashback, 0)) as aberto
           from public.pedidos_fornecedores pf
          where pf.fornecedor_id = l.fornecedor_id and pf.oficina_id = l.oficina_id
            and pf.forma_pagamento = 'faturado' and pf.status <> 'cancelado' and pf.pagamento <> 'confirmado'

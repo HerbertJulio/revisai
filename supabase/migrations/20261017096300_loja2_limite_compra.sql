@@ -187,6 +187,36 @@ begin
 end;
 $$;
 
+/**
+ * A equipe (suporte ou financeiro) dá um limite próprio à oficina, ou volta para o padrão (null).
+ * Pela função porque a linha da oficina pela API só aceita a lista do cadastro (privado.proteger_oficina).
+ * A mudança entra no histórico da equipe (gatilho auditar de public.oficinas).
+ */
+create or replace function public.equipe_limite_de_compra(p_oficina uuid, p_limite numeric)
+returns boolean
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+begin
+  if not coalesce(privado.eh_equipe(array['suporte', 'financeiro']), false) then
+    raise exception 'Sem permissão' using errcode = '42501';
+  end if;
+  if p_oficina is null then
+    raise exception 'Oficina inválida' using errcode = '22023';
+  end if;
+  if p_limite is not null and (p_limite < 0 or p_limite > 10000000) then
+    raise exception 'O limite vai de R$ 0 a R$ 10.000.000' using errcode = '22023';
+  end if;
+  update public.oficinas set limite_compra_7d = round(p_limite, 2) where id = p_oficina;
+  if not found then
+    raise exception 'Oficina não encontrada' using errcode = '22023';
+  end if;
+  return true;
+end;
+$$;
+
 /** As tentativas barradas pelo limite (últimos p_dias), para a página de antifraude da equipe. */
 create or replace function public.equipe_bloqueios_de_compra(p_dias integer default 30)
 returns jsonb
@@ -212,5 +242,7 @@ begin
 end;
 $$;
 
-revoke all on function public.compra_limite(uuid), public.compra_registrar_bloqueio(uuid, numeric), public.equipe_bloqueios_de_compra(integer) from public, anon;
-grant execute on function public.compra_limite(uuid), public.compra_registrar_bloqueio(uuid, numeric), public.equipe_bloqueios_de_compra(integer) to authenticated;
+revoke all on function public.compra_limite(uuid), public.compra_registrar_bloqueio(uuid, numeric), public.equipe_bloqueios_de_compra(integer),
+  public.equipe_limite_de_compra(uuid, numeric) from public, anon;
+grant execute on function public.compra_limite(uuid), public.compra_registrar_bloqueio(uuid, numeric), public.equipe_bloqueios_de_compra(integer),
+  public.equipe_limite_de_compra(uuid, numeric) to authenticated;

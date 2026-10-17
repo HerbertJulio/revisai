@@ -119,6 +119,7 @@ function CartaoDaFatura({ fatura: f, loja, hoje, mudarOtimista }: { fatura: Fatu
         </div>
         <div className="text-right">
           <p className="num text-[18px] font-extrabold">{formatarMoeda(f.valor)}</p>
+          {f.cashback > 0 ? <p className="text-[12.5px] text-tinta-3">já sem {formatarMoeda(f.cashback)} de cashback</p> : null}
           <p className={`text-[13px] ${situacao === 'vencida' ? 'font-semibold text-atraso' : 'text-tinta-3'}`}>
             {situacao === 'recebida' ? (f.pagamentoEm ? `recebida ${quandoFoi(f.pagamentoEm, agora)}` : 'recebida') : textoDoVencimento(f, hoje)}
           </p>

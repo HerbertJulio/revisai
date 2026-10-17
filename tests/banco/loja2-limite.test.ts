@@ -51,9 +51,12 @@ d('limite de compra das oficinas novas', () => {
       expect((await tentarPedir(b, c, dois)).codigo).toBe('RV060');
       // a oficina não aumenta o próprio limite
       expect((await tentar(b, c.donoOficina, 'update public.oficinas set limite_compra_7d = 99999 where id = $1 returning id', [c.oficina])).linhas).toHaveLength(0);
-      // a equipe (suporte ou financeiro) aumenta
+      // a equipe (suporte ou financeiro) aumenta pela função (a linha pela API só aceita o cadastro)
       const suporte = await equipe(b, 'suporte');
-      expect((await tentar(b, suporte, 'update public.oficinas set limite_compra_7d = 5000 where id = $1 returning id', [c.oficina])).linhas).toHaveLength(1);
+      expect((await tentar(b, suporte, 'update public.oficinas set limite_compra_7d = 5000 where id = $1 returning id', [c.oficina])).codigo).toBe('42501');
+      expect((await tentar(b, suporte, 'select public.equipe_limite_de_compra($1, 5000)', [c.oficina])).erro).toBeNull();
+      expect((await tentar(b, c.donoOficina, 'select public.equipe_limite_de_compra($1, 99999)', [c.oficina])).codigo).toBe('42501');
+      expect((await tentar(b, suporte, 'select public.equipe_limite_de_compra($1, -1)', [c.oficina])).codigo).toBe('22023');
       const p = await pedir(b, c, dois);
       expect(p.partes[0].subtotal).toBe(3000);
       const [lim] = await linhas(b, c.donoOficina, 'select public.compra_limite($1) as r', [c.oficina]);
@@ -62,6 +65,12 @@ d('limite de compra das oficinas novas', () => {
       // a mudança fica no histórico da equipe
       const h = await b.query(`select count(*)::int as n from privado.auditoria where tabela = 'public.oficinas' and registro = $1 and user_id = $2`, [c.oficina, suporte.id]);
       expect(h.rows[0].n).toBe(1);
+      // o financeiro volta para o padrão
+      const financeiro = await equipe(b, 'financeiro');
+      expect((await tentar(b, financeiro, 'select public.equipe_limite_de_compra($1, null)', [c.oficina])).erro).toBeNull();
+      const [padrao] = await linhas(b, c.donoOficina, 'select public.compra_limite($1) as r', [c.oficina]);
+      expect(padrao.r).toEqual(expect.objectContaining({ limite: 2000, daEquipe: false }));
+      expect((await tentar(b, financeiro, 'select public.equipe_limite_de_compra($1, 5000)', [c.oficina])).erro).toBeNull();
       // a oficina com mais de 30 dias compra sem limite
       await semRegras(b, `update public.oficinas set criado_em = now() - interval '31 days' where id = $1`, [c.oficina]);
       expect((await tentarPedir(b, c, [{ produto_id: c.loja.produtoId, quantidade: 6 }])).erro).toBeNull();

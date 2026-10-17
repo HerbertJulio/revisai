@@ -90,15 +90,11 @@ export async function limiteDaOficina(sb: SupabaseClient, oficinaId: string): Pr
 export async function salvarLimite(sb: SupabaseClient, oficinaId: string, limite: number | null): Promise<Gravacao> {
   if (!/^[0-9a-f-]{36}$/.test(oficinaId)) return { ok: false, erro: 'Oficina inválida.' };
   if (limite != null && (!Number.isFinite(limite) || limite < 0 || limite > 10_000_000)) return { ok: false, erro: 'O limite vai de R$ 0 a R$ 10.000.000.' };
-  const { data, error } = await sb
-    .from('oficinas')
-    .update({ limite_compra_7d: limite == null ? null : Math.round(limite * 100) / 100 })
-    .eq('id', oficinaId)
-    .select('id')
-    .maybeSingle();
-  if (error || !data) {
-    if (error && error.code !== '42501') console.error('[antifraude] salvar limite', error);
-    return { ok: false, erro: error ? mensagem(error) : 'Seu papel na equipe não deixa mudar esta oficina.' };
+  // pela função do banco: a linha da oficina pela API só aceita a lista do cadastro
+  const { error } = await sb.rpc('equipe_limite_de_compra', { p_oficina: oficinaId, p_limite: limite == null ? null : Math.round(limite * 100) / 100 });
+  if (error) {
+    if (error.code !== '42501') console.error('[antifraude] salvar limite', error);
+    return { ok: false, erro: error.code === '42501' ? 'Seu papel na equipe não deixa mudar o limite desta oficina.' : mensagem(error) };
   }
   return { ok: true };
 }
