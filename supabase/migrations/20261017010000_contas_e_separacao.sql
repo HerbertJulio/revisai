@@ -584,7 +584,8 @@ begin
     raise exception 'Entre na sua conta' using errcode = '28000';
   end if;
   if p_tipo = 'oficina' then
-    v_papel := privado.papel_na_oficina(p_alvo::uuid);
+    -- quem não é da oficina tem papel nulo: o coalesce impede que o "not (nulo)" deixe passar
+    v_papel := coalesce(privado.papel_na_oficina(p_alvo::uuid), '');
     if not (v_papel = 'dono' or (v_papel = 'gerente' and p_papel = 'mecanico')) then
       raise exception 'Só o dono convida' using errcode = '42501';
     end if;
@@ -596,7 +597,7 @@ begin
     values ('oficina', p_alvo::uuid, v_email, p_papel, v_uid)
     returning id into v_id;
   elsif p_tipo = 'fornecedor' then
-    if not (privado.papel_no_fornecedor(p_alvo::bigint) = 'dono' or privado.eh_equipe(array['suporte'])) then
+    if not (coalesce(privado.papel_no_fornecedor(p_alvo::bigint), '') = 'dono' or privado.eh_equipe(array['suporte'])) then
       raise exception 'Só o dono convida' using errcode = '42501';
     end if;
     if (select count(*) from public.convites c where c.fornecedor_id = p_alvo::bigint and c.aceito_em is null and c.expira_em > now()) >= 20 then
@@ -628,8 +629,8 @@ begin
     return false;
   end if;
   if not (
-    (v_c.oficina_id is not null and privado.papel_na_oficina(v_c.oficina_id) in ('dono', 'gerente'))
-    or (v_c.fornecedor_id is not null and privado.papel_no_fornecedor(v_c.fornecedor_id) = 'dono')
+    (v_c.oficina_id is not null and coalesce(privado.papel_na_oficina(v_c.oficina_id), '') in ('dono', 'gerente'))
+    or (v_c.fornecedor_id is not null and coalesce(privado.papel_no_fornecedor(v_c.fornecedor_id), '') = 'dono')
     or privado.eh_equipe(array['suporte'])
   ) then
     raise exception 'Sem permissão' using errcode = '42501';
