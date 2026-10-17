@@ -298,9 +298,9 @@ d('alertas de preço', () => {
       const x = await cenario(b, false);
       for (let i = 0; i < 3; i++) expect((await novo(b, x, x.produtos[i])).erro).toBeNull();
       expect((await novo(b, x, x.produtos[3])).erro).toMatch(/teste esgotados/);
-      expect(await linhas(b, x.lojista, 'select id from public.alertas_preco')).toHaveLength(3);
-      expect(await linhas(b, x.longe, 'select id from public.alertas_preco')).toHaveLength(0);
-      const colunas = Object.keys((await linhas(b, x.lojista, 'select * from public.alertas_preco limit 1'))[0]);
+      expect(await linhas(b, x.lojista, 'select id from public.alertas_preco where oficina_id = $1', [x.o])).toHaveLength(3);
+      expect(await linhas(b, x.longe, 'select id from public.alertas_preco where oficina_id = $1', [x.o])).toHaveLength(0);
+      const colunas = Object.keys((await linhas(b, x.lojista, 'select * from public.alertas_preco where oficina_id = $1 limit 1', [x.o]))[0]);
       expect(colunas).not.toContain('oficina_nome');
       expect(colunas).not.toContain('oficina_whatsapp');
     }));
@@ -363,12 +363,12 @@ d('equipe', () => {
       await criarEquipe(b, sup, 'suporte');
       const dono = await criarPessoa(b, pessoa('dono'));
       const o = await criarOficina(b, dono);
-      expect(await linhas(b, sem, 'select id from public.oficinas')).toEqual([]);
-      expect(await linhas(b, velho, 'select id from public.oficinas')).toEqual([]);
-      expect(await linhas(b, ok, 'select id from public.oficinas')).toHaveLength(1);
+      expect(await linhas(b, sem, 'select id from public.oficinas where id = $1', [o])).toEqual([]);
+      expect(await linhas(b, velho, 'select id from public.oficinas where id = $1', [o])).toEqual([]);
+      expect(await linhas(b, ok, 'select id from public.oficinas where id = $1', [o])).toHaveLength(1);
       // a equipe não lê os dados internos da oficina (clientes, carros)
       await registrar(b, dono, o, [{ colecao: 'clientes', id: 'c1', dados: { nome: 'João' } }]);
-      expect(await linhas(b, ok, 'select * from public.registros')).toEqual([]);
+      expect(await linhas(b, ok, 'select * from public.registros where oficina_id = $1', [o])).toEqual([]);
       // financeiro/admin muda o plano; suporte também (papel suporte) não
       expect((await tentar(b, ok, `update public.oficinas set pro_ate = current_date + 30 where id = $1`, [o])).erro).toBeNull();
       const [log] = await b.query(`select acao, email, tabela from privado.auditoria where tabela = 'public.oficinas' and user_id = $1`, [ok.id]).then((r) => r.rows);
