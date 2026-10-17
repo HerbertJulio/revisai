@@ -3,29 +3,33 @@
 import { Cloud, CloudOff, LoaderCircle, RefreshCw, TriangleAlert } from 'lucide-react';
 import Link from 'next/link';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { saindoDaConta } from '@/components/conta/sair';
 import { useConta } from '@/components/conta/ProvedorConta';
 import { Folha } from '@/components/Folha';
 import { Botao } from '@/components/ui';
 import { formatarDiaHora } from '@/lib/datas';
 import { plural } from '@/lib/formatos';
+import { useHidratado } from '@/lib/ganchos';
 import { resumoLocal, temDadosLocais } from '@/lib/sincronia-dados';
 import { useOficina } from '@/lib/store';
 import { MotorDeSincronia, type EstadoMotor, type InfoMotor } from './motor';
 
 // Liga os dados do aparelho à oficina da conta e mantém os dois iguais. Sem conta, não faz nada
-// (os dados ficam só no aparelho, como antes).
+// (os dados ficam só no aparelho, como antes). Nada acontece antes de ler o que o aparelho já
+// tem guardado: decidir antes disso apagaria os dados de quem usava o app sem conta.
 
 export type EstadoSincronia = EstadoMotor | 'local' | 'outra-aba';
 
 interface ValorSincronia {
   estado: EstadoSincronia;
   pendentes: number;
+  rejeitados: number;
   ultimaEm: string | null;
   erro: string | null;
   sincronizar: () => void;
 }
 
-const Contexto = createContext<ValorSincronia>({ estado: 'local', pendentes: 0, ultimaEm: null, erro: null, sincronizar: () => {} });
+const Contexto = createContext<ValorSincronia>({ estado: 'local', pendentes: 0, rejeitados: 0, ultimaEm: null, erro: null, sincronizar: () => {} });
 
 export function useSincronia(): ValorSincronia {
   return useContext(Contexto);
@@ -35,34 +39,40 @@ type Pergunta = { tipo: 'levar' } | { tipo: 'trocar'; de: string; pendentes: num
 
 export function ProvedorDaSincronia({ children }: { children: ReactNode }) {
   const { oficina, banco } = useConta();
+  const hidratado = useHidratado();
   const contaOficinaId = useOficina((s) => s.contaOficinaId);
   const pendentes = useOficina((s) => Object.keys(s.sinc.pendentes).length);
+  const rejeitados = useOficina((s) => Object.keys(s.sinc.rejeitados ?? {}).length);
   const ultimaEm = useOficina((s) => s.sinc.ultimaEm);
   const [info, setInfo] = useState<InfoMotor>({ estado: 'iniciando', erro: null });
   const [lider, setLider] = useState(true);
   const [pergunta, setPergunta] = useState<Pergunta>(null);
   const motor = useRef<MotorDeSincronia | null>(null);
+  const oficinaId = oficina?.id ?? null;
 
   // de quem são os dados deste aparelho?
   useEffect(() => {
-    if (!oficina) return;
+    if (!hidratado || !oficinaId || saindoDaConta()) return;
     const s = useOficina.getState();
-    if (s.contaOficinaId === oficina.id) return;
+    if (s.contaOficinaId === oficinaId) {
+      setPergunta(null);
+      return;
+    }
     if (s.contaOficinaId === null) {
       if (temDadosLocais(s)) setPergunta({ tipo: 'levar' });
-      else s.vincularConta(oficina.id, false);
+      else s.vincularConta(oficinaId, false);
       return;
     }
     const n = Object.keys(s.sinc.pendentes).length;
     if (!n) {
       s.esquecerConta();
-      useOficina.getState().vincularConta(oficina.id, false);
+      useOficina.getState().vincularConta(oficinaId, false);
     } else setPergunta({ tipo: 'trocar', de: s.contaOficinaId, pendentes: n });
-  }, [oficina, contaOficinaId]);
+  }, [hidratado, oficinaId, contaOficinaId]);
 
   // o motor roda numa aba só (as outras recebem pelo aparelho)
   useEffect(() => {
-    if (!oficina || contaOficinaId !== oficina.id) return;
+    if (!hidratado || !oficinaId || contaOficinaId !== oficinaId) return;
     const sb = banco();
     if (!sb) return;
     let atual: MotorDeSincronia | null = null;
@@ -70,28 +80,33 @@ export function ProvedorDaSincronia({ children }: { children: ReactNode }) {
     let cancelado = false;
     const ligar = () => {
       setLider(true);
-      atual = new MotorDeSincronia(sb, oficina.id, setInfo);
+      atual = new MotorDeSincronia(sb, oficinaId, setInfo);
       motor.current = atual;
       atual.iniciar();
     };
     const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
     if (locks?.request) {
       setLider(false);
-      void locks.request(`revisai-sincronia-${oficina.id}`, () =>
-        new Promise<void>((resolve) => {
-          if (cancelado) return resolve();
-          ligar();
-          soltar = resolve;
-        })
-      );
+      void locks
+        .request(`revisai-sincronia-${oficinaId}`, () =>
+          new Promise<void>((resolve) => {
+            if (cancelado) return resolve();
+            ligar();
+            soltar = resolve;
+          })
+        )
+        .catch(() => {
+          // sem o cadeado (navegador antigo, modo restrito), esta aba sincroniza sozinha
+          if (!cancelado) ligar();
+        });
     } else ligar();
     return () => {
       cancelado = true;
       atual?.parar();
       soltar?.();
-      motor.current = null;
+      if (motor.current === atual) motor.current = null;
     };
-  }, [oficina, contaOficinaId, banco]);
+  }, [hidratado, oficinaId, contaOficinaId, banco]);
 
   // oficina recém-criada: depois da primeira busca, se o banco não tinha o cadastro, o aparelho
   // começa com o da conta (e ele sobe como config)
@@ -105,10 +120,10 @@ export function ProvedorDaSincronia({ children }: { children: ReactNode }) {
   const sincronizar = useCallback(() => motor.current?.agendar(0), []);
 
   const valor = useMemo<ValorSincronia>(() => {
-    if (!oficina) return { estado: 'local', pendentes: 0, ultimaEm: null, erro: null, sincronizar };
-    if (!lider) return { estado: 'outra-aba', pendentes, ultimaEm, erro: null, sincronizar };
-    return { estado: info.estado, pendentes, ultimaEm, erro: info.erro, sincronizar };
-  }, [oficina, lider, info, pendentes, ultimaEm, sincronizar]);
+    if (!oficina) return { estado: 'local', pendentes: 0, rejeitados: 0, ultimaEm: null, erro: null, sincronizar };
+    if (!lider) return { estado: 'outra-aba', pendentes, rejeitados, ultimaEm, erro: null, sincronizar };
+    return { estado: info.estado, pendentes, rejeitados, ultimaEm, erro: info.erro, sincronizar };
+  }, [oficina, lider, info, pendentes, rejeitados, ultimaEm, sincronizar]);
 
   return (
     <Contexto.Provider value={valor}>
@@ -137,12 +152,13 @@ function PerguntaDosDados({ pergunta, oficina, oficinaId, aoTerminar }: { pergun
         aberta
         aoFechar={() => {}}
         titulo={`Levar os dados deste aparelho para ${oficina}?`}
-        descricao={partes.length ? `Este aparelho tem ${partes.join(', ')} guardados de antes da conta.` : 'Este aparelho tem dados de antes da conta.'}
+        descricao={partes.length ? `Este aparelho tem ${partes.join(', ')} de antes da conta.` : 'Este aparelho tem dados de antes da conta.'}
         rodape={
           <div className="flex flex-wrap justify-end gap-2">
             <Botao
               variante="fantasma"
               onClick={() => {
+                if (!window.confirm('O que está neste aparelho sai daqui e fica só o que já está na conta. Continuar?')) return;
                 useOficina.getState().vincularConta(oficinaId, false);
                 aoTerminar();
               }}
@@ -162,7 +178,7 @@ function PerguntaDosDados({ pergunta, oficina, oficinaId, aoTerminar }: { pergun
         }
       >
         <p className="text-[15px] text-tinta-2">
-          Levando, tudo sobe para a nuvem e aparece nos outros aparelhos da oficina. Se a oficina já tinha clientes na conta, os dois juntam (pode ficar algum cliente repetido para apagar depois). Sem levar, o que está neste aparelho sai daqui.
+          Levando, tudo sobe para a nuvem e aparece nos outros aparelhos da oficina. Se a oficina já tinha clientes na conta, os dois se juntam (pode ficar algum cliente repetido para apagar depois). Os clientes de exemplo ficam só neste aparelho.
         </p>
       </Folha>
     );
@@ -172,7 +188,7 @@ function PerguntaDosDados({ pergunta, oficina, oficinaId, aoTerminar }: { pergun
     <Folha
       aberta
       aoFechar={() => {}}
-      titulo="Este aparelho tinha dados de outra oficina"
+      titulo="Este aparelho tem dados de outra oficina"
       descricao={`São ${plural(pergunta.pendentes, 'mudança', 'mudanças')} que ainda não subiram para a outra oficina.`}
       rodape={
         <div className="flex flex-wrap justify-end gap-2">
@@ -180,6 +196,7 @@ function PerguntaDosDados({ pergunta, oficina, oficinaId, aoTerminar }: { pergun
             variante="perigo"
             disabled={ocupado}
             onClick={() => {
+              if (!window.confirm('As mudanças que não subiram se perdem. Continuar?')) return;
               useOficina.getState().esquecerConta();
               useOficina.getState().vincularConta(oficinaId, false);
               aoTerminar();
@@ -223,40 +240,47 @@ function PerguntaDosDados({ pergunta, oficina, oficinaId, aoTerminar }: { pergun
 
 /** O estado da nuvem no canto do app: em dia, sincronizando, sem internet, guardado só aqui. */
 export function IndicadorDaSincronia({ compacto = false }: { compacto?: boolean }) {
-  const { estado, pendentes, ultimaEm, erro, sincronizar } = useSincronia();
+  const { estado, pendentes, rejeitados, ultimaEm, erro, sincronizar } = useSincronia();
+  const titulo = ultimaEm ? `Última vez em dia: ${formatarDiaHora(ultimaEm)}` : undefined;
+  const classe = 'flex items-center gap-2 text-[13px] font-semibold';
   if (estado === 'local')
     return (
-      <Link href="/entrar?para=/oficina" className="flex items-center gap-2 text-[13px] font-semibold text-oleo-tinta hover:underline">
+      <Link href="/entrar?para=/oficina" className={`${classe} text-oleo-tinta hover:underline`}>
         <CloudOff size={15} aria-hidden="true" /> {compacto ? 'Só neste aparelho' : 'Só neste aparelho · Entrar'}
       </Link>
     );
-  const titulo = ultimaEm ? `Última vez em dia: ${formatarDiaHora(ultimaEm)}` : undefined;
   if (estado === 'sem-sessao')
     return (
-      <Link href="/entrar?para=/oficina" className="flex items-center gap-2 text-[13px] font-semibold text-atraso hover:underline">
-        <TriangleAlert size={15} aria-hidden="true" /> Entre de novo
+      <Link href="/entrar?para=/oficina" className={`${classe} text-atraso hover:underline`} role="status">
+        <TriangleAlert size={15} aria-hidden="true" /> Entre de novo para salvar
       </Link>
     );
   if (estado === 'sem-internet')
     return (
-      <span className="flex items-center gap-2 text-[13px] font-semibold text-oleo-tinta" title={titulo}>
+      <span className={`${classe} text-oleo-tinta`} title={titulo} role="status">
         <CloudOff size={15} aria-hidden="true" /> Sem internet{pendentes ? ` · ${pendentes} para subir` : ''}
       </span>
     );
-  if (estado === 'erro' || estado === 'sem-permissao')
+  if (estado === 'limite' || estado === 'sem-permissao' || estado === 'erro')
     return (
-      <button type="button" onClick={sincronizar} className="flex items-center gap-2 text-[13px] font-semibold text-atraso" title={erro ?? titulo}>
-        <TriangleAlert size={15} aria-hidden="true" /> Não sincronizou · tentar
+      <button type="button" onClick={sincronizar} className={`${classe} text-atraso`} title={erro ?? titulo} role="status">
+        <TriangleAlert size={15} aria-hidden="true" /> {estado === 'limite' ? 'Limite de dados da oficina' : estado === 'sem-permissao' ? 'Sem acesso a esta oficina' : 'Não sincronizou · tentar'}
+      </button>
+    );
+  if (rejeitados > 0 && pendentes === 0)
+    return (
+      <button type="button" onClick={sincronizar} className={`${classe} text-oleo-tinta`} title="Alguns itens não subiram (grandes demais ou fora do formato). Edite o item para tentar de novo." role="status">
+        <TriangleAlert size={15} aria-hidden="true" /> {plural(rejeitados, 'item não subiu', 'itens não subiram')}
       </button>
     );
   if (estado === 'sincronizando' || estado === 'iniciando' || pendentes > 0)
     return (
-      <span className="flex items-center gap-2 text-[13px] font-semibold text-tinta-2" title={titulo}>
-        <LoaderCircle size={15} className="animate-spin" aria-hidden="true" /> Sincronizando{pendentes ? ` · ${pendentes}` : ''}
+      <span className={`${classe} text-tinta-2`} title={titulo} role="status">
+        <LoaderCircle size={15} className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> Salvando{pendentes ? ` · ${pendentes}` : ''}
       </span>
     );
   return (
-    <button type="button" onClick={sincronizar} className="flex items-center gap-2 text-[13px] font-semibold text-ok" title={titulo}>
+    <button type="button" onClick={sincronizar} className={`${classe} text-ok`} title={titulo} aria-label="Salvo na nuvem. Tocar para conferir agora">
       <Cloud size={15} aria-hidden="true" /> Salvo na nuvem
       {compacto ? null : <RefreshCw size={12} className="opacity-60" aria-hidden="true" />}
     </button>
