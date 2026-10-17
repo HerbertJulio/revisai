@@ -26,6 +26,7 @@ import { useCartaoDoCarro, useContatar } from './acoes';
 import { useCatalogo } from './catalogo';
 import { AvisoDeLimite, RetornoDosAvisos, useOfertaDoPro, usePlano } from './plano';
 import { PaineisDoInicio } from './extensoes';
+import { GrupoDeLembretes } from './servico/Lembretes';
 
 type Aba = 'avisar' | 'aguardando' | 'agendado' | 'proximos';
 
@@ -88,6 +89,8 @@ export function PainelAvisos() {
           </Botao>
         </div>
       ) : null}
+
+      <GrupoDeLembretes />
 
       {totalCarros === 0 ? (
         <Vazio

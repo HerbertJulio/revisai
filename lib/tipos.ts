@@ -158,6 +158,8 @@ export interface Veiculo {
   /** Valor da tabela FIPE na última consulta. */
   fipe?: { codigo: string; valor: number | null; referencia: string; consultadoEm: string } | null;
   observacao?: string;
+  /** O link do histórico verificado do carro (o token só existe na criação: guarda o endereço). */
+  links?: { historico?: { codigo: string; url?: string | null; publicadoEm?: string | null } } | null;
   criadoEm: string;
 }
 
@@ -356,6 +358,10 @@ export interface AprovacaoDocumento {
   /** Resumo (hash) do que foi aprovado, para provar que o orçamento não mudou depois. */
   versao: string;
   copiaEnviadaPara?: string | null;
+  /** Pelo WhatsApp: o que o cliente respondeu ou o que a oficina anotou. */
+  observacao?: string;
+  /** Na oficina: a assinatura feita no aparelho (PNG pequeno em data URL). */
+  assinatura?: string | null;
 }
 
 export interface Documento {
@@ -404,7 +410,7 @@ export interface Documento {
   profissionalId?: Id | null;
   aprovacao?: AprovacaoDocumento | null;
   /** Links públicos deste documento: o código curto para mostrar (o token só existe na criação). */
-  links?: Partial<Record<'orcamento' | 'andamento' | 'garantia' | 'checklist', { codigo: string; url?: string | null }>>;
+  links?: Partial<Record<'orcamento' | 'andamento' | 'garantia' | 'checklist', { codigo: string; url?: string | null; publicadoEm?: string | null }>>;
   /** Nota fiscal de serviço desta ordem. */
   nota?: { situacao: 'processando' | 'autorizada' | 'erro' | 'cancelada'; numero?: string | null; url?: string | null; chave?: string | null; mensagem?: string | null } | null;
   criadoEm: string;
