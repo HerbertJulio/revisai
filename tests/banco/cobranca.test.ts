@@ -170,6 +170,22 @@ d('cobrança pelo servidor', () => {
       expect((await tentar(b, null, `select public.cobranca_nota('teste', 'txid_s2', 'x', null, null, 'esquisita')`, [], sistema)).codigo).toBe('22023');
     }));
 
+  it('depois do pagamento, o dono vê o código do Pro; o mecânico não', () =>
+    emTransacao(async (b) => {
+      const dono = await criarPessoa(b, pessoa('dono'));
+      const mec = await criarPessoa(b, pessoa('mec'));
+      const o = await criarOficina(b, dono);
+      await b.query(`insert into public.oficina_membros (oficina_id, user_id, papel) values ($1, $2, 'mecanico')`, [o, mec.id]);
+      expect((await linhas(b, dono, `select public.cobranca_codigo_do_pro($1) as c`, [o]))[0].c).toBeNull();
+      const a = await assinatura(b, o);
+      await cobranca(b, o, a.id, 'pay_c1');
+      await linhas(b, null, `select public.cobranca_pagamento_confirmado('teste', 'pay_c1', now())`, [], sistema);
+      const [r] = await linhas(b, dono, `select public.cobranca_codigo_do_pro($1) as c`, [o]);
+      expect((r.c as { codigo: string }).codigo).toMatch(/^[0-9A-Z]{16}$/);
+      expect((await tentar(b, mec, `select public.cobranca_codigo_do_pro($1)`, [o])).codigo).toBe('42501');
+      expect((await tentar(b, null, `select public.cobranca_codigo_do_pro($1)`, [o])).erro).toBeTruthy();
+    }));
+
   it('a autorização aprovada no banco ativa a assinatura e tira o código da tela', () =>
     emTransacao(async (b) => {
       const dono = await criarPessoa(b, pessoa('dono'));
