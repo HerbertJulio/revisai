@@ -34,7 +34,13 @@ export default async function PaginaIntegracao() {
       descricao="O sistema da loja manda preço e estoque para o Revisaí sozinho, pela API. Sem sistema, a planilha em Produtos faz o mesmo."
     >
       <Quadro titulo="Tokens da API" descricao="Cada sistema usa um token para mexer nos produtos da loja.">
-        {tokens ? <TokensDaApi tokens={tokens} chamadas={chamadas} dono={dono} /> : <AvisoErro>Não deu para carregar os tokens agora. Atualize a página em instantes.</AvisoErro>}
+        {!dono ? (
+          <p className="text-[14.5px] text-tinta-2">Só o dono da loja vê, cria e revoga os tokens: com eles, um sistema muda preços e estoque. Peça a ele, se precisar ligar um sistema.</p>
+        ) : tokens ? (
+          <TokensDaApi tokens={tokens} chamadas={chamadas} dono={dono} />
+        ) : (
+          <AvisoErro>Não deu para carregar os tokens agora. Atualize a página em instantes.</AvisoErro>
+        )}
       </Quadro>
       <DocumentacaoDaApi origem={origem} />
     </MolduraFornecedor>
