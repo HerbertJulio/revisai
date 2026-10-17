@@ -19,6 +19,8 @@ import { calcularDemanda } from '@/lib/recomendacao';
 import { useOficina } from '@/lib/store';
 import type { Categoria, Id, ItemEstoque, PedidoEnviado, UnidadeEstoque } from '@/lib/tipos';
 import { useCatalogo } from './catalogo';
+import { EntradaPelaNota } from './estoque/EntradaPelaNota';
+import { LeitorDeCodigo } from './estoque/LeitorDeCodigo';
 import { FotoProduto } from './FotoProduto';
 import { nomeComMarca } from './loja/comum';
 
@@ -38,7 +40,7 @@ export function Estoque() {
   const itens = useMemo(() => Object.values(estoque).sort((a, b) => a.categoria.localeCompare(b.categoria) || a.nome.localeCompare(b.nome, 'pt-BR')), [estoque]);
   const categorias = useMemo(() => [...new Set(itens.map((i) => i.categoria))], [itens]);
   const t = busca.trim().toLowerCase();
-  const visiveis = itens.filter((i) => (!categoria || i.categoria === categoria) && (!t || `${i.marca ?? ''} ${i.nome} ${i.codigo ?? ''}`.toLowerCase().includes(t)));
+  const visiveis = itens.filter((i) => (!categoria || i.categoria === categoria) && (!t || `${i.marca ?? ''} ${i.nome} ${i.codigo ?? ''} ${i.ean ?? ''} ${i.codigoFornecedor ?? ''}`.toLowerCase().includes(t)));
   const aReceber = pedidos.filter((p) => !p.recebidoEm).slice(0, 5);
   const valorEmEstoque = itens.reduce((s, i) => s + (i.custo ?? 0) * i.quantidade, 0);
 
@@ -51,9 +53,13 @@ export function Estoque() {
             {itens.length ? `${itens.length} ${itens.length === 1 ? 'produto' : 'produtos'}, uns ${formatarMoeda(valorEmEstoque)} em mercadoria. ` : ''}O que sai nas ordens de serviço é descontado sozinho.
           </p>
         </div>
-        <Botao variante="primario" onClick={() => setNovo(true)}>
-          <PackagePlus size={18} aria-hidden="true" /> Adicionar produto
-        </Botao>
+        <div className="flex flex-wrap gap-2">
+          <LeitorDeCodigo />
+          <EntradaPelaNota />
+          <Botao variante="primario" onClick={() => setNovo(true)}>
+            <PackagePlus size={18} aria-hidden="true" /> Adicionar produto
+          </Botao>
+        </div>
       </header>
 
       {aReceber.length ? (
@@ -392,6 +398,11 @@ function DetalheItem({ item, aoFechar }: { item: ItemEstoque; aoFechar: () => vo
         <div>
           <p className="largo num text-[32px] leading-none font-extrabold">{textoQuantidade(item.quantidade, item.unidade)}</p>
           <p className="mt-1 text-[14px] text-tinta-2">{item.custo != null ? `Pagou ${formatarMoeda(item.custo)} por ${unidade} na última compra.` : 'Sem o preço de compra ainda.'}</p>
+          {item.ean || item.ncm || item.codigoFornecedor ? (
+            <p className="num mt-0.5 text-[12.5px] text-tinta-3">
+              {[item.ean ? `Código de barras ${item.ean}` : '', item.codigoFornecedor ? `código do fornecedor ${item.codigoFornecedor}` : '', item.ncm ? `NCM ${item.ncm}` : ''].filter(Boolean).join(' · ')}
+            </p>
+          ) : null}
         </div>
       </div>
 
