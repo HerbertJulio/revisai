@@ -482,7 +482,7 @@ set search_path = ''
 as $$
 declare
   l public.links_publicos%rowtype;
-  v_acao text := p_resposta ->> 'acao';
+  v_acao text := coalesce(p_resposta ->> 'acao', '');
 begin
   if p_token !~ '^[A-Za-z0-9_-]{43}$' or jsonb_typeof(p_resposta) is distinct from 'object' or pg_column_size(p_resposta) > 120000 then
     raise exception 'Resposta inválida' using errcode = '22023';

@@ -17,8 +17,12 @@ import { formatarKm, formatarMoeda, formatarNumero, SEM_NOME } from '@/lib/forma
 import { useHoje } from '@/lib/ganchos';
 import { useOficina } from '@/lib/store';
 import type { Documento, Id } from '@/lib/tipos';
-import { useConcluirOrdem, useLinkDoOrcamento } from './documentos';
+import { useConcluirOrdem, useMandarOrcamento } from './documentos';
 import { aoAprovarOrcamento, aoRecusarOrcamento, PaineisDaOrdem } from './extensoes';
+import { EscolhaDaAprovacao, formaInicial, provaDaAprovacao, type FormaDaAprovacao } from './servico/Aprovar';
+import { janelaParaDepois } from './servico/comum';
+import { mandarCopiaDaAprovacao } from './servico/copia';
+import { EscutaDasRespostas } from './servico/Escuta';
 
 type Aba = 'orcamentos' | 'ordens';
 
@@ -56,6 +60,7 @@ export function Ordens() {
 
   return (
     <div className="flex flex-col gap-6">
+      <EscutaDasRespostas />
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="largo text-[30px] sm:text-[34px]">Ordens e orçamentos</h1>
@@ -187,27 +192,57 @@ function Detalhe({ doc, hoje, aoFechar, aoAbrir }: { doc: Documento; hoje: strin
   const remover = useOficina((s) => s.removerDocumento);
   const marcarEnviado = useOficina((s) => s.marcarEnviado);
   const concluir = useConcluirOrdem();
-  const montarLink = useLinkDoOrcamento();
+  const mandarOrcamento = useMandarOrcamento();
   const [aprovando, setAprovando] = useState(false);
   const [recusadas, setRecusadas] = useState<Set<Id>>(new Set());
+  const [forma, setForma] = useState<FormaDaAprovacao>(formaInicial);
+  const [ocupado, setOcupado] = useState(false);
   const situacao = situacaoVisivel(doc, hoje);
   const t = totais(doc);
   const ehOrcamento = doc.tipo === 'orcamento';
 
-  function mandar() {
+  async function mandar() {
+    if (!cliente?.telefone) {
+      toast({ texto: 'O cliente não tem WhatsApp cadastrado. Edite o orçamento e escreva o número.', tom: 'erro' });
+      return;
+    }
     if (doc.situacao === 'rascunho' || situacao === 'vencido') marcarEnviado(doc.id);
-    const l = montarLink(doc.id);
-    if (l?.whatsapp) window.open(l.whatsapp, '_blank', 'noopener,noreferrer');
-    else toast({ texto: 'O cliente não tem WhatsApp cadastrado. Edite o orçamento e escreva o número.', tom: 'erro' });
+    // a janela abre já no toque; o link do servidor fica pronto em seguida
+    const janela = janelaParaDepois();
+    setOcupado(true);
+    const l = await mandarOrcamento(doc.id);
+    setOcupado(false);
+    if (!l.ok || !l.whatsapp) {
+      janela.fechar();
+      toast({ texto: l.ok ? 'O WhatsApp do cliente não parece certo. Edite o cadastro.' : l.erro, tom: 'erro' });
+      return;
+    }
+    janela.ir(l.whatsapp);
+    if (l.servidor) toast({ texto: 'Link mandado. Quando o cliente responder, a aprovação aparece aqui sozinha.' });
   }
 
-  function confirmarAprovacao() {
-    const ordemId = aprovar(doc.id, [...recusadas]);
+  async function confirmarAprovacao() {
+    const fora = [...recusadas];
+    if (fora.length >= doc.linhas.length) {
+      toast({ texto: 'Deixe pelo menos um item aprovado.', tom: 'erro' });
+      return;
+    }
+    setOcupado(true);
+    const prova = await provaDaAprovacao(doc, fora, forma);
+    setOcupado(false);
+    if (!prova.ok) {
+      toast({ texto: prova.erro, tom: 'erro' });
+      return;
+    }
+    const ordemId = aprovar(doc.id, fora);
     if (!ordemId) {
       toast({ texto: 'Deixe pelo menos um item aprovado.', tom: 'erro' });
       return;
     }
-    aoAprovarOrcamento(doc.id, ordemId, [...recusadas]);
+    const aprovado = useOficina.getState().documentos[doc.id];
+    if (aprovado) useOficina.getState().salvarDocumento({ ...aprovado, aprovacao: prova.aprovacao });
+    aoAprovarOrcamento(doc.id, ordemId, fora);
+    void mandarCopiaDaAprovacao(doc.id);
     toast({ texto: 'Aprovado. A ordem de serviço já está pronta para começar.' });
     setAprovando(false);
     router.replace('/oficina/ordens?aba=ordens');
@@ -291,12 +326,12 @@ function Detalhe({ doc, hoje, aoFechar, aoAbrir }: { doc: Documento; hoje: strin
         </button>
       ) : null}
 
-      <PaineisDaOrdem doc={doc} />
+      {ehOrcamento && aprovando ? <EscolhaDaAprovacao forma={forma} aoMudar={setForma} nomeDoCliente={cliente?.nome && cliente.nome !== SEM_NOME ? cliente.nome : ''} /> : <PaineisDaOrdem doc={doc} />}
 
       <div className="flex flex-wrap gap-2 border-t border-linha pt-4">
         {ehOrcamento && aprovando ? (
           <>
-            <Botao variante="primario" onClick={confirmarAprovacao}>
+            <Botao variante="primario" disabled={ocupado} onClick={() => void confirmarAprovacao()}>
               <Check size={17} aria-hidden="true" /> Confirmar aprovação
             </Botao>
             <Botao variante="fantasma" onClick={() => setAprovando(false)}>
@@ -311,12 +346,18 @@ function Detalhe({ doc, hoje, aoFechar, aoAbrir }: { doc: Documento; hoje: strin
               </Botao>
             ) : situacao !== 'recusado' ? (
               <>
-                <Botao variante="primario" onClick={() => setAprovando(true)}>
+                <Botao
+                  variante="primario"
+                  onClick={() => {
+                    setForma(formaInicial());
+                    setAprovando(true);
+                  }}
+                >
                   <Check size={17} aria-hidden="true" /> Aprovado
                 </Botao>
                 {cliente?.telefone ? (
-                  <Botao variante="whatsapp" onClick={mandar}>
-                    <MessageCircle size={17} aria-hidden="true" /> {doc.situacao === 'rascunho' ? 'Mandar' : 'Mandar de novo'}
+                  <Botao variante="whatsapp" disabled={ocupado} onClick={() => void mandar()}>
+                    <MessageCircle size={17} aria-hidden="true" /> {ocupado ? 'Preparando…' : doc.situacao === 'rascunho' ? 'Mandar' : 'Mandar de novo'}
                   </Botao>
                 ) : null}
                 <Botao

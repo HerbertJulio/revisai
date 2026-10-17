@@ -85,7 +85,7 @@ declare
   v_mudados integer := 0;
   v_id bigint;
 begin
-  if p_fornecedor not in (select privado.meus_fornecedores()) then
+  if p_fornecedor is null or p_fornecedor not in (select privado.meus_fornecedores()) then
     raise exception 'Sem permissão' using errcode = '42501';
   end if;
   if jsonb_typeof(p_produtos) <> 'array' or jsonb_array_length(p_produtos) > 1000 then
