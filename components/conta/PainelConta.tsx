@@ -1,16 +1,19 @@
 'use client';
 
-import { Building2, Check, ChevronRight, LogOut, Store, Wrench, X } from 'lucide-react';
+import { Building2, Check, ChevronRight, Store, Wrench, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useTransition, type FormEvent } from 'react';
-import { abrirLoja, abrirOficina, aceitarTermos, apagarMinhaConta, criarLoja, criarOficina, responderConvite, sair, sairDeTodos } from '@/app/conta/acoes';
+import { abrirLoja, abrirOficina, aceitarTermos, apagarMinhaConta, criarLoja, criarOficina, responderConvite } from '@/app/conta/acoes';
 import { Botao, Campo, Chip, classeEntrada } from '@/components/ui';
 import { formatarCnpj } from '@/lib/cnpj';
 import { nomeDoPapel, type Conta } from '@/lib/conta-dados';
 import { formatarData } from '@/lib/datas';
 import { UFS } from '@/lib/padroes';
-import { useOficina } from '@/lib/store';
+import { gravarAgora, useOficina } from '@/lib/store';
+import type { ConfigPublica } from '@/lib/supabase-navegador';
+import { BotoesDeSair } from './BotoesDeSair';
+import { subirAntesDeSair } from './sair';
 
 const DOCUMENTOS: Record<string, { nome: string; href: string }> = {
   termos: { nome: 'Termos de uso', href: '/termos' },
@@ -21,7 +24,7 @@ const DOCUMENTOS: Record<string, { nome: string; href: string }> = {
 
 const NOME_PLANO: Record<string, string> = { pro: 'Pro', teste: 'Teste do Pro', gratis: 'Grátis' };
 
-export function PainelConta({ conta, termosPendentes, para }: { conta: Conta; termosPendentes: string[]; para: string }) {
+export function PainelConta({ conta, termosPendentes, para, config }: { conta: Conta; termosPendentes: string[]; para: string; config: ConfigPublica | null }) {
   const router = useRouter();
   const [ocupado, iniciar] = useTransition();
   const [erro, setErro] = useState<string | null>(null);
@@ -143,19 +146,8 @@ export function PainelConta({ conta, termosPendentes, para }: { conta: Conta; te
       </section>
 
       <section className="flex flex-col gap-3 border-t border-linha pt-5">
-        <div className="flex flex-wrap gap-2">
-          <form action={sair}>
-            <Botao type="submit" variante="secundario" tamanho="pequeno">
-              <LogOut size={15} aria-hidden="true" /> Sair
-            </Botao>
-          </form>
-          <form action={sairDeTodos}>
-            <Botao type="submit" variante="fantasma" tamanho="pequeno">
-              Sair de todos os aparelhos
-            </Botao>
-          </form>
-        </div>
-        <ApagarConta />
+        <BotoesDeSair config={config} />
+        <ApagarConta config={config} />
       </section>
     </div>
   );
@@ -322,7 +314,7 @@ function FormLoja() {
   );
 }
 
-function ApagarConta() {
+function ApagarConta({ config }: { config: ConfigPublica | null }) {
   const router = useRouter();
   const [texto, setTexto] = useState('');
   const [erro, setErro] = useState<string | null>(null);
@@ -343,9 +335,15 @@ function ApagarConta() {
           disabled={ocupado}
           onClick={() =>
             iniciar(async () => {
+              if (texto.trim().toUpperCase() !== 'APAGAR') return setErro('Escreva APAGAR para confirmar.');
+              // o que este aparelho mudou sobe antes (a oficina continua para os outros)
+              if (!(await subirAntesDeSair(config))) return;
               const r = await apagarMinhaConta(texto);
-              if (!r.ok) setErro(r.erro);
-              else router.replace('/');
+              if (!r.ok) return setErro(r.erro);
+              useOficina.getState().esquecerConta();
+              await gravarAgora().catch(() => {});
+              router.replace('/');
+              router.refresh();
             })
           }
         >

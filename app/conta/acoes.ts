@@ -108,6 +108,9 @@ export async function sair(): Promise<void> {
 export async function sairDeTodos(): Promise<void> {
   const sb = await clienteDoUsuario();
   await sb?.auth.signOut({ scope: 'global' });
+  const jar = await cookies();
+  jar.delete(COOKIE_OFICINA);
+  jar.delete(COOKIE_LOJA);
   redirect('/');
 }
 

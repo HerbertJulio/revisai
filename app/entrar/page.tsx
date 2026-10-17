@@ -15,10 +15,17 @@ export default async function PaginaEntrar({ searchParams }: { searchParams: Pro
   const config = configSupabase();
   const provedores = await provedoresDeEntrada();
   const loja = para.startsWith('/fornecedor');
+  const sessaoTerminou = q.motivo === 'sessao';
   return (
     <TelaDeConta
-      titulo={loja ? 'Entrar na sua loja' : 'Entrar no Revisaí'}
-      subtitulo={loja ? 'Produtos, pedidos e alertas da sua loja.' : 'Seus clientes, carros e ordens guardados na nuvem, em qualquer aparelho.'}
+      titulo={sessaoTerminou ? 'Entre de novo' : loja ? 'Entrar na sua loja' : 'Entrar no Revisaí'}
+      subtitulo={
+        sessaoTerminou
+          ? 'Sua sessão terminou. Entre com a mesma conta: o que ficou guardado neste aparelho sobe para a nuvem.'
+          : loja
+            ? 'Produtos, pedidos e alertas da sua loja.'
+            : 'Seus clientes, carros e ordens guardados na nuvem, em qualquer aparelho.'
+      }
     >
       {config ? (
         <FormEntrar config={config} para={para} google={provedores.google} erro={typeof q.erro === 'string' ? q.erro : null} />

@@ -16,7 +16,7 @@ import { normalizarPlaca } from './formatos';
 import { OFICINA_VAZIA, PREFERENCIAS_PADRAO } from './padroes';
 import type { OrdemServico } from './agente/ordem';
 import { contarMontagem, juntarPlanos, PLANO_INICIAL, type EstadoPlano } from './plano';
-import { mudancas, todasAsChaves, valorAtual, type Chave } from './sincronia-dados';
+import { ATE_TUDO, baseDoItem, iguais, mudancas, recalcularItem, todasAsChaves, valorAtual, type Chave, type ItemComBase } from './sincronia-dados';
 import type { ProdutoProprio } from './referencias';
 import { EXTRAS_VAZIOS, extrasDe, itemGravado, type ColecaoExtra, type DadosExtras, type NovoItemExtra } from './registros-oficina';
 import type {
@@ -87,9 +87,11 @@ export interface EstadoSincronia {
   marca: number | null;
   pendentes: Record<Chave, true>;
   ultimaEm: string | null;
+  /** Itens que o banco recusou (grandes demais, por exemplo): não ficam travando o resto. */
+  rejeitados: Record<Chave, string>;
 }
 
-export const SINC_INICIAL: EstadoSincronia = { marca: null, pendentes: {}, ultimaEm: null };
+export const SINC_INICIAL: EstadoSincronia = { marca: null, pendentes: {}, ultimaEm: null, rejeitados: {} };
 
 export interface AlvoContato {
   veiculoId: Id;
@@ -158,6 +160,8 @@ interface Acoes {
   /** Grava um item dos cadastros novos (financeiro, agenda, checklist...). Devolve o id. */
   salvarRegistro<C extends ColecaoExtra>(colecao: C, item: NovoItemExtra<C>): Id;
   apagarRegistro(colecao: ColecaoExtra, id: Id): void;
+  /** O banco recusou estes itens: saem dos pendentes e ficam anotados com o motivo. */
+  rejeitarItens(itens: { chave: Chave; motivo: string }[]): void;
 }
 
 export type EstadoOficina = DadosGuardados & Acoes;
@@ -212,6 +216,18 @@ function novoUuid(): string {
   b[8] = (b[8] & 0x3f) | 0x80;
   const h = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
+let ultimoInstante = 0;
+
+/**
+ * O instante de agora, sempre depois do anterior neste aparelho. Os movimentos do estoque são
+ * somados em ordem de tempo (com o piso no zero): dois no mesmo milissegundo ficariam na ordem
+ * do id (sorteado), e uma saída grande podia ser contada antes da entrada feita logo antes dela.
+ */
+function instante(): string {
+  ultimoInstante = Math.max(Date.now(), ultimoInstante + 1);
+  return new Date(ultimoInstante).toISOString();
 }
 
 function semChaves<T>(registro: Record<Id, T>, remover: (item: T, id: Id) => boolean): Record<Id, T> {
@@ -478,14 +494,27 @@ export const useOficina = create<EstadoOficina>()(
 
       salvarItemEstoque(i) {
         const id = i.id ?? novoId();
-        const anterior = get().estoque[id];
-        const agora = new Date().toISOString();
-        set({
-          estoque: {
-            ...get().estoque,
-            [id]: { ...anterior, ...i, id, nome: i.nome.trim(), marca: i.marca?.trim() || undefined, quantidade: Math.max(0, i.quantidade), minimo: Math.max(0, i.minimo), criadoEm: anterior?.criadoEm ?? agora, atualizadoEm: agora }
-          }
-        });
+        const anterior = get().estoque[id] as ItemComBase | undefined;
+        const agora = instante();
+        // a quantidade e o custo de um item que já existe só mudam por movimento (entrada, saída,
+        // contagem): assim a soma dos aparelhos fecha e uma tela antiga não apaga o que chegou
+        const quantidade = anterior ? anterior.quantidade : Math.max(0, i.quantidade);
+        const custo = anterior ? anterior.custo : i.custo;
+        const base = anterior ? anterior.base : { quantidade, custo, em: agora, ate: '' };
+        const item: ItemComBase = {
+          ...anterior,
+          ...i,
+          id,
+          nome: i.nome.trim(),
+          marca: i.marca?.trim() || undefined,
+          quantidade,
+          custo,
+          minimo: Math.max(0, i.minimo),
+          criadoEm: anterior?.criadoEm ?? agora,
+          atualizadoEm: agora,
+          ...(base ? { base } : {})
+        };
+        set({ estoque: { ...get().estoque, [id]: item } });
         return id;
       },
 
@@ -497,31 +526,32 @@ export const useOficina = create<EstadoOficina>()(
         const item = get().estoque[m.itemId];
         if (!item || !Number.isFinite(m.quantidade)) return null;
         const id = novoId();
-        const mov: MovimentoEstoque = { ...m, id, quando: m.quando ?? new Date().toISOString() };
-        set({ estoque: { ...get().estoque, [item.id]: aplicarMovimento(item, mov) }, movimentos: { ...get().movimentos, [id]: mov } });
+        const mov: MovimentoEstoque = { ...m, id, quando: m.quando ?? instante() };
+        const movimentos = { ...get().movimentos, [id]: mov };
+        set({ estoque: { ...get().estoque, [item.id]: comMovimento(item, mov, movimentos) }, movimentos });
         return id;
       },
 
       receberPedido(codigo, entradas) {
-        const quando = new Date().toISOString();
+        const quando = instante();
         const estoque = { ...get().estoque };
         const movimentos = { ...get().movimentos };
-        for (const e of entradas) {
+        for (const [i, e] of entradas.entries()) {
           const item = estoque[e.itemId];
           if (!item || !(e.quantidade > 0)) continue;
           const id = novoId();
           const mov: MovimentoEstoque = {
             id,
             itemId: item.id,
-            quando,
+            quando: i === 0 ? quando : instante(),
             tipo: 'entrada',
             quantidade: e.quantidade,
             custoUnitario: e.custoUnitario,
             fornecedor: e.fornecedor,
             origem: { tipo: 'pedido', id: codigo, rotulo: `Pedido ${codigo}` }
           };
-          estoque[item.id] = aplicarMovimento(item, mov);
           movimentos[id] = mov;
+          estoque[item.id] = comMovimento(item, mov, movimentos);
         }
         set({ estoque, movimentos, pedidos: get().pedidos.map((p) => (p.codigo === codigo ? { ...p, recebidoEm: quando } : p)) });
       },
@@ -609,9 +639,9 @@ export const useOficina = create<EstadoOficina>()(
           const item = estoque[itemId];
           if (!item) continue;
           const mid = novoId();
-          const mov: MovimentoEstoque = { id: mid, itemId, quando: agora, tipo: 'saida', quantidade: -quantidade, origem: { tipo: 'ordem', id, rotulo: `OS nº ${d.numero}` } };
-          estoque[itemId] = aplicarMovimento(item, mov);
+          const mov: MovimentoEstoque = { id: mid, itemId, quando: instante(), tipo: 'saida', quantidade: -quantidade, origem: { tipo: 'ordem', id, rotulo: `OS nº ${d.numero}` } };
           movimentos[mid] = mov;
+          estoque[itemId] = comMovimento(item, mov, movimentos);
         }
         set({
           atendimentos,
@@ -698,7 +728,7 @@ export const useOficina = create<EstadoOficina>()(
         if (levarDados) {
           const pendentes: Record<Chave, true> = {};
           for (const k of todasAsChaves(s)) pendentes[k] = true;
-          semMarcar(() => set({ contaOficinaId: oficinaId, configurado: true, sinc: { marca: null, pendentes, ultimaEm: null } }));
+          semMarcar(() => set({ contaOficinaId: oficinaId, configurado: true, sinc: { ...SINC_INICIAL, pendentes } }));
         } else {
           semMarcar(() => set({ ...VAZIO, ...doAparelho(s), contaOficinaId: oficinaId, configurado: true, sinc: SINC_INICIAL }));
         }
@@ -711,8 +741,24 @@ export const useOficina = create<EstadoOficina>()(
       marcarEnviados(enviados) {
         const s = get();
         const pendentes = { ...s.sinc.pendentes };
-        for (const e of enviados) if (valorAtual(s, e.chave) === e.valor) delete pendentes[e.chave];
-        semMarcar(() => set({ sinc: { ...s.sinc, pendentes, ultimaEm: new Date().toISOString() } }));
+        const rejeitados = { ...s.sinc.rejeitados };
+        // compara pelo conteúdo: recarregar do aparelho (outra aba) troca os objetos sem mudar nada
+        for (const e of enviados) {
+          delete rejeitados[e.chave];
+          if (iguais(valorAtual(s, e.chave), e.valor)) delete pendentes[e.chave];
+        }
+        semMarcar(() => set({ sinc: { ...s.sinc, pendentes, rejeitados, ultimaEm: new Date().toISOString() } }));
+      },
+
+      rejeitarItens(itens) {
+        const s = get();
+        const pendentes = { ...s.sinc.pendentes };
+        const rejeitados = { ...s.sinc.rejeitados };
+        for (const i of itens) {
+          delete pendentes[i.chave];
+          rejeitados[i.chave] = i.motivo.slice(0, 200);
+        }
+        semMarcar(() => set({ sinc: { ...s.sinc, pendentes, rejeitados } }));
       },
 
       aplicarDoBanco(parte, marca) {
@@ -782,17 +828,34 @@ export const useOficina = create<EstadoOficina>()(
           contadores: g.contadores ?? {},
           ...extrasDe(g),
           contaOficinaId: g.contaOficinaId ?? null,
-          sinc: { ...SINC_INICIAL, ...g.sinc, pendentes: { ...(g.sinc?.pendentes ?? {}) } }
+          sinc: { ...SINC_INICIAL, ...g.sinc, pendentes: { ...(g.sinc?.pendentes ?? {}) }, rejeitados: { ...(g.sinc?.rejeitados ?? {}) } }
         };
+      },
+      onRehydrateStorage: () => () => {
+        // terminou de ler o aparelho, com ou sem erro: o app não fica parado na tela de carregando
+        marcarHidratado();
       }
     }
   )
 );
 
+/** O item depois do movimento: a base fica (ou nasce, nos itens antigos) e a quantidade sai da soma. */
+function comMovimento(item: ItemEstoque, mov: MovimentoEstoque, movimentos: Record<Id, MovimentoEstoque>): ItemEstoque {
+  const doItem = Object.values(movimentos).filter((m) => m.itemId === item.id);
+  if ((item as ItemComBase).base) return recalcularItem(item as ItemComBase, doItem);
+  // item de antes desta regra: a quantidade dele já inclui os movimentos até a última mudança
+  if (mov.quando > item.atualizadoEm) return recalcularItem({ ...item, base: baseDoItem(item) }, doItem);
+  // o relógio deste aparelho está atrás: soma este movimento e a base fica logo depois dele
+  const depois = aplicarMovimento(item, mov);
+  const em = item.atualizadoEm > mov.quando ? item.atualizadoEm : mov.quando;
+  const comBase: ItemComBase = { ...depois, atualizadoEm: em, base: { quantidade: depois.quantidade, custo: depois.custo, em, ate: ATE_TUDO } };
+  return comBase;
+}
+
 // ---------------------------------------------------------------- mudanças para subir
 
 let semRegistrar = 0;
-let hidratando = false;
+let recarregando = 0;
 
 /** Muda o estado sem marcar como mudança local (o que veio do banco, a troca de conta). */
 export function semMarcar<T>(fn: () => T): T {
@@ -804,16 +867,31 @@ export function semMarcar<T>(fn: () => T): T {
   }
 }
 
-if (noNavegador) {
-  useOficina.persist.onHydrate(() => {
-    hidratando = true;
-  });
-  useOficina.persist.onFinishHydration(() => {
-    hidratando = false;
-  });
-  // cada mudança dos dados da oficina vira pendente até subir (só com a conta ligada)
-  useOficina.subscribe((s, antes) => {
-    if (semRegistrar > 0 || hidratando || !s.contaOficinaId || s.contaOficinaId !== antes.contaOficinaId) return;
+/**
+ * Lê de novo o que está gravado no aparelho (outra aba gravou, o app voltou para a frente).
+ * O que chega daí não é mudança local: são cópias do mesmo conteúdo, e marcar como pendente
+ * faria subir dado velho por cima do que outro aparelho mudou.
+ */
+export async function recarregarDoAparelho(): Promise<void> {
+  recarregando++;
+  try {
+    await useOficina.persist.rehydrate();
+  } finally {
+    recarregando--;
+  }
+}
+
+/** Grava o estado no aparelho agora e espera terminar (antes de a página mudar, por exemplo). */
+export async function gravarAgora(): Promise<void> {
+  const o = useOficina.persist.getOptions();
+  if (!o.storage || !o.name || !o.partialize) return;
+  await o.storage.setItem(o.name, { state: o.partialize(useOficina.getState()) as EstadoOficina, version: o.version });
+}
+
+/** Cada mudança dos dados da oficina vira pendente até subir (só com a conta ligada). */
+export function ligarRastreio(): () => void {
+  return useOficina.subscribe((s, antes) => {
+    if (semRegistrar > 0 || recarregando > 0 || !s.contaOficinaId || s.contaOficinaId !== antes.contaOficinaId) return;
     const chaves = mudancas(antes, s);
     if (!chaves.length) return;
     const pendentes = { ...s.sinc.pendentes };
@@ -822,13 +900,37 @@ if (noNavegador) {
   });
 }
 
-// Outra aba (ou o app instalado) gravou: recarrega para não sobrescrever com dados velhos.
+// ---------------------------------------------------------------- já leu o aparelho?
+
+let hidratado = false;
+const ouvintesDaHidratacao = new Set<() => void>();
+
+function marcarHidratado() {
+  if (hidratado) return;
+  hidratado = true;
+  for (const f of ouvintesDaHidratacao) f();
+}
+
+/** Leu o aparelho pelo menos uma vez (recarregar depois não volta para "carregando"). */
+export function jaHidratou(): boolean {
+  return hidratado || useOficina.persist.hasHydrated();
+}
+
+export function aoHidratar(f: () => void): () => void {
+  ouvintesDaHidratacao.add(f);
+  return () => {
+    ouvintesDaHidratacao.delete(f);
+  };
+}
+
 if (noNavegador) {
+  ligarRastreio();
+  // outra aba (ou o app instalado) gravou: recarrega para não sobrescrever com dados velhos
   canal?.addEventListener('message', (e: MessageEvent) => {
-    if ((e.data as { tipo?: string })?.tipo === 'salvo') void useOficina.persist.rehydrate();
+    if ((e.data as { tipo?: string })?.tipo === 'salvo') void recarregarDoAparelho();
   });
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') void useOficina.persist.rehydrate();
+    if (document.visibilityState === 'visible') void recarregarDoAparelho();
   });
 }
 
