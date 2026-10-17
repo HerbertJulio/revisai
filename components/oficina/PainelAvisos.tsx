@@ -482,8 +482,15 @@ function Oferta({ r, frase, aoAdicionar }: { r: Recomendacao; frase: string; aoA
           <span className="text-tinta-2">Para {frase}</span> <span className="font-semibold">{r.produto.nome}</span>
         </p>
         <p className="text-tinta-2">
-          {quantidadeComUnidade(r.produto, r.quantidade)} por <strong className="text-tinta">{formatarMoeda(r.total)}</strong>
-          {r.promocao ? ` com ${desconto(r.produto.preco, r.promocao.precoPromocional)}% de desconto, até ${formatarDataCurta(r.promocao.fim)}` : ''}
+          {quantidadeComUnidade(r.produto, r.quantidade)}
+          {/* sem conta, o catálogo vem sem preço (0): aí não mostra valor nem desconto */}
+          {r.total > 0 ? (
+            <>
+              {' '}
+              por <strong className="text-tinta">{formatarMoeda(r.total)}</strong>
+            </>
+          ) : null}
+          {r.promocao ? (r.total > 0 ? ` com ${desconto(r.produto.preco, r.promocao.precoPromocional)}% de desconto, até ${formatarDataCurta(r.promocao.fim)}` : `, em promoção até ${formatarDataCurta(r.promocao.fim)}`) : ''}
           {!r.promocao && promo ? `. Em promoção a partir de ${promo.quantidadeMinima} ${promo.quantidadeMinima === 1 ? 'unidade' : 'unidades'}` : ''}
         </p>
       </div>
