@@ -8,7 +8,7 @@ import { Botao, Chip } from '@/components/ui';
 import { formatarMoeda } from '@/lib/formatos';
 import { PLANOS_FORNECEDOR, PRECO_IMPULSO, DIAS_IMPULSO, type PlanoFornecedor } from '@/lib/planos-fornecedor';
 
-export function PlanoFornecedorTela({ atual, comissao, mensalidade }: { atual: PlanoFornecedor; comissao: number | null; mensalidade: number | null }) {
+export function PlanoFornecedorTela({ atual, comissao, mensalidade, dono }: { atual: PlanoFornecedor; comissao: number | null; mensalidade: number | null; dono: boolean }) {
   const toast = useToast();
   const [pedido, setPedido] = useState(false);
   const [ocupado, iniciar] = useTransition();
@@ -57,9 +57,13 @@ export function PlanoFornecedorTela({ atual, comissao, mensalidade }: { atual: P
                 ))}
               </ul>
               {id === 'destaque' && atual !== 'destaque' ? (
-                <Botao variante="primario" tamanho="grande" className="mt-auto" onClick={querer} disabled={ocupado || pedido}>
-                  {pedido ? 'Pedido enviado' : 'Quero o Destaque'}
-                </Botao>
+                dono ? (
+                  <Botao variante="primario" tamanho="grande" className="mt-auto" onClick={querer} disabled={ocupado || pedido}>
+                    {pedido ? 'Pedido enviado' : 'Quero o Destaque'}
+                  </Botao>
+                ) : (
+                  <p className="mt-auto text-[14px] text-papel/75">O dono da loja pede o Destaque por aqui.</p>
+                )
               ) : null}
             </section>
           );
@@ -69,7 +73,8 @@ export function PlanoFornecedorTela({ atual, comissao, mensalidade }: { atual: P
       <section className="flex flex-col gap-3 rounded-[22px] bg-papel px-6 py-6 ring-1 ring-linha">
         <h2 className="text-[22px]">Impulsionar um produto</h2>
         <p className="max-w-prose text-tinta-2">
-          Para um lançamento ou uma queima de estoque: o produto aparece primeiro na categoria e ao lado da sugestão de compra das oficinas, com o selo Patrocinado. Peça em Produtos, no botão Impulsionar.
+          Para um lançamento ou uma queima de estoque: o produto aparece primeiro na categoria e ao lado da sugestão de compra das oficinas, com o selo Patrocinado.{' '}
+          {dono ? 'Peça em Produtos, no botão Impulsionar.' : 'O dono da loja pede em Produtos, no botão Impulsionar.'}
         </p>
         <div className="flex flex-wrap gap-2">
           {DIAS_IMPULSO.map((d) => (

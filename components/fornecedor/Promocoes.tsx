@@ -3,11 +3,11 @@
 import { Pencil, Plus } from 'lucide-react';
 import { useState, useTransition } from 'react';
 import { salvarPromocao } from '@/app/fornecedor/acoes';
-import { AvisoErro, Filtro, LinhaDeFiltros } from '@/components/equipe/comum';
+import { AvisoErro, Filtro, LinhaDeFiltros } from './comum';
 import { Folha } from '@/components/Folha';
 import { useToast } from '@/components/Toasts';
 import { Alternar, Botao, Campo, Chip, Vazio, classeEntrada } from '@/components/ui';
-import { contarPor, dataCurta, descontoPercentual, situacaoPromocao, SITUACOES_PROMOCAO, type SituacaoPromocao } from '@/lib/equipe-dados';
+import { contarPor, dataCurta, descontoPercentual, situacaoPromocao, SITUACOES_PROMOCAO, type SituacaoPromocao } from '@/lib/loja/comum';
 import { formatarMoeda, lerNumero } from '@/lib/formatos';
 import type { LinhaProduto, LinhaPromocao } from '@/lib/marketplace-dados';
 
