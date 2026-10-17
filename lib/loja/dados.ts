@@ -105,22 +105,46 @@ export function lerAplicacoes(d: unknown): Aplicacao[] {
 }
 
 /** O produto como o painel da loja usa: o do catálogo mais o código, o estoque e as aplicações. */
-export type LinhaProdutoDaLoja = LinhaProduto & { codigo: string | null; estoque: number | null; aplicacoes: Aplicacao[] };
+export type LinhaProdutoDaLoja = LinhaProduto & {
+  codigo: string | null;
+  estoque: number | null;
+  aplicacoes: Aplicacao[];
+  /** Prazo de entrega deste produto em horas (vazio = o da loja). */
+  prazoEntregaHoras?: number | null;
+  /** Fora da vitrine pela moderação (denúncias ou decisão da equipe). */
+  ocultoModeracao?: boolean;
+};
 
-export const COLUNAS_PRODUTO_DA_LOJA = `${COLUNAS_PRODUTO}, codigo, estoque, aplicacoes`;
+export const COLUNAS_PRODUTO_DA_LOJA = `${COLUNAS_PRODUTO}, codigo, estoque, aplicacoes, prazo_entrega_horas, oculto_moderacao`;
 
 export function lerProdutosDaLoja(d: unknown): LinhaProdutoDaLoja[] {
   const linhas = Array.isArray(d) ? d : [];
   const base = lerProdutosCompletos(linhas).itens;
   const extras = new Map(
     linhas.flatMap((x) => {
-      const r = z.object({ id: numero, codigo: texto, estoque: numeroOuNulo.optional().transform((v) => v ?? null), aplicacoes: z.unknown() }).safeParse(x);
+      const r = z
+        .object({
+          id: numero,
+          codigo: texto,
+          estoque: numeroOuNulo.optional().transform((v) => v ?? null),
+          aplicacoes: z.unknown(),
+          prazo_entrega_horas: numeroOuNulo.optional().transform((v) => v ?? null),
+          oculto_moderacao: z.boolean().nullish().transform((v) => v ?? false)
+        })
+        .safeParse(x);
       return r.success ? [[r.data.id, r.data] as const] : [];
     })
   );
   return base.map((p) => {
     const e = extras.get(p.id);
-    return { ...p, codigo: e?.codigo ?? null, estoque: e?.estoque ?? null, aplicacoes: lerAplicacoes(e?.aplicacoes) };
+    return {
+      ...p,
+      codigo: e?.codigo ?? null,
+      estoque: e?.estoque ?? null,
+      aplicacoes: lerAplicacoes(e?.aplicacoes),
+      prazoEntregaHoras: e?.prazo_entrega_horas ?? null,
+      ocultoModeracao: e?.oculto_moderacao ?? false
+    };
   });
 }
 
@@ -193,11 +217,14 @@ const esquemaParte = z.object({
   entrega_posicao_em: texto,
   entregue_em: texto,
   cancelado_motivo: texto,
-  cancelado_por: z.enum(['loja', 'oficina', 'equipe']).nullish().transform((v) => v ?? null)
+  cancelado_por: z.enum(['loja', 'oficina', 'equipe']).nullish().transform((v) => v ?? null),
+  forma_pagamento: z.enum(['pix', 'faturado']).catch('pix'),
+  prazo_dias: numeroOuNulo.optional().transform((v) => v ?? null),
+  vencimento: texto
 });
 
 export const COLUNAS_PARTE_DA_LOJA =
-  'id, pedido_id, codigo, status, subtotal, comissao_percentual, criado_em, oficina_nome, oficina_whatsapp, oficina_cidade, oficina_uf, oficina_endereco, observacao, itens, pagamento, pagamento_em, entrega_previsao, entrega_saiu_em, entrega_posicao_em, entregue_em, cancelado_motivo, cancelado_por';
+  'id, pedido_id, codigo, status, subtotal, comissao_percentual, criado_em, oficina_nome, oficina_whatsapp, oficina_cidade, oficina_uf, oficina_endereco, observacao, itens, pagamento, pagamento_em, entrega_previsao, entrega_saiu_em, entrega_posicao_em, entregue_em, cancelado_motivo, cancelado_por, forma_pagamento, prazo_dias, vencimento';
 
 const esquemaHistorico = z.object({
   parte_id: numero,
@@ -233,6 +260,8 @@ export interface PedidoDaLoja {
   pagamentoEm: string | null;
   entrega: { previsao: string | null; saiuEm: string | null; posicaoEm: string | null; entregueEm: string | null };
   cancelamento: { motivo: string | null; por: 'loja' | 'oficina' | 'equipe' | null } | null;
+  /** Venda faturada: o prazo (dias depois da entrega) e o vencimento (depois da entrega). Pix: null. */
+  faturado: { prazoDias: number; vencimento: string | null } | null;
   historico: MudancaDoPedido[];
 }
 
@@ -254,6 +283,7 @@ export function lerPedidosDaLoja(partes: unknown, historico: unknown, fornecedor
     pagamentoEm: p.pagamento_em,
     entrega: { previsao: p.entrega_previsao, saiuEm: p.entrega_saiu_em, posicaoEm: p.entrega_posicao_em, entregueEm: p.entregue_em },
     cancelamento: p.status === 'cancelado' ? { motivo: p.cancelado_motivo, por: p.cancelado_por } : null,
+    faturado: p.forma_pagamento === 'faturado' ? { prazoDias: p.prazo_dias ?? 0, vencimento: p.vencimento ? p.vencimento.slice(0, 10) : null } : null,
     historico: mudancas
       .filter((m) => m.parte_id === p.id)
       .sort((a, b) => (a.quando < b.quando ? -1 : 1))

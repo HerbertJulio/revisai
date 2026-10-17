@@ -1,9 +1,10 @@
-import { BadgePercent, BellRing, LayoutDashboard, Megaphone, Package, ReceiptText, ShoppingCart, Store, Undo2, Users } from 'lucide-react';
+import { BadgePercent, BellRing, HandCoins, LayoutDashboard, Megaphone, Package, Plug, ReceiptText, ShoppingCart, Store, Undo2, Users, Wallet } from 'lucide-react';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { sair } from '@/app/conta/acoes';
 import { TelaDeConta } from '@/components/conta/TelaDeConta';
 import { MolduraDePainel, type GrupoPainel } from '@/components/painel/MolduraDePainel';
+import { BotaoAjuda } from '@/components/suporte/BotaoAjuda';
 import { classeBotao } from '@/components/ui';
 import type { PainelDaLoja } from '@/lib/loja/painel';
 import { configSupabase } from '@/lib/supabase-servidor';
@@ -11,7 +12,7 @@ import { AoVivo } from './AoVivo';
 import { AvisoErro } from './comum';
 import { TrocarLoja } from './TrocarLoja';
 
-export type AbaFornecedor = 'inicio' | 'produtos' | 'promocoes' | 'pedidos' | 'devolucoes' | 'alertas' | 'clientes' | 'extrato' | 'plano' | 'conta';
+export type AbaFornecedor = 'inicio' | 'produtos' | 'promocoes' | 'pedidos' | 'receber' | 'devolucoes' | 'alertas' | 'clientes' | 'credito' | 'extrato' | 'plano' | 'conta' | 'integracao';
 
 /** Lateral, abas e título do painel da loja, com o aviso da análise e os avisos ao vivo. */
 export function MolduraFornecedor({
@@ -30,6 +31,8 @@ export function MolduraFornecedor({
   children: ReactNode;
 }) {
   const novos = painel.pedidos.filter((p) => p.status === 'novo').length;
+  // faturas vencidas entre os pedidos recentes (o número na aba A receber)
+  const vencidas = painel.pedidos.filter((p) => p.faturado?.vencimento && p.faturado.vencimento < painel.hoje && p.pagamento !== 'confirmado' && p.status !== 'cancelado').length;
   const grupos: GrupoPainel[] = [
     { itens: [{ id: 'inicio', href: '/fornecedor', rotulo: 'Início', Icone: LayoutDashboard }] },
     {
@@ -43,14 +46,22 @@ export function MolduraFornecedor({
       titulo: 'Vendas',
       itens: [
         { id: 'pedidos', href: '/fornecedor/pedidos', rotulo: 'Pedidos', Icone: ShoppingCart, contador: novos },
+        { id: 'receber', href: '/fornecedor/receber', rotulo: 'A receber', Icone: Wallet, contador: vencidas },
         { id: 'devolucoes', href: '/fornecedor/devolucoes', rotulo: 'Devoluções', Icone: Undo2, contador: painel.devolucoesAbertas },
         { id: 'alertas', href: '/fornecedor/alertas', rotulo: 'Alertas de preço', Icone: BellRing, contador: painel.alertasNovos },
         { id: 'clientes', href: '/fornecedor/clientes', rotulo: 'Clientes', Icone: Users },
+        { id: 'credito', href: '/fornecedor/credito', rotulo: 'Crédito', Icone: HandCoins },
         { id: 'extrato', href: '/fornecedor/extrato', rotulo: 'Extrato', Icone: ReceiptText },
         { id: 'plano', href: '/fornecedor/plano', rotulo: 'Plano e impulsos', Icone: Megaphone }
       ]
     },
-    { titulo: 'Loja', itens: [{ id: 'conta', href: '/fornecedor/conta', rotulo: 'Sua loja', Icone: Store }] }
+    {
+      titulo: 'Loja',
+      itens: [
+        { id: 'conta', href: '/fornecedor/conta', rotulo: 'Sua loja', Icone: Store },
+        { id: 'integracao', href: '/fornecedor/integracao', rotulo: 'Integração', Icone: Plug }
+      ]
+    }
   ];
   const config = configSupabase();
   return (
@@ -74,6 +85,7 @@ export function MolduraFornecedor({
         pedidos={painel.pedidos.map((p) => ({ id: p.id, status: p.status, pagamento: p.pagamento }))}
       />
       {children}
+      <BotaoAjuda config={config} usuarioId={painel.usuarioId} fornecedorId={painel.loja.id} />
     </MolduraDePainel>
   );
 }

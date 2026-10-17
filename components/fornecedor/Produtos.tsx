@@ -5,7 +5,8 @@ import { useRef, useState, useTransition } from 'react';
 import { enviarFoto, impulsionar, salvarProduto } from '@/app/fornecedor/acoes';
 import { lerAplicacoesDoTexto, rotuloDaAplicacao, textoDasAplicacoes } from '@/lib/loja/aplicacoes';
 import { combina, paraBusca } from '@/lib/loja/comum';
-import type { LinhaProdutoDaLoja } from '@/lib/loja/dados';
+import { PRAZOS_DE_ENTREGA, type LinhaProdutoDaLoja } from '@/lib/loja/dados';
+import { ITENS_PROIBIDOS, TEXTO_DA_MODERACAO } from '@/lib/loja/proibidos';
 import { AvisoErro } from './comum';
 import { Planilha } from './Planilha';
 import { TrocaExibicao, useExibicao } from '@/components/exibicao';
@@ -49,6 +50,8 @@ interface Rascunho {
   codigo: string;
   estoque: string;
   aplicacoes: string;
+  /** Horas do prazo de entrega deste produto ('' = o prazo da loja). */
+  prazoEntrega: string;
 }
 
 const UNIDADES: { id: Unidade; nome: string }[] = [
@@ -88,7 +91,8 @@ function rascunhoDe(p?: LinhaProduto): Rascunho {
     tipo: texto(e.tipo),
     codigo: p?.codigo ?? '',
     estoque: p?.estoque != null ? String(p.estoque) : '',
-    aplicacoes: p ? textoDasAplicacoes(p.aplicacoes) : ''
+    aplicacoes: p ? textoDasAplicacoes(p.aplicacoes) : '',
+    prazoEntrega: p?.prazoEntregaHoras != null ? String(p.prazoEntregaHoras) : ''
   };
 }
 
@@ -100,7 +104,7 @@ function lista(t: string): string[] | undefined {
   return l.length ? l : undefined;
 }
 
-type FiltroProduto = 'todos' | 'na_loja' | 'fora' | 'sem_foto' | 'sem_estoque' | 'promocao' | 'impulso';
+type FiltroProduto = 'todos' | 'na_loja' | 'fora' | 'sem_foto' | 'sem_estoque' | 'promocao' | 'impulso' | 'moderacao';
 
 interface ContextoFiltro {
   promoDe: (p: LinhaProduto) => LinhaPromocao | undefined;
@@ -114,14 +118,16 @@ const FILTROS: { id: FiltroProduto; nome: string; passa: (p: LinhaProduto, c: Co
   { id: 'sem_foto', nome: 'Sem foto', passa: (p) => !p.imagem_url },
   { id: 'sem_estoque', nome: 'Esgotados', passa: (p) => p.estoque === 0 },
   { id: 'promocao', nome: 'Em promoção', passa: (p, c) => !!c.promoDe(p) },
-  { id: 'impulso', nome: 'Impulsionados', passa: (p, c) => !!c.impulsoDe(p) }
+  { id: 'impulso', nome: 'Impulsionados', passa: (p, c) => !!c.impulsoDe(p) },
+  { id: 'moderacao', nome: 'Na moderação', passa: (p) => !!p.ocultoModeracao }
 ];
 
 /** Como o produto está: fora da loja, promoção em vigor, impulso no ar ou pedido. */
 function SelosDoProduto({ produto: p, promo, impulso }: { produto: LinhaProduto; promo?: LinhaPromocao; impulso?: LinhaImpulso }) {
-  if (p.ativo && !promo && !impulso && p.estoque == null) return null;
+  if (p.ativo && !promo && !impulso && p.estoque == null && !p.ocultoModeracao) return null;
   return (
     <div className="flex flex-wrap gap-1.5">
+      {p.ocultoModeracao ? <Chip tom="atraso">Fora da vitrine pela moderação</Chip> : null}
       {!p.ativo ? <Chip tom="atraso">Fora da loja</Chip> : null}
       {p.estoque === 0 ? <Chip tom="atraso">Esgotado</Chip> : p.estoque != null ? <Chip>{p.estoque} em estoque</Chip> : null}
       {promo ? <Chip tom="oleo">{promo.titulo}</Chip> : null}
@@ -245,7 +251,8 @@ export function ProdutosFornecedor({
           especificacao: Object.fromEntries(Object.entries(especificacao).filter(([, v]) => v !== undefined)),
           codigo: rascunho.codigo.trim(),
           estoque: rascunho.estoque.trim() ? Math.max(0, Math.round(lerNumero(rascunho.estoque) ?? 0)) : null,
-          aplicacoes: lerAplicacoesDoTexto(rascunho.aplicacoes)
+          aplicacoes: lerAplicacoesDoTexto(rascunho.aplicacoes),
+          prazoEntregaHoras: rascunho.prazoEntrega ? Number(rascunho.prazoEntrega) : null
         });
         if (!r.ok) return setErro(r.erro);
         if (rascunho.id) {
@@ -430,6 +437,22 @@ export function ProdutosFornecedor({
       >
         {rascunho ? (
           <div className="grid gap-4 sm:grid-cols-6">
+            {editando?.ocultoModeracao ? (
+              <p className="rounded-xl bg-atraso-claro px-4 py-3 text-[14px] text-atraso sm:col-span-6" role="status">
+                Este produto está fora da vitrine pela moderação, depois de denúncias de oficinas. Se acha que foi engano, fale com a equipe do Revisaí pelo botão Ajuda.
+              </p>
+            ) : null}
+            <details className="rounded-xl bg-papel-2 px-4 py-3 text-[14px] sm:col-span-6">
+              <summary className="cursor-pointer font-semibold">O que não pode ser vendido no Revisaí</summary>
+              <ul className="mt-2 flex list-disc flex-col gap-1 pl-5 text-tinta-2">
+                {ITENS_PROIBIDOS.map((i) => (
+                  <li key={i.titulo}>
+                    <strong className="text-tinta">{i.titulo}.</strong> {i.detalhe}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-[13px] text-tinta-3">{TEXTO_DA_MODERACAO}</p>
+            </details>
             {rascunho.id ? (
               <div className="flex items-center gap-4 sm:col-span-6">
                 <FotoProduto
@@ -481,8 +504,21 @@ export function ProdutosFornecedor({
             <Campo rotulo="Estoque" htmlFor="pf-estoque" className="sm:col-span-3" dica="Em branco se você não controla. Baixa sozinho quando você confirma um pedido.">
               <input id="pf-estoque" className={`${classeEntrada} num`} value={rascunho.estoque} onChange={(e) => mudar({ estoque: e.target.value })} inputMode="numeric" placeholder="não controlo" />
             </Campo>
-            <Campo rotulo="Código na sua loja" htmlFor="pf-codigo" className="sm:col-span-3" dica="Opcional. O mesmo da sua planilha ou do seu sistema.">
+            <Campo rotulo="Código na sua loja" htmlFor="pf-codigo" className="sm:col-span-3" dica="Opcional. O mesmo da sua planilha ou do seu sistema (é por ele que a API acha o produto).">
               <input id="pf-codigo" className={classeEntrada} value={rascunho.codigo} onChange={(e) => mudar({ codigo: e.target.value })} maxLength={60} autoComplete="off" />
+            </Campo>
+            <Campo rotulo="Prazo de entrega deste produto" htmlFor="pf-prazo" className="sm:col-span-3" dica="Para quando este produto demora mais (ou menos) que o resto da loja.">
+              <select id="pf-prazo" className={classeEntrada} value={rascunho.prazoEntrega} onChange={(e) => mudar({ prazoEntrega: e.target.value })}>
+                <option value="">O prazo da loja</option>
+                {PRAZOS_DE_ENTREGA.map((p) => (
+                  <option key={p.horas} value={p.horas}>
+                    {p.nome}
+                  </option>
+                ))}
+                {rascunho.prazoEntrega && !PRAZOS_DE_ENTREGA.some((p) => String(p.horas) === rascunho.prazoEntrega) ? (
+                  <option value={rascunho.prazoEntrega}>Em até {rascunho.prazoEntrega} horas</option>
+                ) : null}
+              </select>
             </Campo>
 
             {rascunho.categoria === 'oleo_motor' ? (

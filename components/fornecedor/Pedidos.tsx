@@ -14,7 +14,8 @@ import { Botao, Campo, Vazio, classeBotao, classeEntrada } from '@/components/ui
 import { formatarDiaHora, formatarHora } from '@/lib/datas';
 import { haQuantoTempo, mensagemDoEntregador, mensagemSaiu } from '@/lib/entregas-dados';
 import { formatarMoeda, formatarTelefone } from '@/lib/formatos';
-import { contarPor, FUSO, MOTIVOS_CANCELAMENTO, proximasSituacoes, quandoFoi } from '@/lib/loja/comum';
+import { contarPor, diaEmBrasilia, FUSO, MOTIVOS_CANCELAMENTO, proximasSituacoes, quandoFoi } from '@/lib/loja/comum';
+import { textoDoVencimento } from '@/lib/loja/credito-dados';
 import type { MudancaDoPedido, PedidoDaLoja, ResumoPix } from '@/lib/loja/dados';
 import { SITUACOES_PAGAMENTO, SITUACOES_PARTE, type SituacaoParte } from '@/lib/marketplace-dados';
 import { formatarChavePix } from '@/lib/pix';
@@ -133,6 +134,7 @@ function CartaoDoPedido({ pedido: p, loja, temPix, mudarOtimista }: { pedido: Pe
             <p className="largo num font-extrabold tracking-wider">{p.codigo}</p>
             <ChipSituacao nome={s.nome} tom={s.tom} />
             {p.itens.some((i) => i.combinado) ? <ChipSituacao nome="Preço do alerta" tom="caneta" /> : null}
+            {p.faturado ? <ChipSituacao nome="Faturado" tom="caneta" /> : null}
           </div>
           <p className="mt-0.5 font-semibold">{p.oficina.nome}</p>
           <p className="text-[13.5px] text-tinta-3">
@@ -172,6 +174,11 @@ function CartaoDoPedido({ pedido: p, loja, temPix, mudarOtimista }: { pedido: Pe
       {p.status !== 'cancelado' ? (
         <div className="flex flex-wrap items-center gap-2 text-[14px]">
           <ChipSituacao nome={pg.nome} tom={pg.tom} />
+          {p.faturado && p.pagamento !== 'confirmado' ? (
+            <Link href="/fornecedor/receber" className="text-tinta-3 underline-offset-2 hover:underline">
+              Faturado: {textoDoVencimento({ vencimento: p.faturado.vencimento, prazoDias: p.faturado.prazoDias }, diaEmBrasilia(agora))}.
+            </Link>
+          ) : null}
           {p.pagamento === 'informado' && p.pagamentoEm ? <span className="text-tinta-3">{formatarDiaHora(p.pagamentoEm, new Date(), FUSO)}. Confira no extrato.</span> : null}
           {p.pagamento !== 'confirmado' ? (
             <Botao tamanho="pequeno" variante={p.pagamento === 'informado' ? 'escuro' : 'secundario'} onClick={() => pagamento(true)}>
@@ -191,7 +198,11 @@ function CartaoDoPedido({ pedido: p, loja, temPix, mudarOtimista }: { pedido: Pe
             <Check size={15} aria-hidden="true" /> Confirmar pedido
           </Botao>
           <span className="text-[13.5px] text-tinta-2">
-            {temPix ? 'Tem o produto e o preço? Ao confirmar, a oficina vê o seu Pix e pode pagar pelo app.' : 'Tem o produto e o preço? Confirme para a oficina saber.'}
+            {p.faturado
+              ? `Tem o produto e o preço? Confirme. A oficina escolheu faturado: paga até ${p.faturado.prazoDias} dias depois da entrega.`
+              : temPix
+                ? 'Tem o produto e o preço? Ao confirmar, a oficina vê o seu Pix e pode pagar pelo app.'
+                : 'Tem o produto e o preço? Confirme para a oficina saber.'}
           </span>
         </div>
       ) : null}

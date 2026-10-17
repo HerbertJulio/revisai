@@ -11,6 +11,8 @@ import { permitido } from '@/lib/limite';
 import { responderAlerta } from '@/lib/loja/alertas';
 import { salvarCashback } from '@/lib/loja/cashback';
 import { removerCondicao, salvarCondicao } from '@/lib/loja/clientes';
+import { salvarCredito } from '@/lib/loja/credito';
+import { criarToken, revogarToken } from '@/lib/loja/tokens';
 import { responderDevolucao } from '@/lib/loja/devolucoes';
 import { avisarTrocaDePix, lojaParaAviso } from '@/lib/loja/avisos';
 import { cancelarConviteDaLoja, convidarParaLoja, mudarPapelNaLoja, tirarDaLoja, type ResultadoConvite, type ResultadoPapel } from '@/lib/loja/equipe';
@@ -155,6 +157,39 @@ export async function removerCondicaoDaOficina(id: number): Promise<Gravacao> {
   const a = await acesso('condicao', 200);
   if (!a.ok) return a;
   const r = await removerCondicao(a.sb, a.loja.id, id);
+  if (r.ok) atualizar();
+  return r;
+}
+
+// ---------------------------------------------------------------- venda faturada
+
+/** Crédito é decisão de dinheiro (o risco é da loja): só o dono dá, muda ou desliga. */
+export async function salvarCreditoDaOficina(entrada: unknown): Promise<Gravacao> {
+  const a = await acesso('credito', 120);
+  if (!a.ok) return a;
+  if (a.loja.papel !== 'dono') return SO_DONO;
+  const r = await salvarCredito(a.sb, a.loja.id, entrada);
+  if (r.ok) atualizar();
+  return r;
+}
+
+// ---------------------------------------------------------------- integração (API da loja)
+
+/** O token aparece só agora: o banco guarda o hash. Só o dono cria. */
+export async function criarTokenDaApi(nome: string): Promise<Gravacao<{ token: string; prefixo: string }>> {
+  const a = await acesso('token', 20);
+  if (!a.ok) return a;
+  if (a.loja.papel !== 'dono') return SO_DONO;
+  const r = await criarToken(a.sb, a.loja.id, nome);
+  if (r.ok) atualizar();
+  return r;
+}
+
+export async function revogarTokenDaApi(id: string): Promise<Gravacao> {
+  const a = await acesso('token', 60);
+  if (!a.ok) return a;
+  if (a.loja.papel !== 'dono') return SO_DONO;
+  const r = await revogarToken(a.sb, String(id ?? ''));
   if (r.ok) atualizar();
   return r;
 }

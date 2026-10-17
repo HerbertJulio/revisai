@@ -55,7 +55,8 @@ export const esquemaProdutoDaLoja = z
       .array(z.object({ texto: z.string().trim().min(2).max(80), marca: z.string().nullable(), modelo: z.string().nullable(), anoDe: z.number().int().nullable(), anoAte: z.number().int().nullable() }))
       .max(100, 'Até 100 carros por produto.')
       .optional()
-      .default([])
+      .default([]),
+    prazoEntregaHoras: z.number().int().min(1).max(720, 'O prazo de entrega vai até 720 horas.').nullable().optional().default(null)
   })
   .refine((x) => x.unidade !== 'L' || x.conteudo != null, { message: 'Informe quantos litros tem a embalagem.' });
 
@@ -79,7 +80,8 @@ export async function salvarProduto(sb: SupabaseClient, fornecedorId: number, en
     especificacao: Object.fromEntries(Object.entries(d.especificacao).filter(([, v]) => v !== '' && v != null && !(Array.isArray(v) && !v.length))),
     codigo: d.codigo || null,
     estoque: d.estoque,
-    aplicacoes: d.aplicacoes
+    aplicacoes: d.aplicacoes,
+    prazo_entrega_horas: d.prazoEntregaHoras
   };
   if (d.id) {
     const { data, error } = await sb.from('produtos').update(linha).eq('id', d.id).eq('fornecedor_id', fornecedorId).select('id').maybeSingle();
