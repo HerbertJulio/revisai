@@ -15,8 +15,9 @@ import {
   type ItemComBase,
   type ItemRecebido
 } from '@/lib/sincronia-dados';
+import { proximoNumero } from '@/lib/documentos';
 import { OFICINA_VAZIA, PREFERENCIAS_PADRAO } from '@/lib/padroes';
-import type { Cliente, MovimentoEstoque, PedidoEnviado } from '@/lib/tipos';
+import type { Cliente, Documento, MovimentoEstoque, PedidoEnviado } from '@/lib/tipos';
 
 function estado(parte: Partial<Estado> = {}): Estado {
   return {
@@ -160,6 +161,15 @@ describe('aplicar o que veio do banco', () => {
     expect(parte.pedidos?.[0].codigo).toBe('RV-NOVO');
     expect(parte.pedidos?.some((p) => p.codigo === 'RV-3')).toBe(false);
     expect(parte.pedidos?.find((p) => p.codigo === 'RV-4')?.recebidoEm).toBeTruthy();
+  });
+
+  it('o número que o banco trocou (dois aparelhos deram o mesmo) chega, e o próximo sai depois dele', () => {
+    const doc = { id: 'd1', tipo: 'ordem', numero: 12, situacao: 'aberta', linhas: [] } as unknown as Documento;
+    const e = estado({ documentos: { d1: doc }, contadores: { ordem: 12 } });
+    const parte = aplicarRecebidos(e, [recebido('documentos', 'd1', { ...doc, numero: 13 })], {});
+    expect(parte.documentos?.d1.numero).toBe(13);
+    // mesmo com o contador do aparelho ainda no 12
+    expect(proximoNumero(e.contadores, Object.values(parte.documentos ?? {}), 'ordem')).toBe(14);
   });
 
   it('coleção que este aparelho ainda não conhece é ignorada', () => {
