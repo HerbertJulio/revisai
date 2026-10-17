@@ -508,10 +508,12 @@ export const NOMES_TIPO_CHAVE: Record<TipoChavePix, string> = {
   aleatoria: 'Chave aleatória'
 };
 
-/** A chave da oficina, se for válida. */
+/** A chave da oficina pronta para o código, se for válida (a guardada sem normalizar também vale). */
 export function chavePixDaOficina(o: Pick<Oficina, 'chavePix'>): string | null {
   const c = o.chavePix?.trim() ?? '';
-  return tipoDaChavePix(c) ? c : null;
+  if (!c) return null;
+  if (tipoDaChavePix(c)) return c;
+  return normalizarChavePix(adivinharTipoDaChave(c), c);
 }
 
 /** O Pix copia e cola da oficina com o valor (estático: a pessoa paga direto na conta da oficina). */

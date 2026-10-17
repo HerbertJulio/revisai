@@ -18,7 +18,7 @@ import { useHoje } from '@/lib/ganchos';
 import type { FormaPagamento } from '@/lib/registros-oficina';
 import { useOficina } from '@/lib/store';
 import type { Documento } from '@/lib/tipos';
-import { gerarId, textoDaParcela, useGestao } from './comum';
+import { FolhaDentro, gerarId, textoDaParcela, useGestao } from './comum';
 import { FolhaDaConta } from './FolhaConta';
 
 export function PainelDaOrdem({ doc }: { doc: Documento }) {
@@ -92,8 +92,10 @@ function Painel({ doc }: { doc: Documento }) {
 
       <QuemFez doc={doc} />
 
-      <FolhaReceber doc={doc} aberta={receber} valorSugerido={Math.max(0, p.falta)} aoFechar={() => setReceber(false)} />
-      <FolhaDaConta id={aberta} aoFechar={() => setAberta(null)} />
+      <FolhaDentro>
+        <FolhaReceber doc={doc} aberta={receber} valorSugerido={Math.max(0, p.falta)} aoFechar={() => setReceber(false)} />
+        <FolhaDaConta id={aberta} aoFechar={() => setAberta(null)} />
+      </FolhaDentro>
     </section>
   );
 }

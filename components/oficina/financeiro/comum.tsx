@@ -5,7 +5,7 @@
 
 import { Download, Lock } from 'lucide-react';
 import Link from 'next/link';
-import type { ReactNode } from 'react';
+import type { HTMLAttributes, ReactNode, SyntheticEvent } from 'react';
 import { useConta } from '@/components/conta/ProvedorConta';
 import { Chip, classeBotao } from '@/components/ui';
 import { formatarData } from '@/lib/datas';
@@ -32,6 +32,19 @@ export function SoGestao({ children }: { children: ReactNode }) {
       <Link href="/oficina" className={classeBotao('secundario')}>
         Voltar para os avisos
       </Link>
+    </div>
+  );
+}
+
+/**
+ * Para uma folha aberta de dentro de outra (o pagamento no detalhe da OS): o React passa o
+ * "close" e o "cancel" do diálogo de dentro para os de fora, e a folha de fora fecharia junto.
+ */
+export function FolhaDentro({ children }: { children: ReactNode }) {
+  const parar = (e: SyntheticEvent) => e.stopPropagation();
+  return (
+    <div className="contents" {...({ onClose: parar, onCancel: parar } as HTMLAttributes<HTMLDivElement>)}>
+      {children}
     </div>
   );
 }

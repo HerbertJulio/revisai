@@ -104,9 +104,11 @@ function FormNovaConta({ inicial, aoFechar }: { inicial: Rascunho; aoFechar: () 
   const toast = useToast();
   const salvar = useOficina((s) => s.salvarRegistro);
   const [r, setR] = useState<Rascunho>(inicial);
-  const [erros, setErros] = useState<ErrosDaConta>({});
+  const [erros, setErros] = useState<ErrosDaConta & { pagoEm?: string }>({});
   const valor = lerNumero(r.valor) ?? 0;
   const parcelas = Math.floor(lerNumero(r.parcelas) ?? 1);
+  // no crédito, a maquininha paga de 30 em 30 dias; o resto vence todo mês no mesmo dia
+  const intervalo = r.forma === 'credito' ? '30dias' : 'mensal';
 
   function conta(): NovaConta {
     return {
@@ -115,6 +117,7 @@ function FormNovaConta({ inicial, aoFechar }: { inicial: Rascunho; aoFechar: () 
       valor,
       parcelas,
       vencimento: r.vencimento,
+      intervalo,
       forma: r.forma || null,
       categoria: r.categoria,
       clienteId: r.tipo === 'receber' ? r.clienteId || null : null,
@@ -128,8 +131,8 @@ function FormNovaConta({ inicial, aoFechar }: { inicial: Rascunho; aoFechar: () 
 
   function gravar() {
     const c = conta();
-    const e = errosDaConta(c);
-    if (c.pagoEm === null && parcelas === 1 && r.jaPago) e.vencimento = 'Escolha o dia em que foi pago.';
+    const e: ErrosDaConta & { pagoEm?: string } = errosDaConta(c);
+    if (c.pagoEm === null && parcelas === 1 && r.jaPago) e.pagoEm = 'Escolha o dia.';
     setErros(e);
     if (Object.keys(e).length) return;
     const itens = montarLancamentos(c, gerarId);
@@ -138,7 +141,7 @@ function FormNovaConta({ inicial, aoFechar }: { inicial: Rascunho; aoFechar: () 
     aoFechar();
   }
 
-  const previa = parcelas > 1 && valor > 0 && /^\d{4}-\d{2}-\d{2}$/.test(r.vencimento) ? { valores: dividirEmParcelas(valor, parcelas), datas: vencimentosDasParcelas(r.vencimento, parcelas) } : null;
+  const previa = parcelas > 1 && valor > 0 && /^\d{4}-\d{2}-\d{2}$/.test(r.vencimento) ? { valores: dividirEmParcelas(valor, parcelas), datas: vencimentosDasParcelas(r.vencimento, parcelas, intervalo) } : null;
 
   return (
     <div className="flex flex-col gap-4">
@@ -162,7 +165,7 @@ function FormNovaConta({ inicial, aoFechar }: { inicial: Rascunho; aoFechar: () 
           <select id="c-parcelas" className={classeEntrada} value={String(parcelas)} onChange={(e) => setR({ ...r, parcelas: e.target.value })}>
             {Array.from({ length: MAX_PARCELAS }, (_, i) => i + 1).map((n) => (
               <option key={n} value={n}>
-                {n === 1 ? 'De uma vez' : `${n} vezes, todo mês`}
+                {n === 1 ? 'De uma vez' : intervalo === '30dias' ? `${n} vezes, a cada 30 dias` : `${n} vezes, todo mês`}
               </option>
             ))}
           </select>
@@ -177,7 +180,7 @@ function FormNovaConta({ inicial, aoFechar }: { inicial: Rascunho; aoFechar: () 
         ) : null}
       </div>
       {parcelas === 1 && r.jaPago ? (
-        <Campo rotulo={r.tipo === 'receber' ? 'Recebido em' : 'Pago em'} htmlFor="c-pago">
+        <Campo rotulo={r.tipo === 'receber' ? 'Recebido em' : 'Pago em'} htmlFor="c-pago" erro={erros.pagoEm}>
           <input id="c-pago" type="date" className={classeEntrada} value={r.pagoEm} onChange={(e) => setR({ ...r, pagoEm: e.target.value })} />
         </Campo>
       ) : null}

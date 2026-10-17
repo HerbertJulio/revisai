@@ -317,6 +317,11 @@ describe('Pix da oficina', () => {
     expect(tipoDaChavePix('')).toBeNull();
     expect(chavePixDaOficina({ chavePix: ' 12345678909 ' })).toBe('12345678909');
     expect(chavePixDaOficina({ chavePix: 'qualquer coisa' })).toBeNull();
+    expect(chavePixDaOficina({ chavePix: '' })).toBeNull();
+    // guardada do jeito que foi digitada (por outra tela): normaliza na hora de usar
+    expect(chavePixDaOficina({ chavePix: '(21) 98765-4321' })).toBe('+5521987654321');
+    expect(chavePixDaOficina({ chavePix: '12.345.678/0001-90' })).toBe('12345678000190');
+    expect(chavePixDaOficina({ chavePix: 'Vendas@Oficina.com.br' })).toBe('vendas@oficina.com.br');
   });
 
   it('adivinha o tipo do que a pessoa digitou', () => {
