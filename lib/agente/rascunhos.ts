@@ -1,17 +1,20 @@
 import 'server-only';
 
-// Rascunhos de ordem de serviço que chegam pelo WhatsApp: o vínculo do WhatsApp do mecânico com
-// o aparelho da oficina, a mídia guardada no Storage (bucket privado "oficinas") e a IA.
-// O aparelhoId é um número aleatório que só o aparelho da oficina e o servidor conhecem.
+// Rascunhos de ordem de serviço que chegam pelo WhatsApp: o número do mecânico ligado à oficina,
+// a mídia guardada no Storage (bucket privado "oficinas", pasta da oficina) e a IA.
+// O webhook fala com o banco como o próprio servidor (chave do sistema); o app da oficina, como
+// a pessoa que entrou (o banco só mostra os rascunhos da oficina dela).
 
-import { randomInt } from 'node:crypto';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { z } from 'zod';
-import { clienteEquipe } from '../equipe';
+import { clienteSistema } from '../supabase-servidor';
 import { esquemaOrdem, type OrdemIA } from './esquema';
 import { interpretarComIA, type Midia } from './ia';
 
 const BUCKET = 'oficinas';
 const JANELA_RASCUNHO_MS = 2 * 60 * 60_000;
+/** Quantas vezes a IA tenta montar o mesmo rascunho antes de desistir. */
+export const MAX_TENTATIVAS = 3;
 
 export interface MidiaGuardada {
   mensagem: string;
@@ -29,7 +32,7 @@ interface TextoGuardado {
 
 const esquemaRascunho = z.object({
   id: z.string(),
-  aparelho_id: z.string(),
+  oficina_id: z.string().nullable(),
   telefone: z.string().nullable(),
   status: z.enum(['aberta', 'processando', 'pronta', 'confirmada', 'descartada', 'erro']),
   midias: z.array(z.object({ mensagem: z.string(), tipo: z.enum(['audio', 'foto']), caminho: z.string(), mime: z.string(), tamanho: z.number(), legenda: z.string().nullish() })),
@@ -37,12 +40,13 @@ const esquemaRascunho = z.object({
   resultado: z.unknown().nullable(),
   modelo: z.string().nullable(),
   erro: z.string().nullable(),
+  tentativas: z.number().nullish().transform((v) => v ?? 0),
   criado_em: z.string(),
   atualizado_em: z.string()
 });
 export type Rascunho = z.infer<typeof esquemaRascunho>;
 
-const COLUNAS = 'id, aparelho_id, telefone, status, midias, textos, resultado, modelo, erro, criado_em, atualizado_em';
+const COLUNAS = 'id, oficina_id, telefone, status, midias, textos, resultado, modelo, erro, tentativas, criado_em, atualizado_em';
 
 function hoje(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
@@ -53,93 +57,84 @@ function ler(linha: unknown): Rascunho | null {
   return r.success ? r.data : null;
 }
 
-// ---------------------------------------------------------------- vínculo do WhatsApp
+// ---------------------------------------------------------------- vínculo do WhatsApp (sistema)
 
-/** Gera o código de 6 dígitos que o mecânico manda para o agente (vale 15 minutos). */
-export async function gerarCodigoDeVinculo(aparelhoId: string, oficina: string): Promise<string | null> {
-  const sb = clienteEquipe();
-  if (!sb) return null;
-  for (let tentativa = 0; tentativa < 5; tentativa++) {
-    const codigo = String(randomInt(0, 1_000_000)).padStart(6, '0');
-    const { error } = await sb
-      .from('whatsapp_codigos')
-      .insert({ codigo, aparelho_id: aparelhoId, oficina_nome: oficina.slice(0, 120) || null, expira_em: new Date(Date.now() + 15 * 60_000).toISOString() });
-    if (!error) return codigo;
-    if (error.code !== '23505') {
-      console.error('[agente] código', error);
-      return null;
-    }
-  }
-  return null;
+export interface ContextoDoTelefone {
+  oficinaId: string;
+  oficina: string;
+  plano: 'pro' | 'teste' | 'gratis';
 }
 
-export async function vincularTelefone(telefone: string, codigo: string): Promise<{ oficina: string | null } | null> {
-  const sb = clienteEquipe();
+/** Liga o número à oficina do código (o código vale uma vez). Null: código errado ou vencido. */
+export async function vincularTelefone(telefone: string, codigo: string): Promise<{ oficinaId: string; oficina: string } | null> {
+  const sb = clienteSistema();
   if (!sb) return null;
-  const { data } = await sb.from('whatsapp_codigos').select('codigo, aparelho_id, oficina_nome, expira_em').eq('codigo', codigo).maybeSingle();
-  if (!data || new Date(data.expira_em).getTime() < Date.now()) return null;
-  const { error } = await sb
-    .from('whatsapp_vinculos')
-    .upsert({ telefone, aparelho_id: data.aparelho_id, oficina_nome: data.oficina_nome, criado_em: new Date().toISOString() }, { onConflict: 'telefone' });
+  const { data, error } = await sb.rpc('whatsapp_vincular', { p_telefone: telefone, p_codigo: codigo });
   if (error) {
-    console.error('[agente] vínculo', error);
+    console.error('[agente] vínculo', error.code, error.message);
     return null;
   }
-  await sb.from('whatsapp_codigos').delete().eq('codigo', codigo);
-  return { oficina: data.oficina_nome };
+  const r = data as { oficinaId?: string; oficina?: string } | null;
+  return r?.oficinaId ? { oficinaId: r.oficinaId, oficina: r.oficina ?? '' } : null;
 }
 
-export async function vinculoDoTelefone(telefone: string): Promise<{ aparelhoId: string; oficina: string | null } | null> {
-  const sb = clienteEquipe();
+/** A oficina deste número (e o plano dela hoje), ou null quando o número não é de oficina nenhuma. */
+export async function contextoDoTelefone(telefone: string): Promise<ContextoDoTelefone | null> {
+  const sb = clienteSistema();
   if (!sb) return null;
-  const { data } = await sb.from('whatsapp_vinculos').select('aparelho_id, oficina_nome').eq('telefone', telefone).maybeSingle();
-  return data ? { aparelhoId: data.aparelho_id, oficina: data.oficina_nome } : null;
+  const { data, error } = await sb.rpc('whatsapp_contexto', { p_telefone: telefone });
+  if (error) {
+    console.error('[agente] contexto', error.code, error.message);
+    return null;
+  }
+  const r = data as { oficinaId?: string; oficina?: string; plano?: string } | null;
+  if (!r?.oficinaId) return null;
+  return { oficinaId: r.oficinaId, oficina: r.oficina ?? '', plano: r.plano === 'pro' || r.plano === 'teste' ? r.plano : 'gratis' };
 }
 
-export async function telefonesDoAparelho(aparelhoId: string): Promise<string[]> {
-  const sb = clienteEquipe();
-  if (!sb) return [];
-  const { data } = await sb.from('whatsapp_vinculos').select('telefone').eq('aparelho_id', aparelhoId);
-  return (data ?? []).map((x: { telefone: string }) => x.telefone);
-}
+// ---------------------------------------------------------------- rascunhos (sistema)
 
-export async function desvincularTelefone(aparelhoId: string, telefone: string): Promise<boolean> {
-  const sb = clienteEquipe();
-  if (!sb) return false;
-  const { error } = await sb.from('whatsapp_vinculos').delete().eq('aparelho_id', aparelhoId).eq('telefone', telefone);
-  return !error;
-}
-
-// ---------------------------------------------------------------- rascunhos
-
-/** O rascunho aberto deste WhatsApp (o das últimas 2 horas) ou um novo. */
-export async function rascunhoAberto(telefone: string, aparelhoId: string): Promise<Rascunho | null> {
-  const sb = clienteEquipe();
+/**
+ * O rascunho aberto deste WhatsApp (o das últimas 2 horas) ou um novo. Uma montagem que caiu no
+ * meio, ou que deu erro e ainda tem tentativa, volta a ficar aberta com tudo que o mecânico mandou.
+ */
+export async function rascunhoAberto(telefone: string, oficinaId: string): Promise<Rascunho | null> {
+  const sb = clienteSistema();
   if (!sb) return null;
   const desde = new Date(Date.now() - JANELA_RASCUNHO_MS).toISOString();
-  // uma montagem que caiu no meio volta a ficar aberta, com tudo que o mecânico mandou
+  const agora = new Date().toISOString();
   await sb
     .from('ordens_rascunho')
-    .update({ status: 'aberta', atualizado_em: new Date().toISOString() })
+    .update({ status: 'aberta', atualizado_em: agora })
     .eq('telefone', telefone)
+    .eq('oficina_id', oficinaId)
     .eq('status', 'processando')
     .lt('atualizado_em', new Date(Date.now() - MONTAGEM_PARADA_MS).toISOString());
+  await sb
+    .from('ordens_rascunho')
+    .update({ status: 'aberta', atualizado_em: agora })
+    .eq('telefone', telefone)
+    .eq('oficina_id', oficinaId)
+    .eq('status', 'erro')
+    .lt('tentativas', MAX_TENTATIVAS)
+    .gte('atualizado_em', desde);
   const { data } = await sb
     .from('ordens_rascunho')
     .select(COLUNAS)
     .eq('telefone', telefone)
+    .eq('oficina_id', oficinaId)
     .eq('status', 'aberta')
     .gte('atualizado_em', desde)
     .order('atualizado_em', { ascending: false })
     .limit(1);
   const atual = ler(data?.[0]);
   if (atual) return atual;
-  const novo = await sb.from('ordens_rascunho').insert({ aparelho_id: aparelhoId, telefone, origem: 'whatsapp' }).select(COLUNAS).single();
+  const novo = await sb.from('ordens_rascunho').insert({ oficina_id: oficinaId, telefone, origem: 'whatsapp' }).select(COLUNAS).single();
   if (novo.error) console.error('[agente] novo rascunho', novo.error);
   return ler(novo.data);
 }
 
-function extensao(mime: string): string {
+export function extensao(mime: string): string {
   if (mime.includes('ogg')) return 'ogg';
   if (mime.includes('mpeg')) return 'mp3';
   if (mime.includes('mp4') || mime.includes('aac')) return 'm4a';
@@ -150,12 +145,17 @@ function extensao(mime: string): string {
   return 'jpg';
 }
 
+/** O caminho da mídia no Storage: a pasta é a oficina (o banco deixa só ela ler). */
+export function caminhoDaMidia(oficinaId: string, rascunhoId: string, ordem: number, mime: string): string {
+  return `${oficinaId}/${rascunhoId}/${ordem}-${Date.now().toString(36)}.${extensao(mime)}`;
+}
+
 /** Guarda a mídia no Storage e junta ao rascunho. Devolve se era a primeira mídia do rascunho. */
 export async function anexarMidia(r: Rascunho, mensagem: string, tipo: 'audio' | 'foto', bytes: Uint8Array, mime: string, legenda: string | null): Promise<boolean> {
-  const sb = clienteEquipe();
-  if (!sb) return false;
+  const sb = clienteSistema();
+  if (!sb || !r.oficina_id) return false;
   if (r.midias.length >= 20) return false;
-  const caminho = `${r.aparelho_id}/${r.id}/${Date.now().toString(36)}-${mensagem.slice(-12).replace(/[^A-Za-z0-9]/g, '')}.${extensao(mime)}`;
+  const caminho = caminhoDaMidia(r.oficina_id, r.id, r.midias.length, mime);
   const up = await sb.storage.from(BUCKET).upload(caminho, bytes, { contentType: mime, upsert: false });
   if (up.error) {
     console.error('[agente] guardar mídia', up.error);
@@ -168,7 +168,7 @@ export async function anexarMidia(r: Rascunho, mensagem: string, tipo: 'audio' |
 }
 
 export async function anexarTexto(r: Rascunho, mensagem: string, texto: string): Promise<void> {
-  const sb = clienteEquipe();
+  const sb = clienteSistema();
   if (!sb) return;
   const item: TextoGuardado = { mensagem, texto: texto.slice(0, 2000) };
   const { error } = await sb.rpc('anexar_ao_rascunho', { p_id: r.id, p_campo: 'textos', p_item: item });
@@ -176,14 +176,14 @@ export async function anexarTexto(r: Rascunho, mensagem: string, texto: string):
 }
 
 async function recarregar(id: string): Promise<Rascunho | null> {
-  const sb = clienteEquipe();
+  const sb = clienteSistema();
   if (!sb) return null;
   const { data } = await sb.from('ordens_rascunho').select(COLUNAS).eq('id', id).maybeSingle();
   return ler(data);
 }
 
 async function mudar(id: string, mudanca: Record<string, unknown>, deStatus?: string): Promise<boolean> {
-  const sb = clienteEquipe();
+  const sb = clienteSistema();
   if (!sb) return false;
   let q = sb.from('ordens_rascunho').update({ ...mudanca, atualizado_em: new Date().toISOString() }).eq('id', id);
   if (deStatus) q = q.eq('status', deStatus);
@@ -198,15 +198,39 @@ const BYTES_DE_FOTO_DA_IA = 12_000_000;
 // uma montagem parada há mais tempo que isso caiu no meio (a função tem 2 minutos)
 const MONTAGEM_PARADA_MS = 3 * 60_000;
 
+export const COTA_ACABOU = 'As ordens por voz do mês acabaram no plano da oficina.';
+
+export type ResultadoDaMontagem = { ok: true; ordem: OrdemIA } | { ok: false; erro: string; semCota?: boolean };
+
 /**
- * A IA monta a ordem a partir de tudo que chegou. Só um processamento por rascunho. Se der errado,
- * o rascunho volta a ficar aberto e o mecânico pode escrever fechar de novo.
+ * A IA monta a ordem a partir de tudo que chegou. Só um processamento por rascunho. Gasta a cota
+ * da oficina (uma vez por rascunho); se a IA falhar, a cota volta e o rascunho fica com erro,
+ * para tentar de novo na próxima mensagem ou na rotina diária (até 3 vezes).
  */
-export async function processarRascunho(id: string, oficina: string | null): Promise<{ ok: true; ordem: OrdemIA } | { ok: false; erro: string }> {
-  if (!(await mudar(id, { status: 'processando' }, 'aberta'))) return { ok: false, erro: 'Esta ordem já está sendo montada.' };
+export async function processarRascunho(id: string, oficina: string | null): Promise<ResultadoDaMontagem> {
+  const sb = clienteSistema();
+  if (!sb) return { ok: false, erro: 'Não consegui abrir o que você mandou agora.' };
+  const antes = await recarregar(id);
+  if (!antes?.oficina_id) return { ok: false, erro: 'Não consegui abrir o que você mandou agora.' };
+  const deStatus = antes.status === 'erro' ? 'erro' : 'aberta';
+  if (!(await mudar(id, { status: 'processando' }, deStatus))) return { ok: false, erro: 'Esta ordem já está sendo montada.' };
+  const chave = `wa:${id}`;
+  const cota = await sb.rpc('consumir_cota', { p_oficina: antes.oficina_id, p_recurso: 'montagem', p_quantidade: 1, p_chave: chave });
+  if (cota.error) {
+    await mudar(id, { status: 'aberta' }, 'processando');
+    if (cota.error.code === 'RV040') return { ok: false, erro: COTA_ACABOU, semCota: true };
+    console.error('[agente] cota', cota.error);
+    return { ok: false, erro: 'Não consegui montar agora.' };
+  }
+  // o rascunho só fica pronto uma vez: se a chave dele está no banco, a cota gasta ainda não virou
+  // ordem (inclusive a de uma montagem que caiu no meio), e devolver a chave devolve a cota uma vez só
+  const devolver = async () => {
+    const { error } = await sb.rpc('devolver_cota', { p_oficina: antes.oficina_id, p_recurso: 'montagem', p_quantidade: 1, p_chave: chave });
+    if (error) console.error('[agente] devolver cota', error);
+  };
   const r = await recarregar(id);
-  const sb = clienteEquipe();
-  if (!r || !sb) {
+  if (!r) {
+    await devolver();
     await mudar(id, { status: 'aberta' }, 'processando');
     return { ok: false, erro: 'Não consegui abrir o que você mandou agora.' };
   }
@@ -233,31 +257,94 @@ export async function processarRascunho(id: string, oficina: string | null): Pro
   const anotacao = [...r.textos.map((t) => t.texto), ...legendas].join('\n').slice(0, 1500) || null;
   const res = await interpretarComIA({ oficina: oficina ?? '', hoje: hoje(), anotacao, quantidadeFotos: imagens.length }, audios, imagens);
   if (!res.ok) {
-    await mudar(id, { status: 'aberta', erro: res.erro.slice(0, 300) }, 'processando');
+    await devolver();
+    await mudar(id, { status: 'erro', erro: res.erro.slice(0, 300), tentativas: Math.min(100, r.tentativas + 1) }, 'processando');
     return res;
   }
   await mudar(id, { status: 'pronta', resultado: res.ordem, modelo: res.modelo.slice(0, 80), erro: null });
   return { ok: true, ordem: res.ordem };
 }
 
-export async function descartarAberto(telefone: string): Promise<boolean> {
-  const sb = clienteEquipe();
+export async function descartarAberto(telefone: string, oficinaId: string): Promise<boolean> {
+  const sb = clienteSistema();
   if (!sb) return false;
-  const { data } = await sb.from('ordens_rascunho').update({ status: 'descartada', atualizado_em: new Date().toISOString() }).eq('telefone', telefone).eq('status', 'aberta').select('id');
+  const { data } = await sb
+    .from('ordens_rascunho')
+    .update({ status: 'descartada', atualizado_em: new Date().toISOString() })
+    .eq('telefone', telefone)
+    .eq('oficina_id', oficinaId)
+    .in('status', ['aberta', 'erro'])
+    .select('id, midias');
+  for (const r of (data ?? []) as { id: string; midias: MidiaGuardada[] }[]) await apagarConteudo(r.id, r.midias);
   return (data?.length ?? 0) > 0;
 }
 
-/** A última ordem montada deste WhatsApp (para reenviar o texto do cliente). */
-export async function ultimaMontada(telefone: string): Promise<OrdemIA | null> {
-  const sb = clienteEquipe();
+/** A última ordem montada deste WhatsApp nesta oficina (para reenviar o texto do cliente). */
+export async function ultimaMontada(telefone: string, oficinaId: string): Promise<OrdemIA | null> {
+  const sb = clienteSistema();
   if (!sb) return null;
-  const { data } = await sb.from('ordens_rascunho').select(COLUNAS).eq('telefone', telefone).in('status', ['pronta', 'confirmada']).order('atualizado_em', { ascending: false }).limit(1);
+  const { data } = await sb
+    .from('ordens_rascunho')
+    .select(COLUNAS)
+    .eq('telefone', telefone)
+    .eq('oficina_id', oficinaId)
+    .in('status', ['pronta', 'confirmada'])
+    .order('atualizado_em', { ascending: false })
+    .limit(1);
   const r = ler(data?.[0]);
   const o = r ? esquemaOrdem.safeParse(r.resultado) : null;
   return o?.success ? o.data : null;
 }
 
-// ---------------------------------------------------------------- para o app da oficina
+/** Montagens que caíram no meio (a função terminou antes da IA): viram erro, para tentar de novo. */
+export async function destravarParados(): Promise<number> {
+  const sb = clienteSistema();
+  if (!sb) return 0;
+  const { data, error } = await sb
+    .from('ordens_rascunho')
+    .select('id, tentativas')
+    .eq('status', 'processando')
+    .lt('atualizado_em', new Date(Date.now() - 10 * 60_000).toISOString())
+    .limit(100);
+  if (error) {
+    console.error('[agente] parados', error);
+    return 0;
+  }
+  let n = 0;
+  for (const r of (data ?? []) as { id: string; tentativas: number | null }[]) {
+    if (await mudar(r.id, { status: 'erro', erro: 'A montagem parou no meio.', tentativas: Math.min(100, (r.tentativas ?? 0) + 1) }, 'processando')) n++;
+  }
+  return n;
+}
+
+/** Rascunhos que deram erro e ainda têm tentativa (a rotina diária tenta de novo). */
+export async function rascunhosComErro(limite = 20): Promise<{ id: string; oficinaId: string | null; oficina: string | null; telefone: string | null }[]> {
+  const sb = clienteSistema();
+  if (!sb) return [];
+  const { data, error } = await sb
+    .from('ordens_rascunho')
+    .select('id, telefone, oficina_id, tentativas')
+    .eq('status', 'erro')
+    .lt('tentativas', MAX_TENTATIVAS)
+    .gte('atualizado_em', new Date(Date.now() - 7 * 86_400_000).toISOString())
+    .order('atualizado_em', { ascending: true })
+    .limit(limite);
+  if (error) {
+    console.error('[agente] rascunhos com erro', error);
+    return [];
+  }
+  const ids = [...new Set((data ?? []).map((r: { oficina_id: string | null }) => r.oficina_id).filter((x): x is string => !!x))];
+  const nomes = ids.length ? await sb.from('oficinas').select('id, nome').in('id', ids) : { data: [] };
+  const mapa = new Map(((nomes.data ?? []) as { id: string; nome: string }[]).map((o) => [o.id, o.nome]));
+  return (data ?? []).map((r: { id: string; telefone: string | null; oficina_id: string | null }) => ({
+    id: r.id,
+    telefone: r.telefone,
+    oficinaId: r.oficina_id,
+    oficina: r.oficina_id ? (mapa.get(r.oficina_id) ?? null) : null
+  }));
+}
+
+// ---------------------------------------------------------------- para o app da oficina (pessoa)
 
 export interface RascunhoParaApp {
   id: string;
@@ -267,11 +354,25 @@ export interface RascunhoParaApp {
   midias: { tipo: 'audio' | 'foto'; mime: string; legenda: string | null }[];
 }
 
-/** Os rascunhos prontos deste aparelho (a mídia o app baixa à parte, por /api/agente/midia). */
-export async function rascunhosProntos(aparelhoId: string): Promise<RascunhoParaApp[]> {
-  const sb = clienteEquipe();
-  if (!sb) return [];
-  const { data, error } = await sb.from('ordens_rascunho').select(COLUNAS).eq('aparelho_id', aparelhoId).eq('status', 'pronta').order('criado_em', { ascending: false }).limit(20);
+/** Os números de WhatsApp ligados à oficina. */
+export async function numerosLigados(sb: SupabaseClient, oficinaId: string): Promise<string[]> {
+  const { data, error } = await sb.from('whatsapp_vinculos').select('telefone').eq('oficina_id', oficinaId).order('criado_em');
+  if (error) {
+    console.error('[agente] números', error);
+    return [];
+  }
+  return (data ?? []).map((x: { telefone: string }) => x.telefone);
+}
+
+export async function desligarNumero(sb: SupabaseClient, oficinaId: string, telefone: string): Promise<boolean> {
+  const { data, error } = await sb.from('whatsapp_vinculos').delete().eq('oficina_id', oficinaId).eq('telefone', telefone).select('telefone');
+  if (error) console.error('[agente] desligar', error);
+  return !error && (data?.length ?? 0) > 0;
+}
+
+/** Os rascunhos prontos da oficina (a mídia o app baixa à parte, por /api/agente/midia). */
+export async function rascunhosProntos(sb: SupabaseClient, oficinaId: string): Promise<RascunhoParaApp[]> {
+  const { data, error } = await sb.from('ordens_rascunho').select(COLUNAS).eq('oficina_id', oficinaId).eq('status', 'pronta').order('criado_em', { ascending: false }).limit(20);
   if (error) {
     console.error('[agente] rascunhos prontos', error);
     return [];
@@ -286,40 +387,36 @@ export async function rascunhosProntos(aparelhoId: string): Promise<RascunhoPara
   return lista;
 }
 
-/** Um áudio ou foto de um rascunho deste aparelho. */
-export async function midiaDoRascunho(aparelhoId: string, id: string, indice: number): Promise<{ bytes: Uint8Array; mime: string } | null> {
-  const sb = clienteEquipe();
-  if (!sb) return null;
-  const { data } = await sb.from('ordens_rascunho').select(COLUNAS).eq('id', id).eq('aparelho_id', aparelhoId).maybeSingle();
+/** Um áudio ou foto de um rascunho da oficina (o banco só deixa baixar da pasta dela). */
+export async function midiaDoRascunho(sb: SupabaseClient, oficinaId: string, id: string, indice: number): Promise<{ bytes: Uint8Array; mime: string } | null> {
+  const { data } = await sb.from('ordens_rascunho').select(COLUNAS).eq('id', id).eq('oficina_id', oficinaId).maybeSingle();
   const r = ler(data);
   const m = r?.midias[indice];
-  if (!m) return null;
+  if (!m || !m.caminho.startsWith(`${oficinaId}/`)) return null;
   const arquivo = await sb.storage.from(BUCKET).download(m.caminho);
   if (arquivo.error || !arquivo.data) return null;
   return { bytes: new Uint8Array(await arquivo.data.arrayBuffer()), mime: m.mime };
 }
 
-export async function encerrarRascunho(aparelhoId: string, id: string, status: 'confirmada' | 'descartada'): Promise<boolean> {
-  const sb = clienteEquipe();
-  if (!sb) return false;
+/** A oficina confirmou ou descartou o rascunho: a mídia sai do servidor (o app já baixou). */
+export async function encerrarRascunho(sb: SupabaseClient, oficinaId: string, id: string, status: 'confirmada' | 'descartada'): Promise<boolean> {
   const { data, error } = await sb
     .from('ordens_rascunho')
     .update({ status, atualizado_em: new Date().toISOString() })
     .eq('id', id)
-    .eq('aparelho_id', aparelhoId)
+    .eq('oficina_id', oficinaId)
     .eq('status', 'pronta')
     .select('id, midias');
   if (error) console.error('[agente] encerrar rascunho', error);
   const linha = data?.[0] as { id: string; midias: MidiaGuardada[] } | undefined;
   if (error || !linha) return false;
-  // o app já baixou o que precisava: áudios, fotos e textos saem do servidor
   await apagarConteudo(linha.id, linha.midias);
   return true;
 }
 
 /** Apaga os áudios e fotos do Storage e esvazia o rascunho (fica só a linha, sem conteúdo). */
 async function apagarConteudo(id: string, midias: MidiaGuardada[]): Promise<void> {
-  const sb = clienteEquipe();
+  const sb = clienteSistema();
   if (!sb) return;
   const caminhos = (Array.isArray(midias) ? midias : []).map((m) => m.caminho).filter(Boolean);
   if (caminhos.length) {
@@ -335,7 +432,7 @@ async function apagarConteudo(id: string, midias: MidiaGuardada[]): Promise<void
  * perdem os áudios, fotos e textos, e os códigos de vínculo vencidos somem.
  */
 export async function limparRascunhosVelhos(dias = 30): Promise<{ rascunhos: number }> {
-  const sb = clienteEquipe();
+  const sb = clienteSistema();
   if (!sb) return { rascunhos: 0 };
   const limite = new Date(Date.now() - dias * 86_400_000).toISOString();
   await sb.from('whatsapp_codigos').delete().lt('expira_em', new Date().toISOString());

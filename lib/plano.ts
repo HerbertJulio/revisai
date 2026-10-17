@@ -1,6 +1,6 @@
 // Planos da oficina. O grátis tem limite de avisos e de ordens por voz no mês; o Pro libera tudo.
-// Sem login, o plano fica no aparelho: o teste de 30 dias começa com um toque e o Pro pago entra
-// com o código que a equipe manda depois do pagamento (conferido no servidor).
+// O plano fica na conta da oficina (o banco confere em cada uso da IA): o teste de 30 dias começa
+// com um toque e o Pro pago entra pela assinatura ou pelo código que a equipe manda.
 
 import { dataLocal, diasEntre, somarDias } from './datas';
 import type { Contato, Id } from './tipos';
@@ -13,8 +13,64 @@ export const PRO = {
   avisosGratis: 20,
   ordensGratis: 5,
   /** Uso justo: ninguém da oficina dita mais que isso num mês. */
-  ordensPro: 300
+  ordensPro: 300,
+  /** Áudios que viram texto no mês (cada gravação conta uma). */
+  transcricoesGratis: 30,
+  transcricoesPro: 1500
 } as const;
+
+/** O plano como a conta traz (minha_conta). */
+export interface PlanoDaConta {
+  plano: TipoPlano;
+  proAte: string | null;
+  testeAte: string | null;
+}
+
+/** O plano de hoje pelo que está na conta da oficina. */
+export function planoDaConta(o: PlanoDaConta, hoje: string): PlanoAtual {
+  if (o.proAte && o.proAte >= hoje) return { tipo: 'pro', ate: o.proAte, diasRestantes: diasEntre(hoje, o.proAte), podeTestar: false };
+  if (o.testeAte && o.testeAte >= hoje) return { tipo: 'teste', ate: o.testeAte, diasRestantes: diasEntre(hoje, o.testeAte), podeTestar: false };
+  return { tipo: 'gratis', ate: null, diasRestantes: null, podeTestar: !o.testeAte };
+}
+
+/** O uso do mês que o banco devolve (uso_do_mes). */
+export interface UsoDoMes {
+  plano: TipoPlano;
+  mes: string;
+  montagem: { usado: number; limite: number };
+  transcricao: { usado: number; limite: number };
+}
+
+export function lerUsoDoMes(v: unknown): UsoDoMes | null {
+  const o = v as Partial<UsoDoMes> | null;
+  if (!o || typeof o !== 'object' || !o.montagem || !o.transcricao) return null;
+  const n = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : 0);
+  const plano = o.plano === 'pro' || o.plano === 'teste' ? o.plano : 'gratis';
+  return {
+    plano,
+    mes: typeof o.mes === 'string' ? o.mes : '',
+    montagem: { usado: n(o.montagem.usado), limite: n(o.montagem.limite) },
+    transcricao: { usado: n(o.transcricao.usado), limite: n(o.transcricao.limite) }
+  };
+}
+
+/** O que vem no erro RV040 do banco (o plano e o limite que acabou). */
+export interface InfoCota {
+  plano?: string;
+  limite?: number;
+}
+
+export function mensagemDaCota(recurso: 'montagem' | 'transcricao', info: InfoCota | null): string {
+  const pro = info?.plano === 'pro' || info?.plano === 'teste';
+  const limite = info?.limite ?? (recurso === 'montagem' ? (pro ? PRO.ordensPro : PRO.ordensGratis) : pro ? PRO.transcricoesPro : PRO.transcricoesGratis);
+  if (recurso === 'montagem')
+    return pro
+      ? `A oficina chegou a ${limite} ordens por voz neste mês, o uso justo do Pro. Fale com a equipe do Revisaí para liberar mais.`
+      : `As ${limite} ordens por voz do plano grátis acabaram neste mês. Com o Pro, são ${PRO.ordensPro} por mês.`;
+  return pro
+    ? `A oficina chegou a ${limite} áudios transcritos neste mês, o uso justo do Pro. Fale com a equipe do Revisaí para liberar mais.`
+    : `Os ${limite} áudios do plano grátis acabaram neste mês. Escreva o que foi feito, ou teste o Pro.`;
+}
 
 export interface EstadoPlano {
   /** Quando começou o teste do Pro (só um por aparelho). */

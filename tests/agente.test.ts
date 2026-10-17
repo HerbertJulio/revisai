@@ -102,8 +102,12 @@ describe('WhatsApp', () => {
   });
 
   it('entende os comandos do mecânico sem confundir com relato', () => {
-    expect(comando('conectar 123456')).toEqual({ conectar: '123456' });
-    expect(comando('123456')).toEqual({ conectar: '123456' });
+    expect(comando('conectar 12345678')).toEqual({ conectar: '12345678' });
+    expect(comando('Conectar: 12345678')).toEqual({ conectar: '12345678' });
+    expect(comando('12345678')).toEqual({ conectar: '12345678' });
+    // o código tem 8 números: os de 6 (antigos) não passam
+    expect(comando('conectar 123456')).toBeNull();
+    expect(comando('123456')).toBeNull();
     expect(comando('Fechar')).toBe('fechar');
     expect(comando('pronto!')).toBe('fechar');
     expect(comando('pronto, troquei o óleo e o filtro')).toBeNull();

@@ -4,7 +4,7 @@ import 'server-only';
 // (voz do Gemini, no plano grátis) e guardada no Storage (bucket público "voz"); dali em diante a rota
 // só repassa o arquivo. Sem chave ou se a IA falhar, a rota responde 404 e o navegador lê o texto.
 
-import { clienteEquipe } from './equipe';
+import { clienteSistema } from './supabase-servidor';
 import { FRASES, versaoDaFrase, type FraseId } from './voz-frases';
 
 const BUCKET = 'voz';
@@ -178,7 +178,8 @@ async function buscarOuGerar(id: FraseId, caminho: string, podeGerar: () => Prom
     return null;
   }
   prontas.set(caminho, wav);
-  const sb = clienteEquipe();
+  // só o servidor guarda no bucket da voz (a chave do sistema passa no RLS do Storage)
+  const sb = clienteSistema();
   if (sb) {
     const { error } = await sb.storage.from(BUCKET).upload(caminho, wav, { contentType: 'audio/wav', upsert: false, cacheControl: '31536000' });
     if (error && !/exists|duplicate/i.test(error.message)) console.warn('[voz] guardar', error.message);
