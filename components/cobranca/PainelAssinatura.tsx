@@ -58,7 +58,9 @@ export function PainelAssinatura(props: PropsAssinatura) {
   const toast = useToast();
   const [trocando, setTrocando] = useState(false);
   const aberto = useMemo(() => pagamentos.find((p) => p.assinatura_id === assinatura?.id && emAberto(p)) ?? null, [pagamentos, assinatura]);
-  const esperando = !!aberto || assinatura?.situacao === 'pendente';
+  // no Pix Automático e no cartão, a mensalidade da assinatura em dia sai sozinha no vencimento
+  const sozinha = !!aberto && aberto.situacao === 'pendente' && assinatura?.situacao === 'ativa' && (aberto.metodo === 'pix_automatico' || aberto.metodo === 'cartao');
+  const esperando = (!!aberto && !sozinha) || assinatura?.situacao === 'pendente';
   const proValendo = !!oficina.proAte && oficina.proAte >= hoje;
 
   // confere o pagamento a cada 10 segundos enquanto houver algo em aberto
@@ -195,6 +197,8 @@ function Situacao({
 
         {assinatura.metodo === 'pix_automatico' && assinatura.autorizacao && assinatura.situacao === 'pendente' ? (
           <Autorizacao codigo={assinatura.autorizacao} valor={assinatura.valor} />
+        ) : aberto && !esperando ? (
+          <SaiSozinha pagamento={aberto} />
         ) : aberto ? (
           <Pagar pagamento={aberto} />
         ) : null}
@@ -276,6 +280,15 @@ function Autorizacao({ codigo, valor }: { codigo: string; valor: number }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function SaiSozinha({ pagamento: p }: { pagamento: LinhaPagamento }) {
+  return (
+    <p className="rounded-xl bg-papel-2 p-4 text-[14.5px] text-tinta-2">
+      A mensalidade de {formatarMoeda(p.valor)} sai sozinha {p.metodo === 'cartao' ? 'no cartão' : 'pelo Pix Automático do seu banco'}
+      {p.vencimento ? ` em ${formatarData(p.vencimento)}` : ''}. Não precisa fazer nada.
+    </p>
   );
 }
 
