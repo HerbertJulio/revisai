@@ -51,12 +51,22 @@ export class MotorDeSincronia {
   private espera: ReturnType<typeof setTimeout> | null = null;
   private reserva: ReturnType<typeof setTimeout> | null = null;
   private desligar: (() => void)[] = [];
+  private jaEmDia = false;
+  private ultimoAviso = '';
 
   constructor(
     private readonly sb: SupabaseClient,
     private readonly oficinaId: string,
-    private readonly avisar: (info: InfoMotor) => void
+    private readonly avisarTela: (info: InfoMotor) => void
   ) {}
+
+  /** Só avisa a tela quando o estado muda (a busca de reserva roda a cada poucos segundos). */
+  private avisar(info: InfoMotor): void {
+    const chave = `${info.estado}|${info.erro ?? ''}`;
+    if (chave === this.ultimoAviso) return;
+    this.ultimoAviso = chave;
+    this.avisarTela(info);
+  }
 
   iniciar(): void {
     this.avisar({ estado: 'iniciando', erro: null });
@@ -129,14 +139,18 @@ export class MotorDeSincronia {
       return;
     }
     this.ocupado = true;
-    this.avisar({ estado: 'sincronizando', erro: null });
+    // a busca de reserva, já em dia e sem nada para subir, não pisca "salvando" na tela
+    if (!this.jaEmDia || this.ultimoAviso !== 'em-dia|' || Object.keys(useOficina.getState().sinc.pendentes).length) this.avisar({ estado: 'sincronizando', erro: null });
     try {
       do {
         this.deNovo = false;
         await this.enviar();
         await this.buscar();
       } while (this.deNovo && !this.parado);
-      if (!this.parado) this.avisar({ estado: 'em-dia', erro: null });
+      if (!this.parado) {
+        this.jaEmDia = true;
+        this.avisar({ estado: 'em-dia', erro: null });
+      }
     } catch (e) {
       await this.tratarErro(lerErro(e));
     } finally {
