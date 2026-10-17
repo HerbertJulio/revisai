@@ -139,7 +139,8 @@ export function AoVivo({ config, fornecedorId, uf, pedidos }: { config: { url: s
             aoPedido.current(p.eventType, (p.new ?? {}) as Linha)
           );
         canal.on('postgres_changes', { event: '*', schema: 'public', table: 'devolucoes', filter: `fornecedor_id=eq.${fornecedorId}` }, (p) => aoDevolucao.current(p.eventType, (p.new ?? {}) as Linha));
-        if (uf) canal.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'alertas_preco', filter: `oficina_uf=eq.${uf}` }, (p) => aoAlerta.current((p.new ?? {}) as Linha));
+        // os alertas chegam pela vitrine: só o que a loja pode ver, sem a oficina que pediu
+        if (uf) canal.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'alertas_vitrine', filter: `oficina_uf=eq.${uf}` }, (p) => aoAlerta.current((p.new ?? {}) as Linha));
         canal.subscribe();
       } catch {
         // sem tempo real: fica a atualização a cada 2 minutos

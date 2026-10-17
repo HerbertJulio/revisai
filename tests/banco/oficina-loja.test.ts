@@ -190,7 +190,7 @@ d('loja da oficina por conta', () => {
           [x.o, produto]
         );
         if (r.erro) return r;
-        await linhas(b, x.lojista, `insert into public.alertas_respostas (alerta_id, fornecedor_id, tipo, produto_id, preco, quantidade_minima) values ($1, $2, 'aceita', $3, 30, 1)`, [r.linhas[0].id, x.loja.fornecedorId, x.loja.produtoId]);
+        await linhas(b, x.lojista, `select public.loja_responder_alerta($2::bigint, $1::uuid, 'aceita', $3::bigint, 30, 1)`, [r.linhas[0].id, x.loja.fornecedorId, x.loja.produtoId]);
         await linhas(b, x.dono, `update public.alertas_preco set status = 'cancelado' where id = $1 and oficina_id = $2 and status = 'aberto' returning id`, [r.linhas[0].id, x.o]);
         return r;
       }

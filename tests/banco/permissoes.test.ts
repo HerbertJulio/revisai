@@ -298,11 +298,14 @@ d('alertas de preço', () => {
       const x = await cenario(b, false);
       for (let i = 0; i < 3; i++) expect((await novo(b, x, x.produtos[i])).erro).toBeNull();
       expect((await novo(b, x, x.produtos[3])).erro).toMatch(/teste esgotados/);
-      expect(await linhas(b, x.lojista, 'select id from public.alertas_preco where oficina_id = $1', [x.o])).toHaveLength(3);
-      expect(await linhas(b, x.longe, 'select id from public.alertas_preco where oficina_id = $1', [x.o])).toHaveLength(0);
-      const colunas = Object.keys((await linhas(b, x.lojista, 'select * from public.alertas_preco where oficina_id = $1 limit 1', [x.o]))[0]);
-      expect(colunas).not.toContain('oficina_nome');
-      expect(colunas).not.toContain('oficina_whatsapp');
+      const meus = (await linhas(b, x.dono, 'select id from public.alertas_preco where oficina_id = $1', [x.o])).map((a) => a.id);
+      expect(meus).toHaveLength(3);
+      // a loja do estado vê os três pela vitrine; a tabela dos alertas (com a oficina) ela não lê
+      expect(await linhas(b, x.lojista, 'select id from public.alertas_vitrine where id = any($1::uuid[])', [meus])).toHaveLength(3);
+      expect(await linhas(b, x.lojista, 'select id from public.alertas_preco where id = any($1::uuid[])', [meus])).toHaveLength(0);
+      expect(await linhas(b, x.longe, 'select id from public.alertas_vitrine where id = any($1::uuid[])', [meus])).toHaveLength(0);
+      const colunas = Object.keys((await linhas(b, x.lojista, 'select * from public.alertas_vitrine where id = $1', [meus[0]]))[0]);
+      for (const c of ['oficina_id', 'oficina_nome', 'oficina_whatsapp', 'aparelho_id', 'codigo_pro', 'usou_credito', 'preco_pago']) expect(colunas).not.toContain(c);
     }));
 
   it('Pro: 10 no mês, depois os pacotes; cancelado sem proposta não conta', () =>
@@ -312,7 +315,7 @@ d('alertas de preço', () => {
       const gastar = async (produto: number) => {
         const r = await novo(b, x, produto);
         if (r.erro) return r;
-        await linhas(b, x.lojista, `insert into public.alertas_respostas (alerta_id, fornecedor_id, tipo, produto_id, preco, quantidade_minima) values ($1, $2, 'aceita', $3, 30, 1)`, [r.linhas[0].id, x.loja.fornecedorId, x.loja.produtoId]);
+        await linhas(b, x.lojista, `select public.loja_responder_alerta($2::bigint, $1::uuid, 'aceita', $3::bigint, 30, 1)`, [r.linhas[0].id, x.loja.fornecedorId, x.loja.produtoId]);
         await linhas(b, x.dono, `update public.alertas_preco set status = 'cancelado' where id = $1`, [r.linhas[0].id]);
         return r;
       };
@@ -344,11 +347,26 @@ d('alertas de preço', () => {
     emTransacao(async (b) => {
       const x = await cenario(b, false);
       const a = (await novo(b, x, x.produtos[0])).linhas[0].id;
-      expect((await tentar(b, x.longe, `insert into public.alertas_respostas (alerta_id, fornecedor_id, tipo, produto_id, preco, quantidade_minima) values ($1, $2, 'aceita', $3, 30, 1)`, [a, x.lojaSp.fornecedorId, x.lojaSp.produtoId])).erro).toBeTruthy();
-      expect((await tentar(b, x.lojista, `insert into public.alertas_respostas (alerta_id, fornecedor_id, tipo, produto_id, preco, quantidade_minima) values ($1, $2, 'aceita', $3, 30, 1)`, [a, x.loja.fornecedorId, x.lojaSp.produtoId])).codigo).toBe('22023');
-      const ok = await tentar(b, x.lojista, `insert into public.alertas_respostas (alerta_id, fornecedor_id, tipo, produto_id, preco, quantidade_minima) values ($1, $2, 'aceita', $3, 30, 1) returning oficina_id`, [a, x.loja.fornecedorId, x.loja.produtoId]);
-      expect(ok.linhas[0].oficina_id).toBe(x.o);
+      expect((await tentar(b, x.longe, `select public.loja_responder_alerta($2::bigint, $1::uuid, 'aceita', $3::bigint, 30, 1)`, [a, x.lojaSp.fornecedorId, x.lojaSp.produtoId])).erro).toBeTruthy();
+      // responder por uma loja de que a pessoa não é
+      expect((await tentar(b, x.longe, `select public.loja_responder_alerta($2::bigint, $1::uuid, 'aceita', $3::bigint, 30, 1)`, [a, x.loja.fornecedorId, x.loja.produtoId])).codigo).toBe('42501');
+      expect((await tentar(b, x.lojista, `select public.loja_responder_alerta($2::bigint, $1::uuid, 'aceita', $3::bigint, 30, 1)`, [a, x.loja.fornecedorId, x.lojaSp.produtoId])).codigo).toBe('22023');
+      const ok = await tentar(b, x.lojista, `select public.loja_responder_alerta($2::bigint, $1::uuid, 'aceita', $3::bigint, 30, 1)`, [a, x.loja.fornecedorId, x.loja.produtoId]);
+      expect(ok.erro).toBeNull();
+      // a oficina dona fica gravada (para o tempo real dela), mas a loja não lê a resposta pela tabela
+      const [daOficina] = await linhas(b, x.dono, 'select oficina_id from public.alertas_respostas where alerta_id = $1', [a]);
+      expect(daOficina.oficina_id).toBe(x.o);
+      expect(await linhas(b, x.lojista, 'select * from public.alertas_respostas where alerta_id = $1', [a])).toHaveLength(0);
+      expect((await tentar(b, x.lojista, `insert into public.alertas_respostas (alerta_id, fornecedor_id, tipo) values ($1, $2, 'recusa')`, [a, x.loja.fornecedorId])).codigo).toBe('42501');
+      expect((await tentar(b, x.lojista, `update public.alertas_respostas set preco = 1 where alerta_id = $1 returning id`, [a])).linhas ?? []).toHaveLength(0);
+      const [minha] = await linhas(b, x.lojista, 'select * from public.loja_respostas_dos_alertas($1::bigint, null, $2::uuid[])', [x.loja.fornecedorId, [a]]);
+      expect(minha.alerta_id).toBe(a);
+      expect(Object.keys(minha)).not.toContain('oficina_id');
       expect(await linhas(b, x.dono, 'select id from public.alertas_respostas')).toHaveLength(1);
+      // a vitrine acompanha o alerta: cancelado pela oficina, some dos abertos e fica para quem respondeu
+      await linhas(b, x.dono, `update public.alertas_preco set status = 'cancelado' where id = $1`, [a]);
+      const [visto] = await linhas(b, x.lojista, 'select status from public.alertas_vitrine where id = $1', [a]);
+      expect(visto.status).toBe('cancelado');
     }));
 });
 

@@ -60,6 +60,12 @@ describe.skipIf(!temBanco)('conta sem vínculo', () => {
       expect((await tentar(b, estranho, 'select public.loja_cancelar_troca_pix(null)')).codigo).toBe('42501');
       expect((await tentar(b, estranho, `select public.loja_importar_produtos(null, '[]'::jsonb)`)).codigo).toBe('42501');
       expect((await tentar(b, estranho, 'select public.saldo_cashback(null, $1)', [fornecedorId])).codigo).toBe('42501');
+      // as respostas aos alertas de preço só pela própria loja (nem com a loja nula)
+      expect((await tentar(b, estranho, 'select * from public.loja_respostas_dos_alertas($1::bigint)', [fornecedorId])).codigo).toBe('42501');
+      expect((await tentar(b, estranho, 'select * from public.loja_respostas_dos_alertas(null)')).codigo).toBe('42501');
+      expect((await tentar(b, estranho, `select public.loja_responder_alerta($1::bigint, gen_random_uuid(), 'recusa')`, [fornecedorId])).codigo).toBe('42501');
+      expect((await tentar(b, estranho, `select public.loja_responder_alerta(null, null, 'recusa')`)).codigo).toBe('42501');
+      expect((await tentar(b, null, 'select * from public.loja_respostas_dos_alertas($1::bigint)', [fornecedorId])).codigo).toBe('42501');
       // chamado de quem apagou a conta (user_id nulo): ninguém de fora responde nem fecha
       const ch = await b.query(`insert into public.suporte_chamados (user_id, email, assunto) values (null, 'saiu@teste.dev', 'Ajuda') returning id`);
       const id = String(ch.rows[0].id);

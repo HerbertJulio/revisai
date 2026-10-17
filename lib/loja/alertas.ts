@@ -8,8 +8,10 @@ import { chaveDoProduto } from '../precos';
 import type { Categoria } from '../tipos';
 import { esquemaRespostaDaLoja, mensagemDaLoja } from './comum';
 
-// Os alertas de preço do lado da loja, como a pessoa da loja: o banco só mostra os alertas abertos
-// do estado da loja, das categorias que ela vende, sem o nome nem o WhatsApp da oficina.
+// Os alertas de preço do lado da loja, como a pessoa da loja. A loja lê os alertas pela vitrine
+// (alertas_vitrine: os abertos do estado dela, das categorias que ela vende, e os que ela já
+// respondeu), sem nada que diga qual oficina pediu, e lê e grava as próprias respostas só pelas
+// funções do banco, que também não devolvem a oficina.
 
 export type Gravacao<T = object> = ({ ok: true } & T) | { ok: false; erro: string };
 
@@ -116,7 +118,7 @@ export async function alertasParaLoja(sb: SupabaseClient, fornecedorId: number):
   const produtos = base.produtos.map((p): ProdutoDaLoja => ({ id: p.id, nome: nomeDoProduto(p), categoria: p.categoria, unidade: p.unidade, conteudo: p.conteudo, preco: p.preco, chave: chaveDoProduto(p), especificacao: p.especificacao }));
   const categorias = [...new Set(produtos.map((p) => p.categoria))];
   const agora = Date.now();
-  const minhas = await sb.from('alertas_respostas').select(COLUNAS_RESPOSTA).eq('fornecedor_id', fornecedorId).gte('criado_em', new Date(agora - 30 * 24 * HORA).toISOString()).limit(300);
+  const minhas = await sb.rpc('loja_respostas_dos_alertas', { p_fornecedor: fornecedorId, p_desde: new Date(agora - 30 * 24 * HORA).toISOString() });
   if (minhas.error) {
     console.error('[loja] respostas', minhas.error);
     return { alertas: [], produtos, uf: base.uf, erro: ERRO };
@@ -124,9 +126,9 @@ export async function alertasParaLoja(sb: SupabaseClient, fornecedorId: number):
   const respostas = ler(esquemaResposta, minhas.data);
   const [abertos, respondidos] = await Promise.all([
     base.uf && categorias.length
-      ? sb.from('alertas_preco').select(COLUNAS_ALERTA).eq('oficina_uf', base.uf).eq('status', 'aberto').gt('expira_em', new Date(agora).toISOString()).in('categoria', categorias).order('criado_em', { ascending: false }).limit(100)
+      ? sb.from('alertas_vitrine').select(COLUNAS_ALERTA).eq('oficina_uf', base.uf).eq('status', 'aberto').gt('expira_em', new Date(agora).toISOString()).in('categoria', categorias).order('criado_em', { ascending: false }).limit(100)
       : Promise.resolve({ data: [], error: null }),
-    respostas.length ? sb.from('alertas_preco').select(COLUNAS_ALERTA).in('id', respostas.map((r) => r.alerta_id)) : Promise.resolve({ data: [], error: null })
+    respostas.length ? sb.from('alertas_vitrine').select(COLUNAS_ALERTA).in('id', respostas.map((r) => r.alerta_id)) : Promise.resolve({ data: [], error: null })
   ]);
   if (abertos.error || respondidos.error) {
     console.error('[loja] alertas', abertos.error ?? respondidos.error);
@@ -169,10 +171,10 @@ export async function alertasParaLoja(sb: SupabaseClient, fornecedorId: number):
 /** Quantos alertas abertos a loja ainda não respondeu (para o número na aba). */
 export async function contarAlertasSemResposta(sb: SupabaseClient, fornecedorId: number, uf: string, categorias: Categoria[]): Promise<number> {
   if (!categorias.length) return 0;
-  const a = await sb.from('alertas_preco').select('id').eq('oficina_uf', uf).eq('status', 'aberto').gt('expira_em', new Date().toISOString()).in('categoria', categorias).limit(200);
+  const a = await sb.from('alertas_vitrine').select('id').eq('oficina_uf', uf).eq('status', 'aberto').gt('expira_em', new Date().toISOString()).in('categoria', categorias).limit(200);
   const ids = ((a.data ?? []) as { id: string }[]).map((x) => x.id);
   if (!ids.length) return 0;
-  const r = await sb.from('alertas_respostas').select('alerta_id').eq('fornecedor_id', fornecedorId).in('alerta_id', ids);
+  const r = await sb.rpc('loja_respostas_dos_alertas', { p_fornecedor: fornecedorId, p_alertas: ids });
   const respondidos = new Set(((r.data ?? []) as { alerta_id: string }[]).map((x) => x.alerta_id));
   return ids.filter((id) => !respondidos.has(id)).length;
 }
@@ -187,15 +189,23 @@ export async function responderAlerta(sb: SupabaseClient, fornecedorId: number, 
   const d = r.data;
   const base = await lojaEProdutos(sb, fornecedorId);
   if (!base) return { ok: false, erro: ERRO };
-  const a = await sb.from('alertas_preco').select(COLUNAS_ALERTA).eq('id', d.alertaId).maybeSingle();
+  const a = await sb.from('alertas_vitrine').select(COLUNAS_ALERTA).eq('id', d.alertaId).maybeSingle();
   const alerta = a.data ? ler(esquemaAlerta, [a.data])[0] : undefined;
   if (!alerta || alerta.oficina_uf !== base.uf || !base.produtos.some((p) => p.categoria === alerta.categoria)) return { ok: false, erro: 'Alerta não encontrado.' };
   if (alerta.status !== 'aberto' || Date.parse(alerta.expira_em) <= Date.now()) return { ok: false, erro: 'Este alerta já terminou.' };
-  const atual = await sb.from('alertas_respostas').select('status').eq('alerta_id', alerta.id).eq('fornecedor_id', fornecedorId).maybeSingle();
+  const atual = await sb.rpc('loja_respostas_dos_alertas', { p_fornecedor: fornecedorId, p_alertas: [alerta.id] });
   if (atual.error) return { ok: false, erro: ERRO };
-  if (atual.data && (atual.data as { status: string }).status !== 'enviada') return { ok: false, erro: 'Este alerta já terminou.' };
+  const minha = ler(esquemaResposta, atual.data)[0];
+  if (minha && (minha.status !== 'enviada' || minha.pedido_id != null)) return { ok: false, erro: 'Este alerta já terminou.' };
 
-  let linha: Record<string, unknown> = { tipo: 'recusa', produto_id: null, preco: null, quantidade_minima: null, prazo_entrega: null, mensagem: d.mensagem || null };
+  let linha: { tipo: 'aceita' | 'contraproposta' | 'recusa'; produto_id: number | null; preco: number | null; quantidade_minima: number | null; prazo_entrega: string | null; mensagem: string | null } = {
+    tipo: 'recusa',
+    produto_id: null,
+    preco: null,
+    quantidade_minima: null,
+    prazo_entrega: null,
+    mensagem: d.mensagem || null
+  };
   if (d.tipo !== 'recusa') {
     const produto = base.produtos.find((p) => p.id === d.produtoId);
     if (!produto || produto.categoria !== alerta.categoria) return { ok: false, erro: 'Escolha um produto seu da mesma categoria do alerta.' };
@@ -212,26 +222,19 @@ export async function responderAlerta(sb: SupabaseClient, fornecedorId: number, 
     }
     linha = { tipo: d.tipo, produto_id: produto.id, preco, quantidade_minima: minimo, prazo_entrega: d.prazoEntrega || null, mensagem: d.mensagem || null };
   }
-  const agora = new Date().toISOString();
-  if (atual.data) {
-    // muda só a resposta que ainda não foi escolhida (a oficina pode estar fechando agora mesmo)
-    const { data, error } = await sb
-      .from('alertas_respostas')
-      .update({ ...linha, criado_em: agora })
-      .eq('alerta_id', alerta.id)
-      .eq('fornecedor_id', fornecedorId)
-      .eq('status', 'enviada')
-      .is('pedido_id', null)
-      .select('id')
-      .maybeSingle();
-    if (error) {
-      console.error('[loja] mudar resposta', error);
-      return { ok: false, erro: mensagemDaLoja(error, 'Não deu para mandar a resposta agora. Tente de novo.') };
-    }
-    return data ? { ok: true } : { ok: false, erro: 'Este alerta já terminou.' };
-  }
-  const { error } = await sb.from('alertas_respostas').insert({ alerta_id: alerta.id, fornecedor_id: fornecedorId, ...linha, status: 'enviada' });
+  // o banco cria a resposta ou muda a que ainda não foi escolhida (a oficina pode estar fechando agora mesmo)
+  const { error } = await sb.rpc('loja_responder_alerta', {
+    p_fornecedor: fornecedorId,
+    p_alerta: alerta.id,
+    p_tipo: linha.tipo,
+    p_produto: linha.produto_id,
+    p_preco: linha.preco,
+    p_minimo: linha.quantidade_minima,
+    p_prazo: linha.prazo_entrega,
+    p_mensagem: linha.mensagem
+  });
   if (error) {
+    if (error.code === 'RV004') return { ok: false, erro: 'Este alerta já terminou.' };
     if (error.code === '23505') return { ok: false, erro: 'Você já respondeu este alerta. Atualize a página.' };
     console.error('[loja] responder', error);
     return { ok: false, erro: mensagemDaLoja(error, 'Não deu para mandar a resposta agora. Tente de novo.') };

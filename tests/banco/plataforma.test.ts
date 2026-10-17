@@ -103,12 +103,12 @@ d('avisos dos eventos', () => {
       expect(quem).not.toContain(longe.id);
       expect(quem).not.toContain(dono.id);
 
-      await linhas(b, lojista, `insert into public.alertas_respostas (alerta_id, fornecedor_id, tipo, produto_id, preco, quantidade_minima) values ($1, $2, 'aceita', $3, 30, 1)`, [
+      await linhas(b, lojista, `select public.loja_responder_alerta($2::bigint, $1::uuid, 'aceita', $3::bigint, 30, 1)`, [
         alerta.id,
         loja.fornecedorId,
         loja.produtoId
       ]);
-      await linhas(b, outra, `insert into public.alertas_respostas (alerta_id, fornecedor_id, tipo) values ($1, $2, 'recusa')`, [alerta.id, loja2.fornecedorId]);
+      await linhas(b, outra, `select public.loja_responder_alerta($2::bigint, $1::uuid, 'recusa')`, [alerta.id, loja2.fornecedorId]);
       const respostas = await fila(b, `tipo = 'alerta_resposta' and dados ->> 'alertaId' = $1`, [alerta.id]);
       expect(respostas).toHaveLength(1);
       expect(respostas[0].destino).toEqual({ oficina_id: o });

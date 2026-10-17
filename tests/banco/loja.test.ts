@@ -94,18 +94,26 @@ d('o que a loja faz no painel', () => {
         `insert into public.alertas_preco (oficina_id, oficina_uf, categoria, titulo, produto_id, quantidade, preco_alvo, expira_em) values ($1, 'RJ', 'oleo_motor', 'Óleo', $2, 4, 30, now() + interval '48 hours') returning id`,
         [o, loja.produtoId]
       );
-      // a loja vê o alerta (sem nome nem WhatsApp da oficina)
-      const vistos = await linhas(b, lojista, 'select * from public.alertas_preco');
+      // a loja vê o alerta pela vitrine (sem nada que diga qual oficina pediu)
+      const vistos = await linhas(b, lojista, 'select * from public.alertas_vitrine');
       // o banco de teste é compartilhado: outros testes podem ter deixado alertas abertos no mesmo estado
       expect(vistos.map((x) => x.id)).toContain(a.id);
-      await linhas(b, lojista, `insert into public.alertas_respostas (alerta_id, fornecedor_id, tipo, produto_id, preco, quantidade_minima) values ($1, $2, 'contraproposta', $3, 35, 4)`, [a.id, loja.fornecedorId, loja.produtoId]);
-      const mudou = await tentar(b, lojista, `update public.alertas_respostas set preco = 33, criado_em = now() where alerta_id = $1 and fornecedor_id = $2 and status = 'enviada' and pedido_id is null returning preco`, [a.id, loja.fornecedorId]);
+      const nova = await tentar(b, lojista, `select public.loja_responder_alerta($2::bigint, $1::uuid, 'contraproposta', $3::bigint, 35, 4) as r`, [a.id, loja.fornecedorId, loja.produtoId]);
+      expect(nova.erro).toBeNull();
+      expect(nova.linhas[0].r).toBe('nova');
+      const mudou = await tentar(b, lojista, `select public.loja_responder_alerta($2::bigint, $1::uuid, 'contraproposta', $3::bigint, 33, 4) as r`, [a.id, loja.fornecedorId, loja.produtoId]);
       expect(mudou.erro).toBeNull();
-      expect(Number(mudou.linhas[0].preco)).toBe(33);
+      expect(mudou.linhas[0].r).toBe('mudou');
+      const minhas = await linhas(b, lojista, `select * from public.loja_respostas_dos_alertas($1::bigint)`, [loja.fornecedorId]);
+      expect(minhas).toHaveLength(1);
+      expect(Number(minhas[0].preco)).toBe(33);
+      expect(Object.keys(minhas[0])).not.toContain('oficina_id');
       // recusa sem produto e sem preço vale
       const outraLoja = await criarPessoa(b, pessoa('outra'));
       const l2 = await criarLoja(b, outraLoja, { nome: 'Outra' });
-      expect((await tentar(b, outraLoja, `insert into public.alertas_respostas (alerta_id, fornecedor_id, tipo) values ($1, $2, 'recusa')`, [a.id, l2.fornecedorId])).erro).toBeNull();
+      expect((await tentar(b, outraLoja, `select public.loja_responder_alerta($2::bigint, $1::uuid, 'recusa')`, [a.id, l2.fornecedorId])).erro).toBeNull();
+      // a outra loja não lê as respostas desta
+      expect((await tentar(b, outraLoja, `select * from public.loja_respostas_dos_alertas($1::bigint)`, [loja.fornecedorId])).codigo).toBe('42501');
     }));
 
   it('só o dono troca a chave Pix; o vendedor vê os pedidos', () =>
