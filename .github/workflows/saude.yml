@@ -1,0 +1,39 @@
+name: Saúde
+
+# A cada 15 minutos: o site responde e o banco também? Falha (e o GitHub avisa por e-mail quem
+# cuida do repositório) quando /api/saude não devolve 200 ou devolve um erro do banco.
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: saude
+  cancel-in-progress: true
+
+jobs:
+  saude:
+    name: Site e banco no ar
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Conferir /api/saude
+        env:
+          ENDERECO: https://revisai.howlks.com/api/saude
+        run: |
+          # três tentativas, para uma falha passageira de rede não virar alarme
+          for tentativa in 1 2 3; do
+            codigo="$(curl -sS -o resposta.json -w '%{http_code}' --max-time 20 "$ENDERECO" || echo 000)"
+            if [ "$codigo" = "200" ] && jq -e '.erro == null' resposta.json > /dev/null 2>&1; then
+              echo "No ar (tentativa $tentativa)."
+              exit 0
+            fi
+            echo "Tentativa $tentativa: HTTP $codigo"
+            sleep 20
+          done
+          echo "::error::/api/saude falhou: HTTP $codigo"
+          jq -c '{supabase, catalogo, erro}' resposta.json 2>/dev/null || true
+          exit 1
