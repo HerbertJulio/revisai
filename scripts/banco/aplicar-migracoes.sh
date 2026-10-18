@@ -64,7 +64,7 @@ versoes_aplicadas() {
     return
   fi
   local corpo="$TEMP/corpo.json" resposta="$TEMP/resposta.json" codigo
-  jq -n --arg q "$consulta" '{query: $q, read_only: true}' > "$corpo"
+  jq -n --arg q "$consulta" '{query: $q}' > "$corpo"
   codigo="$(curl -sS -o "$resposta" -w '%{http_code}' -X POST \
     "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF/database/query" \
     -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' \
