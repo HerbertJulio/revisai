@@ -3,6 +3,7 @@
 import { MessageCircle, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { encerrarRascunhoDoWhatsApp, rascunhosDoWhatsApp } from '@/app/oficina/acoes-agente';
+import { useConta } from '@/components/conta/ProvedorConta';
 import { useToast } from '@/components/Toasts';
 import { Botao } from '@/components/ui';
 import type { RascunhoParaApp } from '@/lib/agente/rascunhos';
@@ -13,21 +14,24 @@ import { servico as infoServico } from '@/lib/manutencao';
 import { novoId, type Clipe } from './gravador';
 import type { FotoLocal } from './sessao';
 
-/** Ordens que o mecânico mandou pelo WhatsApp e a IA já montou, esperando conferência. */
-export function CaixaWhatsApp({ aparelhoId, aoAbrir }: { aparelhoId: string; aoAbrir: (r: RascunhoParaApp, fotos: FotoLocal[], clipes: Clipe[]) => void }) {
+/** Ordens que o mecânico mandou pelo WhatsApp e a IA já montou, esperando conferência (da oficina da conta). */
+export function CaixaWhatsApp({ aoAbrir }: { aoAbrir: (r: RascunhoParaApp, fotos: FotoLocal[], clipes: Clipe[]) => void }) {
   const toast = useToast();
+  const { oficina } = useConta();
+  const oficinaId = oficina?.id ?? null;
   const [lista, setLista] = useState<RascunhoParaApp[]>([]);
   const [abrindo, setAbrindo] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!oficinaId) return;
     let vivo = true;
-    rascunhosDoWhatsApp(aparelhoId)
+    rascunhosDoWhatsApp()
       .then((l) => vivo && setLista(l))
       .catch(() => {});
     return () => {
       vivo = false;
     };
-  }, [aparelhoId]);
+  }, [oficinaId]);
 
   async function abrir(r: RascunhoParaApp) {
     setAbrindo(r.id);
@@ -35,7 +39,7 @@ export function CaixaWhatsApp({ aparelhoId, aoAbrir }: { aparelhoId: string; aoA
     const clipes: Clipe[] = [];
     try {
       for (const [indice, m] of r.midias.entries()) {
-        const resp = await fetch('/api/agente/midia', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ aparelhoId, rascunhoId: r.id, indice }) });
+        const resp = await fetch('/api/agente/midia', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rascunhoId: r.id, indice }) });
         if (!resp.ok) continue;
         const blob = await resp.blob();
         const id = novoId();
@@ -56,12 +60,12 @@ export function CaixaWhatsApp({ aparelhoId, aoAbrir }: { aparelhoId: string; aoA
 
   async function descartar(r: RascunhoParaApp) {
     if (!window.confirm('Jogar fora esta ordem do WhatsApp?')) return;
-    const ok = await encerrarRascunhoDoWhatsApp(aparelhoId, r.id, 'descartada').catch(() => false);
+    const ok = await encerrarRascunhoDoWhatsApp(r.id, 'descartada').catch(() => false);
     if (ok) setLista((l) => l.filter((x) => x.id !== r.id));
     else toast({ texto: 'Não deu para descartar agora.', tom: 'erro' });
   }
 
-  if (!lista.length) return null;
+  if (!oficinaId || !lista.length) return null;
   return (
     <section className="flex w-full flex-col gap-3">
       <h2 className="text-[19px]">Chegaram pelo WhatsApp</h2>

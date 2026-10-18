@@ -1,11 +1,36 @@
 'use client';
 
-// Peças pequenas da loja: selos, ficha técnica e o seletor de quantidade.
+// Peças pequenas da loja: selos, ficha técnica, o seletor de quantidade e o convite para entrar
+// (preços, pedidos e alertas são só para quem tem conta).
 
-import { BadgeCheck, Minus, Plus, ShoppingCart } from 'lucide-react';
+import { BadgeCheck, CarFront, LogIn, Minus, Plus, ShoppingCart } from 'lucide-react';
+import Link from 'next/link';
+import { useConta } from '@/components/conta/ProvedorConta';
 import { embalagem, melhorOferta, quantidadeComUnidade, type Produto, type Promocao } from '@/lib/catalogo';
 import { nomeBase } from '@/lib/oleos';
 import { useOficina } from '@/lib/store';
+import { estoqueDaLoja } from '@/lib/vitrine';
+
+/** Para onde vai quem quer comprar sem ter entrado: o login, voltando para a Loja. */
+export const ENTRAR_NA_LOJA = '/entrar?para=/oficina/loja';
+
+/** "Entrar para comprar", no lugar do botão de pôr no pedido, para quem não entrou. */
+export function BotaoEntrar({ rotulo = 'Entrar para comprar', pequeno = false, claro = false }: { rotulo?: string; pequeno?: boolean; claro?: boolean }) {
+  return (
+    <Link
+      href={ENTRAR_NA_LOJA}
+      className={`inline-flex ${pequeno ? 'h-9 px-3 text-[13.5px]' : 'h-10 px-3.5 text-[14px]'} shrink-0 items-center gap-1.5 rounded-[10px] font-semibold whitespace-nowrap ${claro ? 'bg-oleo text-[#1b1f22] hover:brightness-[0.96]' : 'border border-linha bg-papel text-tinta hover:border-tinta-3'}`}
+    >
+      <LogIn size={16} aria-hidden="true" />
+      <span>{rotulo}</span>
+    </Link>
+  );
+}
+
+/** No lugar do preço, para quem não entrou na conta. */
+export function SemPreco({ escuro = false, className = '' }: { escuro?: boolean; className?: string }) {
+  return <p className={`text-[12.5px] leading-snug font-semibold ${escuro ? 'text-white/70' : 'text-tinta-3'} ${className}`}>Preço para quem tem conta</p>;
+}
 
 export function SeloPatrocinado({ escuro = false }: { escuro?: boolean }) {
   return (
@@ -13,6 +38,27 @@ export function SeloPatrocinado({ escuro = false }: { escuro?: boolean }) {
       className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11.5px] font-bold tracking-wide ring-1 ${escuro ? 'bg-white/10 text-white/85 ring-white/20' : 'bg-papel text-tinta-2 ring-linha'}`}
     >
       Patrocinado
+    </span>
+  );
+}
+
+/** "Sem estoque" ou "Últimas unidades", quando a loja informa o estoque (sem informação, nada). */
+export function SeloEstoqueDaLoja({ estoque, pequeno = false }: { estoque: number | null | undefined; pequeno?: boolean }) {
+  const s = estoqueDaLoja(estoque);
+  if (!s) return null;
+  return (
+    <span className={`inline-flex shrink-0 items-center rounded-full font-semibold whitespace-nowrap ${pequeno ? 'px-2 py-0.5 text-[11.5px]' : 'px-2.5 py-0.5 text-[12.5px]'} ${s === 'sem' ? 'bg-atraso-claro text-atraso' : 'bg-oleo-claro text-oleo-tinta'}`}>
+      {s === 'sem' ? 'Sem estoque' : 'Últimas unidades'}
+    </span>
+  );
+}
+
+/** "Serve no Gol 1.6 2015", quando a loja informou que a peça serve no carro escolhido. */
+export function SeloServeNoCarro({ carro, pequeno = false }: { carro: string; pequeno?: boolean }) {
+  return (
+    <span className={`inline-flex max-w-full items-center gap-1 rounded-full bg-ok-claro font-semibold text-ok ${pequeno ? 'px-2 py-0.5 text-[11.5px]' : 'px-2.5 py-0.5 text-[12.5px]'}`}>
+      <CarFront size={pequeno ? 12 : 13} aria-hidden="true" className="shrink-0" />
+      <span className="truncate">Serve no {carro}</span>
     </span>
   );
 }
@@ -109,7 +155,7 @@ export function Passo({
 
 /**
  * "Pôr no pedido" com um toque. Depois que o produto entra no pedido, o botão vira o seletor de
- * quantidade do próprio pedido (o menos no 1 tira o produto).
+ * quantidade do próprio pedido (o menos no 1 tira o produto). Sem conta, vira o convite para entrar.
  */
 export function BotaoPor({
   produto,
@@ -124,8 +170,10 @@ export function BotaoPor({
   rotulo?: string;
   pequeno?: boolean;
 }) {
+  const { conta } = useConta();
   const noPedido = useOficina((s) => s.carrinho.find((c) => c.produtoId === produto.id)?.quantidade ?? 0);
   const definir = useOficina((s) => s.definirQuantidade);
+  if (!conta) return <BotaoEntrar rotulo="Entrar" pequeno={pequeno} />;
   if (noPedido > 0) return <Passo valor={noPedido} aoMudar={(n) => definir(produto.id, n)} rotulo={produto.nome} minimo={0} escuro pequeno={pequeno} />;
   return (
     <button

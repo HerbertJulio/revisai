@@ -2,6 +2,9 @@
 
 import { BellRing, Download, RotateCcw, Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { ApagarCopiaDoAparelho, ApagarOficina, EquipeDaOficinaSecao, ProvedorDaEquipe, SuaConta } from '@/app/oficina/ajustes/ContaEEquipe';
+import { useConta } from '@/components/conta/ProvedorConta';
+import { AtivarAvisos } from '@/components/avisos/AtivarAvisos';
 import { Folha } from '@/components/Folha';
 import { IconeServico } from '@/components/icones';
 import { useToast } from '@/components/Toasts';
@@ -21,10 +24,13 @@ import { PlanoDaOficina } from './plano';
 import { SeusProdutos } from './SeusProdutos';
 
 const PARTES = [
+  { id: 'conta', nome: 'Sua conta' },
   { id: 'oficina', nome: 'Oficina' },
   { id: 'plano', nome: 'Plano' },
+  { id: 'equipe', nome: 'Equipe', soComConta: true },
   { id: 'agente', nome: 'Agente no WhatsApp' },
   { id: 'avisos', nome: 'Avisos' },
+  { id: 'notificacoes', nome: 'Notificações', soComConta: true },
   { id: 'mensagem', nome: 'Mensagem' },
   { id: 'prazos', nome: 'Prazos' },
   { id: 'produtos', nome: 'Seus produtos' },
@@ -33,6 +39,7 @@ const PARTES = [
 ];
 
 export function Ajustes() {
+  const { oficina } = useConta();
   // ao chegar por um link como /oficina/ajustes#plano, a parte só existe depois de carregar os dados
   useEffect(() => {
     const id = decodeURIComponent(window.location.hash.slice(1));
@@ -40,34 +47,53 @@ export function Ajustes() {
   }, []);
 
   return (
-    <div className="flex flex-col gap-10">
-      <header className="flex flex-col gap-4">
-        <div>
-          <h1 className="largo text-[30px] sm:text-[34px]">Ajustes</h1>
-          <p className="mt-1 text-tinta-2">As mudanças valem na hora e ficam guardadas neste aparelho.</p>
-        </div>
-        <nav aria-label="Partes dos ajustes" className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
-          <ul className="flex w-max gap-2 sm:w-auto sm:flex-wrap">
-            {PARTES.map((p) => (
-              <li key={p.id}>
-                <a href={`#${p.id}`} className="inline-flex h-9 items-center rounded-full border border-linha bg-papel px-3.5 text-[14px] font-semibold text-tinta-2 hover:border-tinta-3 hover:text-tinta">
-                  {p.nome}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </nav>
-      </header>
-      <DadosOficina />
-      <PlanoDaOficina />
-      <AgenteWhatsApp />
-      <Avisos />
-      <Mensagem />
-      <Prazos />
-      <SeusProdutos />
-      <Aparencia />
-      <SeusDados />
-    </div>
+    <ProvedorDaEquipe>
+      <div className="flex flex-col gap-10">
+        <header className="flex flex-col gap-4">
+          <div>
+            <h1 className="largo text-[30px] sm:text-[34px]">Ajustes</h1>
+            <p className="mt-1 text-tinta-2">
+              {oficina ? 'As mudanças valem na hora e vão para a conta da oficina. A aparência fica só neste aparelho.' : 'As mudanças valem na hora e ficam guardadas neste aparelho.'}
+            </p>
+          </div>
+          <nav aria-label="Partes dos ajustes" className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+            <ul className="flex w-max gap-2 sm:w-auto sm:flex-wrap">
+              {PARTES.filter((p) => oficina || !p.soComConta).map((p) => (
+                <li key={p.id}>
+                  <a href={`#${p.id}`} className="inline-flex h-9 items-center rounded-full border border-linha bg-papel px-3.5 text-[14px] font-semibold text-tinta-2 hover:border-tinta-3 hover:text-tinta">
+                    {p.nome}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        </header>
+        <SuaConta />
+        <DadosOficina />
+        <PlanoDaOficina />
+        <EquipeDaOficinaSecao />
+        <AgenteWhatsApp />
+        <Avisos />
+        {oficina ? <Notificacoes /> : null}
+        <Mensagem />
+        <Prazos />
+        <SeusProdutos />
+        <Aparencia />
+        <SeusDados />
+        <ApagarOficina />
+      </div>
+    </ProvedorDaEquipe>
+  );
+}
+
+/** Notificações no celular e por e-mail: pedido da loja, alerta respondido, orçamento aprovado. */
+function Notificacoes() {
+  return (
+    <Secao id="notificacoes" titulo="Notificações" descricao="Receba no celular, mesmo com o app fechado, quando a loja responder, o cliente aprovar um orçamento ou um pedido mudar.">
+      <Cartao>
+        <AtivarAvisos para="oficina" />
+      </Cartao>
+    </Secao>
   );
 }
 
@@ -419,6 +445,7 @@ function Aparencia() {
 
 function SeusDados() {
   const estado = useOficina();
+  const { oficina: daConta } = useConta();
   const toast = useToast();
   const arquivo = useRef<HTMLInputElement>(null);
   const [confirmar, setConfirmar] = useState<null | 'apagar' | { dados: Partial<DadosGuardados>; resumo: string }>(null);
@@ -451,7 +478,15 @@ function SeusDados() {
 
   const total = Object.keys(estado.veiculos).length;
   return (
-    <Secao id="dados" titulo="Seus dados" descricao="Sem login, os dados ficam só neste aparelho. Faça backup de vez em quando.">
+    <Secao
+      id="dados"
+      titulo="Seus dados"
+      descricao={
+        daConta
+          ? 'Os dados ficam na conta da oficina, na nuvem, e este aparelho guarda uma cópia para funcionar sem internet. O backup é uma cópia a mais, num arquivo.'
+          : 'Sem conta, os dados ficam só neste aparelho. Faça backup de vez em quando.'
+      }
+    >
       <Cartao>
         <div className="flex flex-col gap-5">
           <p className="text-[14px] text-tinta-2">
@@ -478,18 +513,23 @@ function SeusDados() {
             />
             {estado.exemplo ? (
               <Botao onClick={() => { estado.removerExemplo(); toast({ texto: 'Clientes de exemplo apagados.' }); }}>Apagar clientes de exemplo</Botao>
-            ) : (
+            ) : daConta ? null : (
+              // com a conta, os exemplos iriam para a nuvem e para os outros aparelhos
               <Botao onClick={() => { estado.carregarExemplo(); toast({ texto: 'Clientes de exemplo carregados.' }); }}>Carregar clientes de exemplo</Botao>
             )}
-            <Botao variante="perigo" onClick={() => setConfirmar('apagar')}>
-              Apagar tudo
-            </Botao>
+            {daConta ? (
+              <ApagarCopiaDoAparelho />
+            ) : (
+              <Botao variante="perigo" onClick={() => setConfirmar('apagar')}>
+                Apagar tudo
+              </Botao>
+            )}
           </div>
         </div>
       </Cartao>
 
       <Folha
-        aberta={confirmar === 'apagar'}
+        aberta={confirmar === 'apagar' && !daConta}
         aoFechar={() => setConfirmar(null)}
         titulo="Apagar todos os dados?"
         descricao="Clientes, carros, serviços, ajustes e pedidos saem deste aparelho. Baixe um backup antes se quiser guardar."
@@ -514,7 +554,11 @@ function SeusDados() {
         aberta={typeof confirmar === 'object' && confirmar !== null}
         aoFechar={() => setConfirmar(null)}
         titulo="Restaurar este backup?"
-        descricao="Os dados atuais deste aparelho serão trocados pelos do arquivo."
+        descricao={
+          daConta
+            ? 'Os dados da oficina na conta serão trocados pelos do arquivo, neste e em todos os aparelhos da equipe. O que foi cadastrado depois do backup se perde.'
+            : 'Os dados atuais deste aparelho serão trocados pelos do arquivo.'
+        }
         rodape={
           <>
             <Botao onClick={() => setConfirmar(null)}>Cancelar</Botao>

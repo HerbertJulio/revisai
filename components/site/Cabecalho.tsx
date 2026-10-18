@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Logo } from '@/components/marca';
 import { classeBotao } from '@/components/ui';
+import { dadosDaEmpresa } from '@/lib/avisos/empresa';
 
 const LINKS = [
   { href: '/#como-funciona', rotulo: 'Como funciona' },
@@ -31,10 +32,19 @@ export function Cabecalho() {
   );
 }
 
+const DOCUMENTOS_LEGAIS = [
+  { href: '/termos', rotulo: 'Termos de uso' },
+  { href: '/privacidade', rotulo: 'Privacidade' },
+  { href: '/contrato-lojas', rotulo: 'Contrato das lojas' },
+  { href: '/tratamento-de-dados', rotulo: 'Tratamento de dados' },
+  { href: '/seguranca', rotulo: 'Segurança' }
+];
+
 export function Rodape() {
+  const empresa = dadosDaEmpresa();
   return (
     <footer className="mt-24 border-t border-linha bg-papel">
-      <div className="mx-auto grid max-w-6xl gap-10 px-4 py-12 sm:px-6 md:grid-cols-[1.4fr_1fr_1fr]">
+      <div className="mx-auto grid max-w-6xl gap-10 px-4 py-12 sm:px-6 md:grid-cols-[1.4fr_1fr_1fr_1fr]">
         <div className="flex flex-col gap-3">
           <Logo />
           <p className="max-w-sm text-[15px] text-tinta-2">Lembrete de troca de óleo e revisão para oficinas, com a loja de peças junto.</p>
@@ -59,15 +69,27 @@ export function Rodape() {
           <Link href="/motorista" className="text-tinta-2 hover:text-tinta">
             Quem tem carro
           </Link>
-          <Link href="/privacidade" className="text-tinta-2 hover:text-tinta">
-            Privacidade
-          </Link>
           <Link href="/creditos" className="text-tinta-2 hover:text-tinta">
             Créditos das fotos
           </Link>
         </nav>
+        <nav className="flex flex-col gap-2 text-[15px]" aria-label="Documentos">
+          <p className="font-bold">Documentos</p>
+          {DOCUMENTOS_LEGAIS.map((d) => (
+            <Link key={d.href} href={d.href} className="text-tinta-2 hover:text-tinta">
+              {d.rotulo}
+            </Link>
+          ))}
+        </nav>
       </div>
-      <p className="mx-auto max-w-6xl px-4 pb-10 text-[13px] text-tinta-3 sm:px-6">© {new Date().getFullYear()} Revisaí</p>
+      <div className="mx-auto flex max-w-6xl flex-col gap-1 px-4 pb-10 text-[13px] text-tinta-3 sm:px-6">
+        <p>
+          {empresa.razaoSocial} · CNPJ {empresa.cnpj} · {empresa.endereco}
+        </p>
+        <p>
+          Contato: {empresa.emailContato} · © {new Date().getFullYear()} Revisaí
+        </p>
+      </div>
     </footer>
   );
 }

@@ -1,138 +1,219 @@
 'use server';
 
-// Ações do painel administrativo. Toda mudança confere a sessão de novo no servidor.
+// Ações do painel da equipe. Cada uma confere de novo, no servidor, se quem chama é da equipe,
+// passou pelo app autenticador nas últimas 12 horas e tem o papel certo; depois grava com o
+// cliente da própria pessoa, e o banco confere tudo outra vez e guarda no histórico.
 
 import { revalidatePath } from 'next/cache';
-import { cookies, headers } from 'next/headers';
-import { redirect } from 'next/navigation';
-import { acessoDaEquipe, configEquipe, salvarSituacaoCadastro, salvarSituacaoPedido, type Gravacao } from '@/lib/equipe';
+import type { PapelEquipe } from '@/lib/conta-dados';
 import { situacaoCadastroValida, situacaoPedidoValida } from '@/lib/equipe-dados';
-import { contarErro, esgotado } from '@/lib/limite';
-import {
-  decidirImpulso,
-  decidirReferencia,
-  gerarAcessoFornecedor,
-  salvarFornecedorAdmin,
-  type Gravacao as GravacaoMarketplace
-} from '@/lib/marketplace';
-import { liberarAlertas } from '@/lib/alertas';
-import { normalizarCodigo } from '@/lib/plano';
+import * as escrita from '@/lib/equipe/escrita';
+import { PODE } from '@/lib/equipe/papeis';
+import { equipeNaAcao } from '@/lib/equipe/sessao';
+import type { RegistroDeAcesso, SituacaoChamado } from '@/lib/equipe/tipos';
 import { criarAssinatura } from '@/lib/pro';
 import type { Assinatura } from '@/lib/pro-dados';
-import { COOKIE_EQUIPE, criarSessao, DURACAO_SESSAO_MS, senhaConfere } from '@/lib/sessao-equipe';
 
-export interface EstadoEntrada {
-  erro: string | null;
-}
+type Gravacao<T = object> = ({ ok: true } & T) | { ok: false; erro: string };
 
-function destinoSeguro(valor: FormDataEntryValue | null): string {
-  const d = typeof valor === 'string' ? valor : '';
-  return /^\/admin(\/[a-z-]+)?$/.test(d) ? d : '/admin';
-}
+const INVALIDO = { ok: false, erro: 'Dados inválidos. Atualize a página e tente de novo.' } as const;
 
-export async function entrar(_anterior: EstadoEntrada, dados: FormData): Promise<EstadoEntrada> {
-  const c = configEquipe();
-  if (!c) return { erro: 'O painel administrativo ainda não foi configurado.' };
-  // só as senhas erradas contam para o limite
-  if (await esgotado('equipe-entrar', 8, 15)) return { erro: 'Muitas tentativas erradas seguidas. Espere alguns minutos e tente de novo.' };
-  if (!senhaConfere(String(dados.get('senha') ?? ''), c.senha)) {
-    await contarErro('equipe-entrar', 15);
-    await new Promise((r) => setTimeout(r, 400));
-    return { erro: 'Senha errada. Confira e tente de novo.' };
-  }
-  const jar = await cookies();
-  jar.set(COOKIE_EQUIPE, criarSessao(c.chave, c.senha), {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/admin',
-    maxAge: Math.floor(DURACAO_SESSAO_MS / 1000)
-  });
-  redirect(destinoSeguro(dados.get('voltar')));
-}
-
-export async function sair(): Promise<void> {
-  const jar = await cookies();
-  jar.delete({ name: COOKIE_EQUIPE, path: '/admin' });
-  redirect('/admin');
-}
-
-const SESSAO_TERMINOU: Gravacao = { ok: false, erro: 'Sua sessão terminou. Atualize a página e entre de novo.' };
-
-export async function mudarSituacaoPedido(id: number, status: string): Promise<Gravacao> {
-  if ((await acessoDaEquipe()) !== 'dentro') return SESSAO_TERMINOU;
-  if (!Number.isSafeInteger(id) || id < 1 || !situacaoPedidoValida(status)) return { ok: false, erro: 'Pedido ou situação inválida.' };
-  const r = await salvarSituacaoPedido(id, status);
+function atualizar<T extends Gravacao<object>>(r: T): T {
   if (r.ok) revalidatePath('/admin', 'layout');
   return r;
+}
+
+function texto(v: unknown, max = 300): string {
+  return typeof v === 'string' ? v.slice(0, max) : '';
+}
+
+function valorOuNulo(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null;
+}
+
+// ---------------------------------------------------------------- pedidos e cadastros
+
+export async function mudarSituacaoPedido(id: number, status: string): Promise<Gravacao> {
+  const a = await equipeNaAcao(PODE.mudarPedido);
+  if (!a.ok) return a;
+  if (!escrita.idValido(id) || !situacaoPedidoValida(status)) return INVALIDO;
+  return atualizar(await escrita.salvarSituacaoPedido(a.sb, id, status));
 }
 
 export async function mudarSituacaoCadastro(id: number, situacao: string): Promise<Gravacao> {
-  if ((await acessoDaEquipe()) !== 'dentro') return SESSAO_TERMINOU;
-  if (!Number.isSafeInteger(id) || id < 1 || !situacaoCadastroValida(situacao)) return { ok: false, erro: 'Cadastro ou situação inválida.' };
-  const r = await salvarSituacaoCadastro(id, situacao);
-  if (r.ok) revalidatePath('/admin', 'layout');
-  return r;
+  const a = await equipeNaAcao(PODE.mudarCadastro);
+  if (!a.ok) return a;
+  if (!escrita.idValido(id) || !situacaoCadastroValida(situacao)) return INVALIDO;
+  return atualizar(await escrita.salvarSituacaoCadastro(a.sb, id, situacao));
 }
 
-// ---------------------------------------------------------------- marketplace
+// ---------------------------------------------------------------- lojas
 
-const SESSAO_FIM = { ok: false, erro: 'Sua sessão terminou. Atualize a página e entre de novo.' } as const;
-
-export async function salvarFornecedor(entrada: unknown): Promise<GravacaoMarketplace<{ id: number }>> {
-  if ((await acessoDaEquipe()) !== 'dentro') return SESSAO_FIM;
-  const r = await salvarFornecedorAdmin(entrada);
-  if (r.ok) revalidatePath('/admin', 'layout');
-  return r;
+export async function salvarFornecedor(entrada: unknown): Promise<Gravacao<{ id: number; aviso?: string }>> {
+  const a = await equipeNaAcao(PODE.editarLoja);
+  if (!a.ok) return a;
+  return atualizar(await escrita.salvarLoja(a.sb, a.papel, entrada));
 }
 
-/** Gera o link de acesso do fornecedor ao painel dele. O link só aparece agora; o banco guarda o hash. */
-export async function gerarLinkDoFornecedor(fornecedorId: number): Promise<GravacaoMarketplace<{ link: string }>> {
-  if ((await acessoDaEquipe()) !== 'dentro') return SESSAO_FIM;
-  if (!Number.isSafeInteger(fornecedorId) || fornecedorId < 1) return { ok: false, erro: 'Fornecedor inválido.' };
-  const r = await gerarAcessoFornecedor(fornecedorId);
+/** Convida o dono (ou um vendedor) para a loja pelo e-mail: ele entra com a conta desse e-mail. */
+export async function convidarNaLoja(fornecedorId: number, email: string, papel: string): Promise<Gravacao<{ convite: string }>> {
+  const a = await equipeNaAcao(PODE.convidarNaLoja);
+  if (!a.ok) return a;
+  if (!escrita.idValido(fornecedorId) || (papel !== 'dono' && papel !== 'vendedor')) return INVALIDO;
+  return atualizar(await escrita.convidarParaLoja(a.sb, fornecedorId, texto(email, 160), papel));
+}
+
+export async function cancelarConviteDaLoja(id: string): Promise<Gravacao> {
+  const a = await equipeNaAcao(PODE.convidarNaLoja);
+  if (!a.ok) return a;
+  if (!escrita.uuidValido(id)) return INVALIDO;
+  return atualizar(await escrita.cancelarConvite(a.sb, id));
+}
+
+export async function decidirLojaEmAnalise(fornecedorId: number, aprovar: boolean, observacao: string): Promise<Gravacao> {
+  const a = await equipeNaAcao(PODE.decidirLoja);
+  if (!a.ok) return a;
+  if (!escrita.idValido(fornecedorId) || typeof aprovar !== 'boolean') return INVALIDO;
+  return atualizar(await escrita.decidirLoja(a.sb, fornecedorId, aprovar, texto(observacao)));
+}
+
+export async function decidirPedidoDeImpulso(id: number, decisao: string, inicio: string | null): Promise<Gravacao> {
+  const a = await equipeNaAcao(PODE.decidirImpulso);
+  if (!a.ok) return a;
+  if (!escrita.idValido(id) || !['ativo', 'recusado', 'encerrado'].includes(decisao)) return INVALIDO;
+  return atualizar(await escrita.decidirImpulso(a.sb, id, decisao as 'ativo' | 'recusado' | 'encerrado', typeof inicio === 'string' ? inicio.slice(0, 10) : null));
+}
+
+export async function decidirSugestaoDaBase(id: number, aprovar: boolean): Promise<Gravacao> {
+  const a = await equipeNaAcao(PODE.decidirBase);
+  if (!a.ok) return a;
+  if (!escrita.idValido(id) || typeof aprovar !== 'boolean') return INVALIDO;
+  return atualizar(await escrita.decidirReferencia(a.sb, id, aprovar));
+}
+
+// ---------------------------------------------------------------- Pro e oficinas
+
+/** Cria o código do Pro de uma oficina que pagou (ela digita o código no app). */
+export async function criarCodigoPro(entrada: unknown): Promise<Gravacao<{ assinatura: Assinatura }>> {
+  const a = await equipeNaAcao(PODE.criarCodigo);
+  if (!a.ok) return a;
+  return atualizar(await criarAssinatura(a.sb, entrada));
+}
+
+/** Libera alertas de preço extras para a oficina (depois do pagamento do pacote). */
+export async function liberarAlertasDaOficina(oficinaId: string, quantidade: number, valor: number | null, observacao: string, cadastroId: number | null): Promise<Gravacao> {
+  const a = await equipeNaAcao(PODE.liberarAlertas);
+  if (!a.ok) return a;
+  if (!escrita.uuidValido(oficinaId)) return INVALIDO;
+  const r = await escrita.liberarAlertas(a.sb, oficinaId, Number(quantidade), valorOuNulo(valor), texto(observacao, 200));
+  if (r.ok && escrita.idValido(cadastroId)) await escrita.salvarSituacaoCadastro(a.sb, cadastroId, 'respondido');
+  return atualizar(r);
+}
+
+export async function darProNaOficina(oficinaId: string, meses: number, valor: number | null, observacao: string): Promise<Gravacao<{ ate: string }>> {
+  const a = await equipeNaAcao(PODE.mudarPlano);
+  if (!a.ok) return a;
+  if (!escrita.uuidValido(oficinaId)) return INVALIDO;
+  return atualizar(await escrita.darPro(a.sb, oficinaId, Number(meses), valorOuNulo(valor), texto(observacao)));
+}
+
+export async function estenderTesteDaOficina(oficinaId: string, dias: number): Promise<Gravacao<{ ate: string }>> {
+  const a = await equipeNaAcao(PODE.mudarPlano);
+  if (!a.ok) return a;
+  if (!escrita.uuidValido(oficinaId)) return INVALIDO;
+  return atualizar(await escrita.estenderTeste(a.sb, oficinaId, Number(dias)));
+}
+
+export async function mudarAtivaDaOficina(oficinaId: string, ativa: boolean): Promise<Gravacao> {
+  const a = await equipeNaAcao(PODE.mudarPlano);
+  if (!a.ok) return a;
+  if (!escrita.uuidValido(oficinaId) || typeof ativa !== 'boolean') return INVALIDO;
+  return atualizar(await escrita.mudarAtivaDaOficina(a.sb, oficinaId, ativa));
+}
+
+export async function mudarFundadorDaOficina(oficinaId: string, fundador: boolean): Promise<Gravacao> {
+  const a = await equipeNaAcao(PODE.mudarPlano);
+  if (!a.ok) return a;
+  if (!escrita.uuidValido(oficinaId) || typeof fundador !== 'boolean') return INVALIDO;
+  return atualizar(await escrita.mudarFundador(a.sb, oficinaId, fundador));
+}
+
+// ---------------------------------------------------------------- equipe
+
+function papelValido(p: unknown): p is PapelEquipe {
+  return p === 'admin' || p === 'suporte' || p === 'financeiro';
+}
+
+export async function convidarParaEquipe(email: string, papel: string, nome: string): Promise<Gravacao> {
+  const a = await equipeNaAcao(PODE.equipe);
+  if (!a.ok) return a;
+  if (!papelValido(papel)) return INVALIDO;
+  return atualizar(await escrita.convidarParaEquipe(a.sb, texto(email, 160), papel, texto(nome, 80)));
+}
+
+export async function mudarPessoaDaEquipe(userId: string, papel: string, ativo: boolean): Promise<Gravacao> {
+  const a = await equipeNaAcao(PODE.equipe);
+  if (!a.ok) return a;
+  if (!escrita.uuidValido(userId) || !papelValido(papel) || typeof ativo !== 'boolean') return INVALIDO;
+  if (userId === a.userId && (!ativo || papel !== 'admin')) return { ok: false, erro: 'Você não pode tirar o próprio acesso de admin.' };
+  return atualizar(await escrita.mudarPessoaDaEquipe(a.sb, userId, papel, ativo));
+}
+
+export async function cancelarConviteDaEquipe(email: string): Promise<Gravacao> {
+  const a = await equipeNaAcao(PODE.equipe);
+  if (!a.ok) return a;
+  return atualizar(await escrita.cancelarConviteDaEquipe(a.sb, texto(email, 160)));
+}
+
+// ---------------------------------------------------------------- titulares e acessos
+
+/** O arquivo com tudo o que o Revisaí guarda de um e-mail (o pedido fica no histórico). */
+export async function exportarDadosDoTitular(email: string): Promise<Gravacao<{ json: string; arquivo: string }>> {
+  const a = await equipeNaAcao(PODE.titulares);
+  if (!a.ok) return a;
+  const r = await escrita.exportarTitular(a.sb, texto(email, 160));
   if (!r.ok) return r;
-  revalidatePath('/admin', 'layout');
-  return { ok: true, link: `${await origemDoSite()}/fornecedor/entrar?c=${r.codigo}` };
+  const nome = texto(email, 160).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  return { ok: true, json: JSON.stringify(r.dados, null, 2), arquivo: `revisai-dados-${nome || 'titular'}.json` };
 }
 
-export async function decidirPedidoDeImpulso(id: number, decisao: string, inicio: string | null): Promise<GravacaoMarketplace> {
-  if ((await acessoDaEquipe()) !== 'dentro') return SESSAO_FIM;
-  if (!Number.isSafeInteger(id) || id < 1 || !['ativo', 'recusado', 'encerrado'].includes(decisao)) return { ok: false, erro: 'Pedido inválido.' };
-  const r = await decidirImpulso(id, decisao as 'ativo' | 'recusado' | 'encerrado', inicio);
-  if (r.ok) revalidatePath('/admin', 'layout');
-  return r;
+/** Apaga os dados de um e-mail. A confirmação é o e-mail digitado de novo. */
+export async function apagarDadosDoTitular(email: string, confirmacao: string): Promise<Gravacao<{ cadastros: number; conta: boolean }>> {
+  const a = await equipeNaAcao(PODE.titulares);
+  if (!a.ok) return a;
+  const e = texto(email, 160).trim().toLowerCase();
+  if (!e || e !== texto(confirmacao, 160).trim().toLowerCase()) return { ok: false, erro: 'Digite o mesmo e-mail na confirmação.' };
+  if (e === a.email) return { ok: false, erro: 'Para apagar a própria conta, use a página da sua conta.' };
+  return atualizar(await escrita.apagarTitular(a.sb, e));
 }
 
-export async function decidirSugestaoDaBase(id: number, aprovar: boolean): Promise<GravacaoMarketplace> {
-  if ((await acessoDaEquipe()) !== 'dentro') return SESSAO_FIM;
-  if (!Number.isSafeInteger(id) || id < 1) return { ok: false, erro: 'Linha inválida.' };
-  const r = await decidirReferencia(id, aprovar);
-  if (r.ok) revalidatePath('/admin', 'layout');
-  return r;
+export async function consultarRegistrosDeAcesso(pedido: { email?: string; ip?: string; de?: string; ate?: string; motivo: string }): Promise<Gravacao<{ registros: RegistroDeAcesso[]; userId: string | null }>> {
+  const a = await equipeNaAcao(PODE.acessos);
+  if (!a.ok) return a;
+  if (!pedido || typeof pedido !== 'object') return INVALIDO;
+  const r = await escrita.consultarAcessos(a.sb, {
+    email: texto(pedido.email, 160),
+    ip: texto(pedido.ip, 64),
+    de: texto(pedido.de, 10),
+    ate: texto(pedido.ate, 10),
+    motivo: texto(pedido.motivo)
+  });
+  // a consulta entra no histórico
+  return atualizar(r);
 }
 
-/** Cria o código do Pro de uma oficina que pagou. */
-export async function criarCodigoPro(entrada: unknown): Promise<GravacaoMarketplace<{ assinatura: Assinatura }>> {
-  if ((await acessoDaEquipe()) !== 'dentro') return SESSAO_FIM;
-  const r = await criarAssinatura(entrada);
-  if (r.ok) revalidatePath('/admin', 'layout');
-  return r;
+// ---------------------------------------------------------------- suporte
+
+export async function responderChamado(id: string, resposta: string): Promise<Gravacao> {
+  const a = await equipeNaAcao(PODE.suporte);
+  if (!a.ok) return a;
+  if (!escrita.uuidValido(id)) return INVALIDO;
+  return atualizar(await escrita.responderChamado(a.sb, id, texto(resposta, 4000)));
 }
 
-/** Libera alertas de preço extras para um código do Pro (depois do pagamento do pacote). */
-export async function liberarAlertasPro(codigo: string, quantidade: number, valor: number | null, observacao: string, cadastroId: number | null): Promise<GravacaoMarketplace> {
-  if ((await acessoDaEquipe()) !== 'dentro') return SESSAO_FIM;
-  const r = await liberarAlertas(normalizarCodigo(String(codigo ?? '')), Number(quantidade), valor != null && Number.isFinite(valor) && valor >= 0 ? valor : null, String(observacao ?? ''));
-  if (!r.ok) return r;
-  if (cadastroId != null && Number.isSafeInteger(cadastroId) && cadastroId > 0) await salvarSituacaoCadastro(cadastroId, 'respondido');
-  revalidatePath('/admin', 'layout');
-  return r;
-}
-
-async function origemDoSite(): Promise<string> {
-  const h = await headers();
-  const host = h.get('x-forwarded-host') ?? h.get('host') ?? 'revisai.howlks.com';
-  const protocolo = h.get('x-forwarded-proto') ?? (host.startsWith('localhost') ? 'http' : 'https');
-  return `${protocolo}://${host}`;
+export async function mudarSituacaoDoChamado(id: string, situacao: string): Promise<Gravacao> {
+  const a = await equipeNaAcao(PODE.suporte);
+  if (!a.ok) return a;
+  if (!escrita.uuidValido(id) || !['novo', 'respondido', 'fechado'].includes(situacao)) return INVALIDO;
+  return atualizar(await escrita.mudarSituacaoDoChamado(a.sb, id, situacao as SituacaoChamado));
 }

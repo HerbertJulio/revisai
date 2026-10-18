@@ -1,0 +1,89 @@
+name: Cópia de segurança
+
+# Toda semana: copia o banco de produção (pg_dump), cifra com a senha BACKUP_SENHA e guarda a cópia
+# como artefato por 90 dias. Depois, restaura a cópia num Supabase local com todas as migrações e
+# confere tabela por tabela: uma cópia que não restaura não serve.
+#
+# Segredos do repositório:
+#   SUPABASE_DB_URL  conexão do "Session pooler" do Supabase (porta 5432), com a senha do banco
+#   BACKUP_SENHA     senha das cópias (pelo menos 20 caracteres; guarde fora do GitHub também)
+#
+# Para baixar e restaurar uma cópia: scripts/backup/restaurar.sh (as instruções estão no começo dele).
+
+on:
+  schedule:
+    - cron: '17 6 * * 0' # domingo, 03:17 em Brasília
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: copia-de-seguranca
+  cancel-in-progress: false
+
+jobs:
+  copia:
+    name: Copiar e cifrar
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cliente do Postgres 17
+        run: scripts/backup/instalar-cliente-pg.sh 17
+
+      - name: Copiar o banco
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          BACKUP_SENHA: ${{ secrets.BACKUP_SENHA }}
+        run: scripts/backup/backup.sh "copia/revisai-$(date -u +%Y-%m-%d).dump.gpg"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: revisai-banco-${{ github.run_id }}
+          path: copia/
+          retention-days: 90
+          compression-level: 0
+          if-no-files-found: error
+
+  restauracao:
+    name: Restaurar e conferir
+    needs: copia
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Cliente do Postgres 17
+        run: scripts/backup/instalar-cliente-pg.sh 17
+
+      - name: Programas do Supabase local (cache)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.revisai-supabase/pg
+            ~/.revisai-supabase/auth
+            ~/.revisai-supabase/auth-migrations
+            ~/.revisai-supabase/postgrest
+          key: supabase-local-${{ runner.os }}-${{ hashFiles('scripts/supabase-local/sb.sh') }}
+
+      - name: Supabase local com as migrações
+        run: scripts/supabase-local/sb.sh reset
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: revisai-banco-${{ github.run_id }}
+          path: copia
+
+      - name: Restaurar e conferir as tabelas
+        env:
+          BACKUP_SENHA: ${{ secrets.BACKUP_SENHA }}
+        run: scripts/backup/restaurar.sh copia/*.dump.gpg --verificar

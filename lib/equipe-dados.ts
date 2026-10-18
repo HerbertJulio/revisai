@@ -74,6 +74,7 @@ export type ItemPedido = z.infer<typeof esquemaItem>;
 const esquemaPedido = z.object({
   id: numero,
   codigo: texto,
+  oficina_id: z.string().nullish().transform((v) => v ?? null),
   oficina_nome: texto,
   oficina_whatsapp: texto,
   oficina_cidade: textoOpcional,
@@ -85,7 +86,18 @@ const esquemaPedido = z.object({
   criado_em: texto
 });
 
-export type Pedido = z.infer<typeof esquemaPedido>;
+export type LinhaPedido = z.infer<typeof esquemaPedido>;
+
+/** A situação de cada loja no pedido (a parte dela). */
+export interface ParteDoPedido {
+  fornecedorId: number;
+  fornecedor: string;
+  status: string;
+  pagamento: string;
+  subtotal: number;
+}
+
+export type Pedido = LinhaPedido & { partes?: ParteDoPedido[] };
 
 const esquemaCadastro = z.object({
   id: numero,

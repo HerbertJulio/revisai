@@ -4,7 +4,9 @@ import { Sparkles } from 'lucide-react';
 import { Alternar, Campo, classeEntrada } from '@/components/ui';
 import { formatarNumero, lerNumero, normalizarPlaca, normalizarTelefone, placaValida } from '@/lib/formatos';
 import { ACEA, BASES, NIVEIS_API, NORMAS, VISCOSIDADES, buscarReferencias, type ReferenciaOleo } from '@/lib/oleos';
+import { camposDaPlaca } from '@/lib/placa';
 import type { Cliente, Combustivel, EspecOleo, Veiculo } from '@/lib/tipos';
+import { BuscaPelaPlaca, type CarroDaPlaca } from './cadastro/BuscaPelaPlaca';
 
 export interface RascunhoCliente {
   nome: string;
@@ -27,6 +29,12 @@ export interface RascunhoVeiculo {
   oleoKm: string;
   oleoMeses: string;
   observacao: string;
+  /** Vêm da busca pela placa (e da edição completa do carro). */
+  cor?: string;
+  anoModelo?: string;
+  chassi?: string;
+  /** O valor FIPE que veio com a placa; undefined deixa o do carro como está. */
+  fipe?: Veiculo['fipe'];
 }
 
 export const CLIENTE_VAZIO: RascunhoCliente = { nome: '', telefone: '', email: '', observacao: '' };
@@ -65,8 +73,16 @@ export function rascunhoDoVeiculo(v: Veiculo): RascunhoVeiculo {
     oleoCapacidade: v.oleo?.capacidadeL != null ? formatarNumero(v.oleo.capacidadeL, 2) : '',
     oleoKm: v.intervaloOleo?.km ? String(v.intervaloOleo.km) : '',
     oleoMeses: v.intervaloOleo?.meses ? String(v.intervaloOleo.meses) : '',
-    observacao: v.observacao ?? ''
+    observacao: v.observacao ?? '',
+    cor: v.cor ?? '',
+    anoModelo: v.anoModelo ? String(v.anoModelo) : '',
+    chassi: v.chassi ?? ''
   };
+}
+
+/** O rascunho com o que veio da placa (só os campos que vieram; a pessoa já confirmou). */
+export function rascunhoComPlaca(v: RascunhoVeiculo, c: CarroDaPlaca): RascunhoVeiculo {
+  return { ...v, ...camposDaPlaca(c.dados), ...(c.fipe ? { fipe: c.fipe } : {}) };
 }
 
 export function errosCliente(c: RascunhoCliente): Partial<Record<keyof RascunhoCliente, string>> {
@@ -83,6 +99,8 @@ export function errosVeiculo(v: RascunhoVeiculo): Partial<Record<keyof RascunhoV
   if (!v.modelo.trim()) e.modelo = 'Escreva o modelo.';
   const ano = lerNumero(v.ano);
   if (v.ano.trim() && (ano == null || ano < 1950 || ano > new Date().getFullYear() + 1)) e.ano = 'Ano inválido.';
+  const anoModelo = lerNumero(v.anoModelo ?? '');
+  if ((v.anoModelo ?? '').trim() && (anoModelo == null || anoModelo < 1950 || anoModelo > new Date().getFullYear() + 2)) e.anoModelo = 'Ano inválido.';
   return e;
 }
 
@@ -112,7 +130,11 @@ export function veiculoDoRascunho(v: RascunhoVeiculo, clienteId: string): Omit<V
     usoSevero: v.usoSevero,
     oleo,
     intervaloOleo: km || meses ? { km: km || null, meses: meses || null } : null,
-    observacao: v.observacao.trim() || undefined
+    observacao: v.observacao.trim() || undefined,
+    ...(v.cor !== undefined ? { cor: v.cor.trim() || undefined } : {}),
+    ...(v.anoModelo !== undefined ? { anoModelo: lerNumero(v.anoModelo) ?? null } : {}),
+    ...(v.chassi !== undefined ? { chassi: v.chassi.trim() || undefined } : {}),
+    ...(v.fipe !== undefined ? { fipe: v.fipe } : {})
   };
 }
 
@@ -169,6 +191,7 @@ export function CamposVeiculo({
           maxLength={8}
         />
       </Campo>
+      <BuscaPelaPlaca placa={valor.placa} aoUsar={(c) => aoMudar(rascunhoComPlaca(valor, c))} className="sm:col-span-4 sm:pt-[26px]" />
       <Campo rotulo="Marca" htmlFor="v-marca" className="sm:col-span-2">
         <input id="v-marca" className={classeEntrada} value={valor.marca} onChange={muda('marca')} placeholder="Chevrolet" list="marcas" autoComplete="off" />
       </Campo>
@@ -181,6 +204,11 @@ export function CamposVeiculo({
       <Campo rotulo="Ano" htmlFor="v-ano" erro={erros.ano} className="sm:col-span-2">
         <input id="v-ano" className={classeEntrada} value={valor.ano} onChange={muda('ano')} inputMode="numeric" maxLength={4} autoComplete="off" />
       </Campo>
+      {completo ? (
+        <Campo rotulo="Ano do modelo" htmlFor="v-anomodelo" erro={erros.anoModelo} className="sm:col-span-2" dica="O segundo ano do documento (2019/2020).">
+          <input id="v-anomodelo" className={classeEntrada} value={valor.anoModelo ?? ''} onChange={muda('anoModelo')} inputMode="numeric" maxLength={4} autoComplete="off" />
+        </Campo>
+      ) : null}
       <Campo rotulo="Combustível" htmlFor="v-comb" className="sm:col-span-2">
         <select id="v-comb" className={classeEntrada} value={valor.combustivel} onChange={muda('combustivel')}>
           <option value="flex">Flex</option>
@@ -199,6 +227,9 @@ export function CamposVeiculo({
       </datalist>
       {completo ? (
         <>
+          <Campo rotulo="Cor" htmlFor="v-cor" className="sm:col-span-3">
+            <input id="v-cor" className={classeEntrada} value={valor.cor ?? ''} onChange={muda('cor')} autoComplete="off" />
+          </Campo>
           <Campo rotulo="Quanto roda por mês" htmlFor="v-kmmes" className="sm:col-span-3" dica="Deixe em branco para o app calcular pelo histórico.">
             <input id="v-kmmes" className={classeEntrada} value={valor.kmMes} onChange={muda('kmMes')} inputMode="numeric" placeholder="1000" autoComplete="off" />
           </Campo>

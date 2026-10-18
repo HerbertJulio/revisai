@@ -9,20 +9,26 @@ try {
   if (process.env.SUPABASE_URL) hostSupabase = new URL(process.env.SUPABASE_URL).hostname;
 } catch {}
 
-// O navegador só fala com o próprio site; o banco é acessado pelo servidor.
+// O navegador fala com o próprio site e, com a conta, com o Supabase (login, sincronização dos
+// dados da oficina e tempo real). As regras de acesso do banco valem para cada pessoa.
+const origemSupabase = `https://${hostSupabase}`;
+const tempoReal = `wss://${hostSupabase}`;
+const localSupabase = dev ? ' http://127.0.0.1:54321 ws://127.0.0.1:54321' : '';
+
 const csp = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${dev ? " 'unsafe-eval'" : ''}`,
+  // a verificação de pessoa no login (Cloudflare Turnstile), quando ligada
+  `script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com${dev ? " 'unsafe-eval'" : ''}`,
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self'",
   "img-src 'self' data: blob:",
   // áudios gravados na ordem por voz tocam a partir do próprio aparelho
   "media-src 'self' blob:",
-  "connect-src 'self'",
+  `connect-src 'self' ${origemSupabase} ${tempoReal}${localSupabase}`,
   "manifest-src 'self'",
   "worker-src 'self' blob:",
   // o mapa da entrega (OpenStreetMap) na tela do pedido
-  'frame-src https://www.openstreetmap.org',
+  'frame-src https://www.openstreetmap.org https://challenges.cloudflare.com',
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
@@ -48,6 +54,8 @@ const permissoesDaEntrega = 'camera=(), microphone=(), geolocation=(self), payme
 
 const config: NextConfig = {
   reactStrictMode: true,
+  // o servidor de desenvolvimento aberto por 127.0.0.1 (testes de ponta a ponta)
+  allowedDevOrigins: ['127.0.0.1'],
   poweredByHeader: false,
   agentRules: false,
   // fotos dos produtos e a ordem de serviço por voz (áudio e fotos) passam por ações do servidor;

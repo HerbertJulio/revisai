@@ -1,0 +1,64 @@
+name: Mudanças do banco
+
+# Aplica no banco de produção as migrações de supabase/migrations que ainda não estão lá, em ordem,
+# cada uma numa transação junto com o registro em supabase_migrations. Roda quando alguém manda o
+# ramo aplicar-banco para o GitHub (ou pela aba Actions). Chega ao banco pelo segredo SUPABASE_DB_URL
+# (o mesmo da cópia de segurança) ou, sem ele, pelo SUPABASE_ACCESS_TOKEN (um token da conta do
+# Supabase, pela API de gerenciamento). Com SUPABASE_DB_URL e BACKUP_SENHA, faz uma cópia cifrada antes.
+
+on:
+  push:
+    branches: [aplicar-banco]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SUPABASE_PROJECT_REF: jlbpsgscspxpnvjhwwnq
+
+concurrency:
+  group: banco-producao
+  cancel-in-progress: false
+
+jobs:
+  aplicar:
+    name: Aplicar as migrações
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cliente do Postgres 17
+        run: scripts/backup/instalar-cliente-pg.sh 17
+
+      - name: O que falta
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: scripts/banco/aplicar-migracoes.sh --ver
+
+      - name: Cópia de segurança antes (com BACKUP_SENHA)
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          BACKUP_SENHA: ${{ secrets.BACKUP_SENHA }}
+        run: |
+          if [ -z "${BACKUP_SENHA:-}" ] || [ -z "${SUPABASE_DB_URL:-}" ]; then
+            echo "Sem SUPABASE_DB_URL e BACKUP_SENHA: segue sem a cópia antes."
+            exit 0
+          fi
+          scripts/backup/backup.sh "copia/antes-das-migracoes-$(date -u +%Y-%m-%dT%H%MZ).dump.gpg"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: banco-antes-${{ github.run_id }}
+          path: copia/
+          retention-days: 30
+          compression-level: 0
+          if-no-files-found: ignore
+
+      - name: Aplicar
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: scripts/banco/aplicar-migracoes.sh

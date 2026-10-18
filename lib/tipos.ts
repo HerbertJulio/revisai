@@ -1,5 +1,7 @@
 // Tipos do domínio. Datas de calendário são 'AAAA-MM-DD'; instantes (criadoEm, quando) são ISO completos.
 
+import type { FotoRegistro } from './registros-oficina';
+
 export type Id = string;
 
 export type ServicoId =
@@ -87,6 +89,11 @@ export interface Oficina {
   endereco: string;
   /** Link do Google para o cliente avaliar a oficina (g.page/r/.../review). */
   linkAvaliacao?: string;
+  cnpj?: string;
+  razaoSocial?: string;
+  inscricaoMunicipal?: string;
+  /** Chave Pix da oficina (cobrança do cliente, fiado e clube). */
+  chavePix?: string;
 }
 
 export interface Preferencias {
@@ -108,6 +115,26 @@ export interface Preferencias {
   validadeOrcamento: number;
   /** O passo a passo fala as perguntas em voz alta. */
   vozGuia: boolean;
+  /** Horário de trabalho, usado na agenda e no agendamento pelo link. */
+  agenda?: {
+    diasSemana: number[];
+    inicio: string;
+    fim: string;
+    intervaloMin: number;
+    vagasPorHorario: number;
+    agendamentoOnline: boolean;
+    /** O horário de cada dia da semana (0 = domingo), quando os dias não são iguais; null: fechado. */
+    semana?: ({ inicio: string; fim: string } | null)[];
+    /** Pausa de todos os dias (o almoço): não tem horário nela. */
+    pausa?: { inicio: string; fim: string } | null;
+    /** Dias fechados fora da semana normal (feriado, férias), AAAA-MM-DD. */
+    folgas?: string[];
+    /** O endereço do agendamento pelo link (/agendar/<slug>), depois que a oficina ligou. */
+    slug?: string | null;
+  };
+  /** Garantia que sai na entrega do carro, em dias (o CDC dá 90 para serviço). */
+  garantiaPadrao?: { servicosDias: number; pecasDias: number; condicoes: string };
+  fidelidade?: { ativo: boolean; pontosPorReal: number; reaisPorPonto: number; minimoResgate: number };
 }
 
 export interface Cliente {
@@ -115,6 +142,9 @@ export interface Cliente {
   nome: string;
   telefone: string;
   email?: string;
+  /** Para a nota fiscal de serviço. */
+  cpfCnpj?: string;
+  endereco?: string;
   observacao?: string;
   criadoEm: string;
 }
@@ -137,7 +167,14 @@ export interface Veiculo {
   oleo?: EspecOleo;
   /** Prazo de troca de óleo do manual, quando for diferente do padrão da oficina. */
   intervaloOleo?: Intervalo | null;
+  chassi?: string;
+  cor?: string;
+  anoModelo?: number | null;
+  /** Valor da tabela FIPE na última consulta. */
+  fipe?: { codigo: string; valor: number | null; referencia: string; consultadoEm: string } | null;
   observacao?: string;
+  /** O link do histórico verificado do carro (o token só existe na criação: guarda o endereço). */
+  links?: { historico?: { codigo: string; url?: string | null; publicadoEm?: string | null } } | null;
   criadoEm: string;
 }
 
@@ -256,6 +293,11 @@ export interface ItemEstoque {
   imagemUrl?: string | null;
   /** Código de barras ou código do fabricante. */
   codigo?: string;
+  /** Código de barras (GTIN/EAN) lido pela câmera ou pela nota de compra. */
+  ean?: string;
+  ncm?: string;
+  /** Código do produto na nota do fornecedor (para reconhecer na próxima nota). */
+  codigoFornecedor?: string;
   criadoEm: string;
   atualizadoEm: string;
 }
@@ -273,7 +315,8 @@ export interface MovimentoEstoque {
   custoUnitario?: number | null;
   /** De quem comprou (na entrada). */
   fornecedor?: string;
-  origem?: { tipo: 'ordem' | 'pedido' | 'manual' | 'contagem'; id?: string; rotulo?: string };
+  /** Na entrada pela nota de compra (tipo 'nota'), o id é a chave de acesso da NF-e. */
+  origem?: { tipo: 'ordem' | 'pedido' | 'manual' | 'contagem' | 'nota'; id?: string; rotulo?: string };
   observacao?: string;
 }
 
@@ -311,9 +354,31 @@ export interface LinhaDocumento {
   intervaloMeses?: number | null;
   /** O cliente não aprovou este item. */
   recusada?: boolean;
+  /** Quem fez (para a comissão). */
+  profissionalId?: Id | null;
 }
 
 export type UrgenciaRecomendacao = 'agora' | 'proxima_revisao' | 'observar';
+
+/** Etapas do serviço que o cliente acompanha pelo link. */
+export type EtapaServico = 'recebido' | 'diagnostico' | 'aguardando_aprovacao' | 'aguardando_pecas' | 'em_servico' | 'pronto' | 'entregue';
+
+/** Prova da aprovação do orçamento pelo cliente. */
+export interface AprovacaoDocumento {
+  canal: 'link' | 'whatsapp' | 'presencial';
+  /** ISO, com hora. */
+  quando: string;
+  nome?: string;
+  ip?: string | null;
+  agente?: string | null;
+  /** Resumo (hash) do que foi aprovado, para provar que o orçamento não mudou depois. */
+  versao: string;
+  copiaEnviadaPara?: string | null;
+  /** Pelo WhatsApp: o que o cliente respondeu ou o que a oficina anotou. */
+  observacao?: string;
+  /** Na oficina: a assinatura feita no aparelho (PNG pequeno em data URL). */
+  assinatura?: string | null;
+}
 
 export interface Documento {
   id: Id;
@@ -351,6 +416,19 @@ export interface Documento {
   atendimentoId?: Id;
   /** A ordem por voz (áudio e fotos) de onde veio. */
   vozId?: Id;
+  etapa?: EtapaServico;
+  andamento?: { etapa: EtapaServico; quando: string; nota?: string; fotoIds?: Id[] }[];
+  fotos?: FotoRegistro[];
+  checklistId?: Id | null;
+  garantiaId?: Id | null;
+  agendamentoId?: Id | null;
+  /** Mecânico responsável (a comissão usa o de cada linha quando houver). */
+  profissionalId?: Id | null;
+  aprovacao?: AprovacaoDocumento | null;
+  /** Links públicos deste documento: o código curto para mostrar (o token só existe na criação). */
+  links?: Partial<Record<'orcamento' | 'andamento' | 'garantia' | 'checklist' | 'pagamento', { codigo: string; url?: string | null; publicadoEm?: string | null }>>;
+  /** Nota fiscal de serviço desta ordem. */
+  nota?: { situacao: 'processando' | 'autorizada' | 'erro' | 'cancelada'; numero?: string | null; url?: string | null; chave?: string | null; mensagem?: string | null } | null;
   criadoEm: string;
   atualizadoEm: string;
 }

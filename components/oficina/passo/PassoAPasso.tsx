@@ -18,6 +18,7 @@ import { escolherPorFala, modeloFalado } from '@/lib/fala';
 import { formatarKm, formatarPlaca, lerNumero, normalizarPlaca, normalizarTelefone, placaValida, SEM_NOME } from '@/lib/formatos';
 import { useHoje } from '@/lib/ganchos';
 import { SERVICOS, SERVICOS_RAPIDOS, servico as infoServico, servicoExiste } from '@/lib/manutencao';
+import { mensagemDaCota } from '@/lib/plano';
 import {
   alternarServico,
   definirPeca,
@@ -43,7 +44,7 @@ import type { Id, ServicoId, TipoDocumento } from '@/lib/tipos';
 import { FRASES, perguntaDaPeca, type FraseId } from '@/lib/voz-frases';
 import { useConcluirOrdem, useLinkDoOrcamento } from '../documentos';
 import { novoId, useGravador } from '../ordem/gravador';
-import { useOfertaDoPro, usePlano } from '../plano';
+import { useAtualizarUso, useOfertaDoPro, usePlano } from '../plano';
 import { Conferir, type ResumoDoCarro } from './Conferir';
 import { Final, type Resultado } from './Final';
 import { useOpcoesDePeca } from './opcoes';
@@ -196,7 +197,7 @@ export function PassoAPasso() {
   const s = servicoDoPasso(passo);
   const veiculo = r.veiculoId ? veiculos[r.veiculoId] : undefined;
   const dono = veiculo ? clientes[veiculo.clienteId] : undefined;
-  const opcoes = useOpcoesDePeca(s ?? 'revisao', veiculo, r.tipo ?? 'ordem', hoje);
+  const opcoes = useOpcoesDePeca(s ?? 'revisao', veiculo, r.tipo ?? 'ordem', hoje, r.carroNovo);
   const opcoesRef = useRef(opcoes);
   opcoesRef.current = opcoes;
 
@@ -1029,6 +1030,10 @@ function PassoServicos({
   const [ia, setIa] = useState<'ouvindo' | 'preenchendo' | null>(null);
   const [erroIa, setErroIa] = useState<string | null>(null);
   const contarMontagem = useOficina((s) => s.contarMontagem);
+  const plano = usePlano();
+  const atualizarUso = useAtualizarUso();
+  // falar de novo no mesmo documento não gasta outra ordem da cota (até 5 vezes)
+  const sessaoVoz = useRef(novoId());
   const rRef = useRef(r);
   rRef.current = r;
   const lista = todos ? SERVICOS.map((x) => x.id) : [...new Set([...SERVICOS_RAPIDOS, ...r.servicos])];
@@ -1044,17 +1049,28 @@ function PassoServicos({
       const texto = await transcreverAudio(dados);
       if (!texto.ok) {
         setErroIa(texto.erro);
+        if ('semConta' in texto && texto.semConta) aoPro();
+        if ('semCota' in texto && texto.semCota) atualizarUso();
         return;
       }
+      atualizarUso();
       setIa('preenchendo');
       const contexto = { oficina, hoje, carro: veiculoTexto || null, cliente: donoTexto || null, kmAnterior, transcricao: texto.texto, anotacao: null };
       const f = new FormData();
       f.append('contexto', JSON.stringify(contexto));
+      f.append('sessao', sessaoVoz.current);
       const o = await montarOrdemComIA(f);
       if (!o.ok) {
         setErroIa(o.erro);
+        if (o.semConta) aoPro();
+        if (o.semCota) {
+          atualizarUso();
+          if (!plano.liberado) aoPro();
+        }
         return;
       }
+      atualizarUso();
+      // cópia no aparelho; quem conta de verdade é o banco
       contarMontagem(hoje);
       let novo = incluirServicos(rRef.current, o.ordem.servicos.map((x) => x.servico));
       // o produto que ele falou vira a peça quando der para reconhecer depois, no passo da peça
@@ -1103,7 +1119,11 @@ function PassoServicos({
             type="button"
             disabled={ia != null}
             onClick={() => {
-              if (!podeDitar) return aoPro();
+              if (!podeDitar) {
+                // no Pro, o limite é o uso justo do mês: só avisa
+                if (plano.liberado && !plano.semConta) return setErroIa(mensagemDaCota('montagem', { plano: plano.tipo, limite: plano.limiteOrdens }));
+                return aoPro();
+              }
               void gravador.comecar();
             }}
             className="inline-flex h-11 items-center gap-2 self-start rounded-[10px] bg-oleo px-4 font-semibold text-[#1b1f22] disabled:opacity-60"

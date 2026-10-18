@@ -8,16 +8,16 @@ import { BellRing, Check, MessageSquareQuote, X } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo, useState, useTransition } from 'react';
 import { responderAlertaPreco } from '@/app/fornecedor/acoes';
-import { Filtro, LinhaDeFiltros } from '@/components/equipe/comum';
+import { Filtro, LinhaDeFiltros } from './comum';
 import { useToast } from '@/components/Toasts';
 import { Botao, Campo, Chip, Vazio, classeBotao, classeEntrada } from '@/components/ui';
 import { aceiteEquivalente, embalagemComparavel, resumoDaResposta, textoDoPedidoDeAlerta, textoDoPreco, type AlertaParaLoja, type Embalagem } from '@/lib/alertas-dados';
 import { nomeCategoria } from '@/lib/catalogo';
 import { formatarDiaHora } from '@/lib/datas';
-import { FUSO } from '@/lib/equipe-dados';
 import { haQuantoTempo } from '@/lib/entregas-dados';
 import { formatarMoeda, lerNumero } from '@/lib/formatos';
-import type { ProdutoDaLoja } from '@/lib/alertas';
+import type { ProdutoDaLoja } from '@/lib/loja/alertas';
+import { FUSO } from '@/lib/loja/comum';
 
 type Aba = 'responder' | 'respondidos' | 'terminados';
 
@@ -39,7 +39,7 @@ export function produtoParecido(a: Pick<AlertaParaLoja, 'categoria' | 'chave' | 
   return parecido ?? [...daCategoria].sort((x, y) => x.preco - y.preco)[0];
 }
 
-export function AlertasDaLoja({ alertas, produtos, uf }: { alertas: AlertaParaLoja[]; produtos: ProdutoDaLoja[]; uf: string | null }) {
+export function AlertasDaLoja({ alertas, produtos, uf, ativa }: { alertas: AlertaParaLoja[]; produtos: ProdutoDaLoja[]; uf: string | null; ativa: boolean }) {
   const [aba, setAba] = useState<Aba>('responder');
   const grupos = useMemo(
     () => ({
@@ -51,6 +51,12 @@ export function AlertasDaLoja({ alertas, produtos, uf }: { alertas: AlertaParaLo
   );
   const visiveis = grupos[aba];
 
+  if (!ativa)
+    return (
+      <Vazio titulo="Os alertas chegam com a loja no ar">
+        Quando a equipe do Revisaí aprovar a loja, os pedidos de preço das oficinas do seu estado aparecem aqui, das categorias que você vende.
+      </Vazio>
+    );
   if (!uf)
     return (
       <Vazio titulo="Falta o estado da sua loja">

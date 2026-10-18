@@ -93,6 +93,9 @@ function Cartao({ c, hoje }: { c: DadosCartao; hoje: string }) {
           </h1>
         </div>
         <p className="max-w-[60ch] text-tinta-2">Cada item vence pela data ou pela quilometragem, o que vier primeiro. Toque num item para pôr o lembrete no calendário.</p>
+        <p className="max-w-[60ch] text-[13px] text-tinta-3">
+          {c.o.w ? `WhatsApp da oficina: ${formatarTelefone(c.o.w)}. ` : ''}Este cartão foi montado pela oficina e veio no próprio link, sem passar pelo Revisaí: confira se o número é mesmo o dela antes de chamar.
+        </p>
         <div className="flex flex-wrap gap-2">
           {zap ? (
             <a href={zap} target="_blank" rel="noopener noreferrer" className={classeBotao('whatsapp', 'grande')}>

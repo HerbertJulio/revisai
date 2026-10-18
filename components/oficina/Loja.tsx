@@ -1,8 +1,10 @@
 'use client';
 
-import { Package, PackageCheck, PackageSearch, Search, SlidersHorizontal, ShoppingCart, X } from 'lucide-react';
+import { Lock, Package, PackageCheck, PackageSearch, Search, SlidersHorizontal, ShoppingCart, X } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Fragment, useMemo, useRef, useState } from 'react';
+import { useConta } from '@/components/conta/ProvedorConta';
 import { TrocaExibicao, useExibicao, type Exibicao } from '@/components/exibicao';
 import { Folha } from '@/components/Folha';
 import { IconeServico } from '@/components/icones';
@@ -22,9 +24,12 @@ import {
   filtrosAtivos,
   FILTROS_VAZIOS,
   lojaDoDia,
-  ORDENS,
+  ordenarPeloCarro,
   ordenarProdutos,
+  ordensDisponiveis,
+  precoParaOficina,
   quantosFiltros,
+  type CarroDoFiltro,
   type FiltrosLoja,
   type Ordem
 } from '@/lib/vitrine';
@@ -32,14 +37,17 @@ import { useCatalogo } from './catalogo';
 import { CartaoDemanda } from './demanda';
 import { FotoProduto } from './FotoProduto';
 import { Carrinho } from './loja/Carrinho';
-import { BotaoPor, nomeComMarca, SeloPatrocinado } from './loja/comum';
+import { BotaoEntrar, BotaoPor, ENTRAR_NA_LOJA, nomeComMarca, SeloPatrocinado } from './loja/comum';
 import { DetalheProduto } from './loja/Detalhe';
 import { PainelFiltros } from './loja/Filtros';
 import { CartaoGrade, CartaoLojaDestaque, LinhaLista } from './loja/Produtos';
 import { BotaoPedirPreco, FolhaAlerta, FolhaNovoAlerta, FolhaPacotes, ListaDeAlertas } from './loja/Alertas';
+import { ProvedorDeAnuncios, useAnuncios, useVistoNaVitrine } from './loja/anuncios';
+import { ProvedorDeCondicoes, useCondicoes } from './loja/condicoes';
+import { FolhaDevolucao, ListaDeDevolucoes, type AberturaDaDevolucao } from './loja/Devolucoes';
 import { EmAndamento, FolhaPedido, PedidosEnviados } from './loja/Pedidos';
 import { ProvedorDePrecos } from './loja/precos';
-import { useOfertaDoPro, usePlano } from './plano';
+import { useOfertaDoPro } from './plano';
 import { Vitrine } from './loja/Vitrine';
 
 const POR_PAGINA = 24;
@@ -50,14 +58,35 @@ const CHAVE_EXIBICAO = 'revisai:loja:exibicao';
 
 export function Loja() {
   return (
-    <ProvedorDePrecos>
-      <ConteudoDaLoja />
-    </ProvedorDePrecos>
+    <ProvedorDeCondicoes>
+      <ProvedorDeAnuncios>
+        <ProvedorDePrecos>
+          <ConteudoDaLoja />
+        </ProvedorDePrecos>
+      </ProvedorDeAnuncios>
+    </ProvedorDeCondicoes>
+  );
+}
+
+/** Os carros dos clientes, para o filtro "Serve no carro" (os com modelo, em ordem de nome). */
+function useCarrosDosClientes(): (CarroDoFiltro & { placa: string })[] {
+  const veiculos = useOficina((s) => s.veiculos);
+  return useMemo(
+    () =>
+      Object.values(veiculos)
+        .filter((v) => v.modelo?.trim())
+        .map((v) => ({ id: v.id, marca: v.marca || null, modelo: v.modelo, motor: v.motor ?? null, ano: v.ano ?? null, placa: v.placa }))
+        .sort((a, b) => `${a.modelo} ${a.ano ?? ''}`.localeCompare(`${b.modelo} ${b.ano ?? ''}`, 'pt-BR') || a.placa.localeCompare(b.placa)),
+    [veiculos]
   );
 }
 
 function ConteudoDaLoja() {
-  const { catalogo, carregando, semConexao } = useCatalogo();
+  const { catalogo, extras, carregando, semConexao, comPrecos } = useCatalogo();
+  const { condicoes } = useCondicoes();
+  const carros = useCarrosDosClientes();
+  const { conta, oficina: daConta } = useConta();
+  const router = useRouter();
   const hoje = useHoje();
   const uf = useOficina((s) => s.oficina.uf);
   const carrinho = useOficina((s) => s.carrinho);
@@ -73,19 +102,27 @@ function ConteudoDaLoja() {
   const [novoAlerta, setNovoAlerta] = useState<{ produto: Produto; quantidade: number } | null>(null);
   const [alertaAberto, setAlertaAberto] = useState<string | null>(null);
   const [pedidoAberto, setPedidoAberto] = useState<string | null>(null);
+  const [devolucao, setDevolucao] = useState<AberturaDaDevolucao | null>(null);
   const [pacotes, setPacotes] = useState(false);
-  const plano = usePlano();
   const ofertaPro = useOfertaDoPro();
   const catalogoRef = useRef<HTMLElement>(null);
+  // sem os preços, não dá para ordenar nem filtrar por preço ou promoção
+  const ordens = ordensDisponiveis(comPrecos);
+  const ordemValida: Ordem = ordens.some((o) => o.id === ordem) ? ordem : 'relevancia';
+  const filtrosValidos = useMemo<FiltrosLoja>(() => (comPrecos ? filtros : { ...filtros, promocao: false, precoMin: null, precoMax: null }), [filtros, comPrecos]);
 
   const fornecedores = useMemo(() => new Map(catalogo.fornecedores.map((f) => [f.id, f])), [catalogo]);
-  const ctx = useMemo(() => ({ catalogo, uf, hoje }), [catalogo, uf, hoje]);
+  const ctx = useMemo(() => ({ catalogo, uf, hoje, extras, condicoes }), [catalogo, uf, hoje, extras, condicoes]);
   const base = useMemo(() => catalogo.produtos.filter((p) => fornecedores.has(p.fornecedorId)), [catalogo, fornecedores]);
-  const resultado = useMemo(() => ordenarProdutos(filtrarProdutos(base, filtros, ctx), ordem, ctx), [base, filtros, ctx, ordem]);
-  const facetas = useMemo(() => calcularFacetas(base, filtros, ctx), [base, filtros, ctx]);
+  // com um carro escolhido, as peças que servem nele vêm primeiro (as sem informação depois)
+  const resultado = useMemo(
+    () => ordenarPeloCarro(ordenarProdutos(filtrarProdutos(base, filtrosValidos, ctx), ordemValida, ctx), extras, filtrosValidos.carro),
+    [base, filtrosValidos, ctx, ordemValida, extras]
+  );
+  const facetas = useMemo(() => calcularFacetas(base, filtrosValidos, ctx), [base, filtrosValidos, ctx]);
   const destaques = useMemo(() => destaquesDaVitrine(ordenarVitrine(base, catalogo, uf, hoje), ctx, 5), [base, catalogo, uf, hoje, ctx]);
   const loja = useMemo(() => lojaDoDia(catalogo.fornecedores, base, hoje), [catalogo, base, hoje]);
-  const ativos = filtrosAtivos(filtros, ctx);
+  const ativos = filtrosAtivos(filtrosValidos, ctx);
   const demonstracao = catalogo.origem === 'exemplo' || catalogo.fornecedores.some((f) => f.demonstracao);
   const visiveis = resultado.slice(0, limite);
   const mostrarLoja = !!loja && !filtros.fornecedores.length && !filtros.busca.trim() && resultado.length > POSICAO_DA_LOJA;
@@ -93,7 +130,7 @@ function ConteudoDaLoja() {
   const itensCarrinho = carrinho.reduce((n, c) => n + c.quantidade, 0);
   const totalCarrinho = carrinho.reduce((soma, c) => {
     const p = base.find((x) => x.id === c.produtoId);
-    return p ? soma + precoNaQuantidade(p, catalogo.promocoes, hoje, c.quantidade).preco * c.quantidade : soma;
+    return p ? soma + precoParaOficina(p, catalogo.promocoes, hoje, c.quantidade, condicoes).preco * c.quantidade : soma;
   }, 0);
 
   function mudarFiltros(f: FiltrosLoja) {
@@ -108,7 +145,9 @@ function ConteudoDaLoja() {
 
   function pedirPreco(p: Produto, quantidade: number) {
     setDetalhe(null);
-    if (!plano.liberado) return ofertaPro('alertas');
+    // o alerta de preço é da oficina da conta; no grátis, o convite para o teste do Pro
+    if (!conta) return router.push(ENTRAR_NA_LOJA);
+    if (daConta?.plano === 'gratis') return ofertaPro('alertas');
     setNovoAlerta({ produto: p, quantidade });
   }
 
@@ -127,29 +166,54 @@ function ConteudoDaLoja() {
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="largo text-[30px] sm:text-[34px]">Loja</h1>
-          <p className="mt-1 max-w-[60ch] text-tinta-2">Peças e óleo para os serviços que estão vencendo, com o preço das promoções dos fornecedores.</p>
+          <p className="mt-1 max-w-[60ch] text-tinta-2">
+            {comPrecos ? 'Peças e óleo para os serviços que estão vencendo, com o preço das promoções dos fornecedores.' : 'Peças e óleo para os serviços que estão vencendo, das lojas da sua região.'}
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link href="/oficina/estoque" className={classeBotao('secundario')}>
             <Package size={18} aria-hidden="true" /> Estoque
           </Link>
-          <Botao variante={itensCarrinho ? 'escuro' : 'secundario'} onClick={() => setAberto(true)}>
-            <ShoppingCart size={18} />
-            {itensCarrinho ? `Pedido de ${formatarMoeda(totalCarrinho)}` : 'Pedido vazio'}
-          </Botao>
+          {conta ? (
+            <Botao variante={itensCarrinho ? 'escuro' : 'secundario'} onClick={() => setAberto(true)}>
+              <ShoppingCart size={18} />
+              {itensCarrinho ? (comPrecos ? `Pedido de ${formatarMoeda(totalCarrinho)}` : `Pedido com ${itensCarrinho} ${itensCarrinho === 1 ? 'item' : 'itens'}`) : 'Pedido vazio'}
+            </Botao>
+          ) : (
+            <BotaoEntrar />
+          )}
         </div>
       </header>
 
+      {!conta ? (
+        <section className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-papel px-4 py-4 ring-1 ring-linha sm:px-5" aria-labelledby="t-entrar">
+          <div className="flex min-w-0 flex-1 basis-72 items-start gap-3">
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-oleo-claro text-oleo-tinta">
+              <Lock size={20} aria-hidden="true" />
+            </span>
+            <div className="min-w-0">
+              <h2 id="t-entrar" className="text-[17px] font-bold">
+                Preços e pedidos são para quem tem conta
+              </h2>
+              <p className="mt-0.5 max-w-[62ch] text-[14.5px] text-tinta-2">
+                Sem conta, dá para ver os produtos das lojas. Entre (ou crie a sua conta, é grátis) para ver os preços, comprar, pedir preço menor às lojas e acompanhar a entrega.
+              </p>
+            </div>
+          </div>
+          <BotaoEntrar />
+        </section>
+      ) : null}
+
       {demonstracao ? (
         <p className="rounded-xl border border-dashed border-linha bg-papel px-4 py-3 text-[14px] text-tinta-2">
-          Vitrine de demonstração, com fornecedores e preços de exemplo. Dá para testar o pedido; a equipe do Revisaí recebe e entra em contato.
+          Vitrine de demonstração, com lojas e produtos de exemplo. Os pedidos de verdade saem para as lojas cadastradas no Revisaí.
         </p>
       ) : null}
       {semConexao ? <p className="text-[14px] text-oleo-tinta">Sem conexão. Mostrando a última versão da loja que ficou salva.</p> : null}
 
       <EmAndamento aoAbrirAlerta={setAlertaAberto} aoAbrirPedido={setPedidoAberto} />
 
-      <Vitrine destaques={destaques} fornecedores={fornecedores} hoje={hoje} aoPor={por} aoAbrir={setDetalhe} />
+      <Vitrine destaques={destaques} fornecedores={fornecedores} uf={uf} hoje={hoje} aoPor={por} aoAbrir={setDetalhe} />
 
       <ParaOsCarros aoPor={por} aoAbrir={setDetalhe} />
 
@@ -168,7 +232,7 @@ function ConteudoDaLoja() {
         <div className="grid gap-6 lg:grid-cols-[236px_minmax(0,1fr)]">
           <aside className="hidden lg:block" aria-label="Filtros">
             <div className="sticky top-6 max-h-[calc(100dvh-3rem)] overflow-y-auto pr-2 pb-4">
-              <PainelFiltros filtros={filtros} facetas={facetas} aoMudar={mudarFiltros} />
+              <PainelFiltros filtros={filtros} facetas={facetas} aoMudar={mudarFiltros} comPrecos={comPrecos} carros={carros} />
             </div>
           </aside>
 
@@ -176,7 +240,8 @@ function ConteudoDaLoja() {
             <BarraDaBusca
               filtros={filtros}
               aoMudar={mudarFiltros}
-              ordem={ordem}
+              ordem={ordemValida}
+              ordens={ordens}
               aoOrdenar={(o) => {
                 setOrdem(o);
                 setLimite(POR_PAGINA);
@@ -240,7 +305,7 @@ function ConteudoDaLoja() {
                     {mostrarLoja && loja && i === POSICAO_DA_LOJA ? (
                       <CartaoLojaDestaque loja={loja} produtos={base.filter((x) => x.fornecedorId === loja.id).length} aoVer={() => verLoja(loja.id)} />
                     ) : null}
-                    <CartaoGrade produto={p} fornecedor={fornecedores.get(p.fornecedorId)} uf={uf} hoje={hoje} aoPor={por} aoAbrir={setDetalhe} />
+                    <CartaoGrade produto={p} fornecedor={fornecedores.get(p.fornecedorId)} uf={uf} hoje={hoje} aoPor={por} aoAbrir={setDetalhe} carro={filtrosValidos.carro} />
                   </Fragment>
                 ))}
               </div>
@@ -253,7 +318,7 @@ function ConteudoDaLoja() {
                         <CartaoLojaDestaque loja={loja} produtos={base.filter((x) => x.fornecedorId === loja.id).length} aoVer={() => verLoja(loja.id)} emLinha />
                       </li>
                     ) : null}
-                    <LinhaLista produto={p} fornecedor={fornecedores.get(p.fornecedorId)} uf={uf} hoje={hoje} aoPor={por} aoAbrir={setDetalhe} />
+                    <LinhaLista produto={p} fornecedor={fornecedores.get(p.fornecedorId)} uf={uf} hoje={hoje} aoPor={por} aoAbrir={setDetalhe} carro={filtrosValidos.carro} />
                   </Fragment>
                 ))}
               </ul>
@@ -279,6 +344,8 @@ function ConteudoDaLoja() {
 
       <PedidosEnviados aoAbrir={setPedidoAberto} />
 
+      <ListaDeDevolucoes aoAbrir={setDevolucao} aoAbrirPedido={setPedidoAberto} />
+
       <ListaDeAlertas aoAbrir={setAlertaAberto} aoComprar={() => setPacotes(true)} />
 
       <Folha
@@ -296,7 +363,7 @@ function ConteudoDaLoja() {
           </div>
         }
       >
-        <PainelFiltros filtros={filtros} facetas={facetas} aoMudar={mudarFiltros} />
+        <PainelFiltros filtros={filtros} facetas={facetas} aoMudar={mudarFiltros} comPrecos={comPrecos} carros={carros} />
       </Folha>
 
       <DetalheProduto
@@ -305,7 +372,8 @@ function ConteudoDaLoja() {
         aoPor={por}
         aoAbrir={setDetalhe}
         uf={uf}
-        acaoPreco={(p, q) => <BotaoPedirPreco produto={p} aoPedir={() => pedirPreco(p, q)} aoVerAlerta={verAlerta} />}
+        carro={filtrosValidos.carro}
+        acaoPreco={(p, q) => (conta ? <BotaoPedirPreco produto={p} aoPedir={() => pedirPreco(p, q)} aoVerAlerta={verAlerta} /> : null)}
       />
       <Carrinho aberto={aberto} aoFechar={() => setAberto(false)} aoAcompanhar={setPedidoAberto} />
       <FolhaNovoAlerta pedido={novoAlerta} aoFechar={() => setNovoAlerta(null)} aoVerAlerta={setAlertaAberto} aoComprar={() => setPacotes(true)} />
@@ -313,7 +381,15 @@ function ConteudoDaLoja() {
         setAlertaAberto(null);
         setPedidoAberto(c);
       }} />
-      <FolhaPedido codigo={pedidoAberto} aoFechar={() => setPedidoAberto(null)} />
+      <FolhaPedido
+        codigo={pedidoAberto}
+        aoFechar={() => setPedidoAberto(null)}
+        aoPedirDevolucao={(a) => {
+          setPedidoAberto(null);
+          setDevolucao(a);
+        }}
+      />
+      <FolhaDevolucao abertura={devolucao} aoFechar={() => setDevolucao(null)} />
       <FolhaPacotes aberta={pacotes} aoFechar={() => setPacotes(false)} />
     </div>
   );
@@ -323,6 +399,7 @@ function BarraDaBusca({
   filtros,
   aoMudar,
   ordem,
+  ordens,
   aoOrdenar,
   exibicao,
   aoExibir,
@@ -331,6 +408,7 @@ function BarraDaBusca({
   filtros: FiltrosLoja;
   aoMudar: (f: FiltrosLoja) => void;
   ordem: Ordem;
+  ordens: { id: Ordem; nome: string }[];
   aoOrdenar: (o: Ordem) => void;
   exibicao: Exibicao;
   aoExibir: (e: Exibicao) => void;
@@ -365,7 +443,7 @@ function BarraDaBusca({
           onChange={(e) => aoOrdenar(e.target.value as Ordem)}
           className="h-11 w-full min-w-0 rounded-[10px] border border-linha bg-papel pr-8 pl-3 text-[16px] font-semibold outline-none focus:border-caneta focus:ring-3 focus:ring-caneta/20 sm:w-auto sm:text-[14.5px]"
         >
-          {ORDENS.map((o) => (
+          {ordens.map((o) => (
             <option key={o.id} value={o.id}>
               {o.nome}
             </option>
@@ -397,7 +475,7 @@ function ChipCategoria({ ativo, aoClicar, children }: { ativo: boolean; aoClicar
  * que tem no estoque: a sugestão de compra é só do que falta, com a promoção que vale.
  */
 function ParaOsCarros({ aoPor, aoAbrir }: { aoPor: (p: Produto, q: number) => void; aoAbrir: (p: Produto) => void }) {
-  const { catalogo } = useCatalogo();
+  const { catalogo, comPrecos } = useCatalogo();
   const dados = useDadosAvisos();
   const hoje = useHoje();
   const uf = useOficina((s) => s.oficina.uf);
@@ -476,8 +554,12 @@ function ParaOsCarros({ aoPor, aoAbrir }: { aoPor: (p: Produto, q: number) => vo
                     {r ? (
                       <p className="mt-1 text-[14px]">
                         {quantidadeComUnidade(r.produto, r.quantidade)} de <span className="font-semibold">{nomeComMarca(r.produto)}</span>
-                        {fornecedores.get(r.produto.fornecedorId) ? <span className="text-tinta-3">, {fornecedores.get(r.produto.fornecedorId)?.nome}</span> : null} por <strong className="num">{formatarMoeda(r.total)}</strong>
-                        {r.promocao ? <Chip tom="oleo" className="ml-2 align-middle">-{desconto(r.produto.preco, r.promocao.precoPromocional)}%</Chip> : null}
+                        {fornecedores.get(r.produto.fornecedorId) ? <span className="text-tinta-3">, {fornecedores.get(r.produto.fornecedorId)?.nome}</span> : null} {comPrecos ? (
+                          <>
+                            {' '}por <strong className="num">{formatarMoeda(r.total)}</strong>
+                          </>
+                        ) : null}
+                        {comPrecos && r.promocao ? <Chip tom="oleo" className="ml-2 align-middle">-{desconto(r.produto.preco, r.promocao.precoPromocional)}%</Chip> : null}
                       </p>
                     ) : (
                       <p className="mt-1 text-[14px] font-semibold text-ok">O estoque cobre.</p>
@@ -495,18 +577,7 @@ function ParaOsCarros({ aoPor, aoAbrir }: { aoPor: (p: Produto, q: number) => vo
                   ) : null}
                 </div>
                 {alternativa ? (
-                  <button
-                    type="button"
-                    onClick={() => aoAbrir(alternativa)}
-                    className="flex items-center gap-3 rounded-xl bg-papel-2 px-3 py-2 text-left text-[13.5px] hover:bg-linha/50 sm:ml-[72px]"
-                  >
-                    <SeloPatrocinado />
-                    <span className="min-w-0 flex-1 truncate">
-                      <span className="font-semibold">{nomeComMarca(alternativa)}</span>
-                      <span className="text-tinta-3">, {fornecedores.get(alternativa.fornecedorId)?.nome}</span>
-                    </span>
-                    <span className="num font-semibold">{formatarMoeda(precoNaQuantidade(alternativa, catalogo.promocoes, hoje, 1).preco)}</span>
-                  </button>
+                  <AlternativaPatrocinada produto={alternativa} loja={fornecedores.get(alternativa.fornecedorId)?.nome} preco={comPrecos ? precoNaQuantidade(alternativa, catalogo.promocoes, hoje, 1).preco : null} aoAbrir={aoAbrir} />
                 ) : null}
               </li>
             );
@@ -533,6 +604,30 @@ function ParaOsCarros({ aoPor, aoAbrir }: { aoPor: (p: Produto, q: number) => vo
       )}
       <CartaoDemanda />
     </Secao>
+  );
+}
+
+/** O produto patrocinado ao lado da sugestão mais barata (conta como anúncio visto e, ao abrir, clicado). */
+function AlternativaPatrocinada({ produto, loja, preco, aoAbrir }: { produto: Produto; loja?: string; preco: number | null; aoAbrir: (p: Produto) => void }) {
+  const { clicar } = useAnuncios();
+  const visto = useVistoNaVitrine(produto.id, true);
+  return (
+    <button
+      ref={visto}
+      type="button"
+      onClick={() => {
+        clicar(produto.id);
+        aoAbrir(produto);
+      }}
+      className="flex items-center gap-3 rounded-xl bg-papel-2 px-3 py-2 text-left text-[13.5px] hover:bg-linha/50 sm:ml-[72px]"
+    >
+      <SeloPatrocinado />
+      <span className="min-w-0 flex-1 truncate">
+        <span className="font-semibold">{nomeComMarca(produto)}</span>
+        {loja ? <span className="text-tinta-3">, {loja}</span> : null}
+      </span>
+      {preco != null ? <span className="num font-semibold">{formatarMoeda(preco)}</span> : null}
+    </button>
   );
 }
 

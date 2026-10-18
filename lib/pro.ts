@@ -1,20 +1,22 @@
 import 'server-only';
 
-// Códigos do Pro. A equipe cria o código no painel depois do pagamento; a oficina digita o código
-// no app e o servidor confere se ele existe, se ainda vale e em quantos aparelhos já foi usado.
+// Códigos do Pro. O financeiro cria o código no painel depois do pagamento; o dono da oficina
+// digita o código no app e o banco liga o código à oficina (ativar_codigo_pro): a primeira
+// oficina que ativar fica com ele. A equipe também pode dar o Pro direto (equipe_dar_pro).
 
 import { randomInt } from 'node:crypto';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { z } from 'zod';
+import { acessoDaOficina } from './conta';
+import { mensagemDoBanco } from './conta-dados';
 import { somarMeses } from './datas';
-import { clienteEquipe } from './equipe';
+import { diaEmBrasilia } from './equipe-dados';
 import { normalizarTelefone } from './formatos';
-import { hojeEmBrasilia } from './marketplace';
 import { normalizarCodigo } from './plano';
-import { COLUNAS_ASSINATURA, lerAssinaturas, MAX_APARELHOS, MESES_PRO, type Assinatura } from './pro-dados';
+import { COLUNAS_ASSINATURA, lerAssinaturas, MESES_PRO, type Assinatura } from './pro-dados';
 
 export type Gravacao<T = object> = ({ ok: true } & T) | { ok: false; erro: string };
 
-const SEM_BANCO = 'O banco não está configurado.';
 const LETRAS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 /** 16 letras e números sem os que confundem (0/O, 1/I): 80 bits de sorte. */
@@ -24,9 +26,8 @@ export function gerarCodigoPro(): string {
   return c;
 }
 
-export async function listarAssinaturas(): Promise<{ dados: Assinatura[]; erro: string | null }> {
-  const sb = clienteEquipe();
-  if (!sb) return { dados: [], erro: SEM_BANCO };
+/** As assinaturas (códigos do Pro), como a equipe vê (o banco só mostra para financeiro e suporte). */
+export async function listarAssinaturas(sb: SupabaseClient): Promise<{ dados: Assinatura[]; erro: string | null }> {
   const { data, error } = await sb.from('assinaturas').select(COLUNAS_ASSINATURA).order('criado_em', { ascending: false }).limit(500);
   if (error) {
     console.error('[pro] assinaturas', error);
@@ -45,9 +46,8 @@ const esquemaNova = z.object({
   observacao: z.string().trim().max(300).default('')
 });
 
-export async function criarAssinatura(entrada: unknown): Promise<Gravacao<{ assinatura: Assinatura }>> {
-  const sb = clienteEquipe();
-  if (!sb) return { ok: false, erro: SEM_BANCO };
+/** Cria o código do Pro de uma oficina que pagou (com o cliente de quem é do financeiro). */
+export async function criarAssinatura(sb: SupabaseClient, entrada: unknown): Promise<Gravacao<{ assinatura: Assinatura }>> {
   const r = esquemaNova.safeParse(entrada);
   if (!r.success) return { ok: false, erro: r.error.issues[0]?.message ?? 'Dados inválidos.' };
   const e = r.data;
@@ -56,7 +56,7 @@ export async function criarAssinatura(entrada: unknown): Promise<Gravacao<{ assi
     whatsapp = normalizarTelefone(e.oficinaWhatsapp);
     if (!whatsapp) return { ok: false, erro: 'O WhatsApp não parece um número do Brasil. Use DDD e número.' };
   }
-  const ate = somarMeses(hojeEmBrasilia(), e.meses);
+  const ate = somarMeses(diaEmBrasilia(Date.now()), e.meses);
   for (let tentativa = 0; tentativa < 3; tentativa++) {
     const { data, error } = await sb
       .from('assinaturas')
@@ -77,37 +77,25 @@ export async function criarAssinatura(entrada: unknown): Promise<Gravacao<{ assi
     }
     if (error.code !== '23505') {
       console.error('[pro] nova assinatura', error);
-      return { ok: false, erro: 'Não deu para criar o código agora. Tente de novo.' };
+      return { ok: false, erro: mensagemDoBanco(error, 'Não deu para criar o código agora. Tente de novo.') };
     }
   }
   return { ok: false, erro: 'Não deu para criar o código agora. Tente de novo.' };
 }
 
-/** A oficina digitou o código no app. Conta mais um aparelho se o código ainda vale. */
-export async function ativarCodigo(texto: string): Promise<Gravacao<{ ate: string; oficina: string; codigo: string }>> {
-  const sb = clienteEquipe();
-  if (!sb) return { ok: false, erro: 'O Pro ainda não está disponível neste servidor.' };
+/** O dono (ou o gerente) ativa um código do Pro na oficina dele. */
+export async function ativarCodigoNaOficina(sb: SupabaseClient, oficinaId: string, texto: string): Promise<Gravacao<{ ate: string; oficina: string; codigo: string }>> {
   const codigo = normalizarCodigo(texto);
   if (!/^[0-9A-Z]{16}$/.test(codigo)) return { ok: false, erro: 'O código tem 16 letras e números. Confira e tente de novo.' };
-  const { data, error } = await sb.from('assinaturas').select('id, oficina_nome, ate, ativacoes').eq('codigo', codigo).maybeSingle();
+  const { data, error } = await sb.rpc('ativar_codigo_pro', { p_oficina: oficinaId, p_codigo: codigo });
   if (error) {
-    console.error('[pro] conferir código', error);
-    return { ok: false, erro: 'Não deu para conferir o código agora. Tente de novo.' };
-  }
-  if (!data) return { ok: false, erro: 'Esse código não existe. Confira as letras e os números.' };
-  const linha = data as { id: number; oficina_nome: string; ate: string; ativacoes: number };
-  if (linha.ate < hojeEmBrasilia()) return { ok: false, erro: 'Esse código já venceu. Fale com a equipe do Revisaí para renovar.' };
-  if (linha.ativacoes >= MAX_APARELHOS) return { ok: false, erro: `Esse código já foi usado em ${MAX_APARELHOS} aparelhos. Fale com a equipe do Revisaí.` };
-  const { data: atualizado, error: erroUpdate } = await sb
-    .from('assinaturas')
-    .update({ ativacoes: linha.ativacoes + 1 })
-    .eq('id', linha.id)
-    .eq('ativacoes', linha.ativacoes)
-    .select('id')
-    .maybeSingle();
-  if (erroUpdate || !atualizado) {
-    if (erroUpdate) console.error('[pro] contar ativação', erroUpdate);
+    if (error.code === 'RV030') return { ok: false, erro: 'Esse código não existe. Confira as letras e os números.' };
+    if (error.code === 'RV031') return { ok: false, erro: 'Esse código já foi usado por outra oficina. Fale com a equipe do Revisaí.' };
+    if (error.code === 'RV032') return { ok: false, erro: 'Esse código já venceu. Fale com a equipe do Revisaí para renovar.' };
+    if (error.code === '42501') return { ok: false, erro: 'Só o dono ou o gerente da oficina ativa o Pro.' };
+    console.error('[pro] ativar código', error);
     return { ok: false, erro: 'Não deu para ativar agora. Tente de novo.' };
   }
-  return { ok: true, ate: linha.ate, oficina: linha.oficina_nome, codigo };
+  const r = (data ?? {}) as { ate?: unknown; oficina?: unknown };
+  return { ok: true, ate: String(r.ate ?? ''), oficina: String(r.oficina ?? ''), codigo };
 }

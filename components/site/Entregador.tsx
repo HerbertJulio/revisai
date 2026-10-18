@@ -10,7 +10,7 @@ import { Botao, classeBotao } from '@/components/ui';
 import { deveMandar, haQuantoTempo, linkDoCaminho } from '@/lib/entregas-dados';
 import { formatarTelefone } from '@/lib/formatos';
 import { linkWhatsApp } from '@/lib/whatsapp';
-import type { DadosDaEntrega } from '@/lib/entregas';
+import type { DadosDaEntrega } from '@/lib/loja/entregador';
 
 type Estado = 'parado' | 'pedindo' | 'mandando' | 'negado' | 'sem-gps' | 'entregue' | 'encerrado';
 

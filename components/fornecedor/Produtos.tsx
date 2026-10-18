@@ -3,7 +3,12 @@
 import { Camera, Pencil, Plus, Rocket, Search } from 'lucide-react';
 import { useRef, useState, useTransition } from 'react';
 import { enviarFoto, impulsionar, salvarProduto } from '@/app/fornecedor/acoes';
-import { AvisoErro, combina, paraBusca } from '@/components/equipe/comum';
+import { lerAplicacoesDoTexto, rotuloDaAplicacao, textoDasAplicacoes } from '@/lib/loja/aplicacoes';
+import { combina, paraBusca } from '@/lib/loja/comum';
+import { PRAZOS_DE_ENTREGA, type LinhaProdutoDaLoja } from '@/lib/loja/dados';
+import { ITENS_PROIBIDOS, TEXTO_DA_MODERACAO } from '@/lib/loja/proibidos';
+import { AvisoErro } from './comum';
+import { Planilha } from './Planilha';
 import { TrocaExibicao, useExibicao } from '@/components/exibicao';
 import { Folha } from '@/components/Folha';
 import { FotoProduto } from '@/components/oficina/FotoProduto';
@@ -13,11 +18,12 @@ import { Alternar, Botao, Campo, Chip, Vazio, classeArea, classeEntrada } from '
 import { CATEGORIAS, nomeCategoria } from '@/lib/catalogo';
 import { formatarMoeda, lerNumero } from '@/lib/formatos';
 import { reduzirFoto } from '@/lib/imagem-cliente';
-import type { LinhaImpulso, LinhaProduto, LinhaPromocao } from '@/lib/marketplace-dados';
+import type { LinhaImpulso, LinhaPromocao } from '@/lib/marketplace-dados';
 import { DIAS_IMPULSO, PRECO_IMPULSO, type DiasImpulso } from '@/lib/planos-fornecedor';
 import { nomeDaReferencia, referenciasDaCategoria, textoDoPrazo } from '@/lib/referencias';
 import type { Categoria } from '@/lib/tipos';
 
+type LinhaProduto = LinhaProdutoDaLoja;
 type Unidade = LinhaProduto['unidade'];
 
 interface Rascunho {
@@ -41,6 +47,11 @@ interface Rascunho {
   medida: string;
   amperagem: string;
   tipo: string;
+  codigo: string;
+  estoque: string;
+  aplicacoes: string;
+  /** Horas do prazo de entrega deste produto ('' = o prazo da loja). */
+  prazoEntrega: string;
 }
 
 const UNIDADES: { id: Unidade; nome: string }[] = [
@@ -77,7 +88,11 @@ function rascunhoDe(p?: LinhaProduto): Rascunho {
     normas: texto(e.normas),
     medida: texto(e.medida),
     amperagem: texto(e.amperagem),
-    tipo: texto(e.tipo)
+    tipo: texto(e.tipo),
+    codigo: p?.codigo ?? '',
+    estoque: p?.estoque != null ? String(p.estoque) : '',
+    aplicacoes: p ? textoDasAplicacoes(p.aplicacoes) : '',
+    prazoEntrega: p?.prazoEntregaHoras != null ? String(p.prazoEntregaHoras) : ''
   };
 }
 
@@ -89,7 +104,7 @@ function lista(t: string): string[] | undefined {
   return l.length ? l : undefined;
 }
 
-type FiltroProduto = 'todos' | 'na_loja' | 'fora' | 'sem_foto' | 'promocao' | 'impulso';
+type FiltroProduto = 'todos' | 'na_loja' | 'fora' | 'sem_foto' | 'sem_estoque' | 'promocao' | 'impulso' | 'moderacao';
 
 interface ContextoFiltro {
   promoDe: (p: LinhaProduto) => LinhaPromocao | undefined;
@@ -101,16 +116,20 @@ const FILTROS: { id: FiltroProduto; nome: string; passa: (p: LinhaProduto, c: Co
   { id: 'na_loja', nome: 'Na loja', passa: (p) => p.ativo },
   { id: 'fora', nome: 'Fora da loja', passa: (p) => !p.ativo },
   { id: 'sem_foto', nome: 'Sem foto', passa: (p) => !p.imagem_url },
+  { id: 'sem_estoque', nome: 'Esgotados', passa: (p) => p.estoque === 0 },
   { id: 'promocao', nome: 'Em promoção', passa: (p, c) => !!c.promoDe(p) },
-  { id: 'impulso', nome: 'Impulsionados', passa: (p, c) => !!c.impulsoDe(p) }
+  { id: 'impulso', nome: 'Impulsionados', passa: (p, c) => !!c.impulsoDe(p) },
+  { id: 'moderacao', nome: 'Na moderação', passa: (p) => !!p.ocultoModeracao }
 ];
 
 /** Como o produto está: fora da loja, promoção em vigor, impulso no ar ou pedido. */
 function SelosDoProduto({ produto: p, promo, impulso }: { produto: LinhaProduto; promo?: LinhaPromocao; impulso?: LinhaImpulso }) {
-  if (p.ativo && !promo && !impulso) return null;
+  if (p.ativo && !promo && !impulso && p.estoque == null && !p.ocultoModeracao) return null;
   return (
     <div className="flex flex-wrap gap-1.5">
+      {p.ocultoModeracao ? <Chip tom="atraso">Fora da vitrine pela moderação</Chip> : null}
       {!p.ativo ? <Chip tom="atraso">Fora da loja</Chip> : null}
+      {p.estoque === 0 ? <Chip tom="atraso">Esgotado</Chip> : p.estoque != null ? <Chip>{p.estoque} em estoque</Chip> : null}
       {promo ? <Chip tom="oleo">{promo.titulo}</Chip> : null}
       {impulso ? (
         <Chip tom={impulso.status === 'ativo' ? 'ok' : 'caneta'}>
@@ -121,13 +140,25 @@ function SelosDoProduto({ produto: p, promo, impulso }: { produto: LinhaProduto;
   );
 }
 
-function AcoesDoProduto({ produto: p, impulso, aoEditar, aoImpulsionar }: { produto: LinhaProduto; impulso?: LinhaImpulso; aoEditar: () => void; aoImpulsionar: () => void }) {
+function AcoesDoProduto({
+  produto: p,
+  impulso,
+  aoEditar,
+  aoImpulsionar,
+  podeImpulsionar
+}: {
+  produto: LinhaProduto;
+  impulso?: LinhaImpulso;
+  aoEditar: () => void;
+  aoImpulsionar: () => void;
+  podeImpulsionar: boolean;
+}) {
   return (
     <div className="flex flex-wrap gap-2">
       <Botao tamanho="pequeno" onClick={aoEditar}>
         <Pencil size={15} /> Editar
       </Botao>
-      {p.ativo && !impulso ? (
+      {podeImpulsionar && p.ativo && !impulso ? (
         <Botao tamanho="pequeno" onClick={aoImpulsionar}>
           <Rocket size={15} /> Impulsionar
         </Botao>
@@ -142,7 +173,8 @@ export function ProdutosFornecedor({
   impulsos,
   uf,
   hoje,
-  abrirNovo
+  abrirNovo,
+  podeImpulsionar
 }: {
   produtos: LinhaProduto[];
   promocoes: LinhaPromocao[];
@@ -150,12 +182,14 @@ export function ProdutosFornecedor({
   uf: string | null;
   hoje: string;
   abrirNovo: boolean;
+  /** Impulso é pago: só o dono pede. */
+  podeImpulsionar: boolean;
 }) {
   const toast = useToast();
   const { referencias } = useReferencias();
   const [rascunho, setRascunho] = useState<Rascunho | null>(abrirNovo ? rascunhoDe() : null);
   const [erro, setErro] = useState<string | null>(null);
-  const [impulso, setImpulso] = useState<{ produto: LinhaProduto; dias: DiasImpulso; regiao: 'uf' | 'brasil' } | null>(null);
+  const [impulso, setImpulso] = useState<{ produto: LinhaProduto; dias: DiasImpulso; regiao: 'uf' | 'brasil'; modelo: 'periodo' | 'clique'; cpc: string; teto: string } | null>(null);
   const [ocupado, iniciar] = useTransition();
   const [enviandoFoto, setEnviandoFoto] = useState(false);
   const arquivo = useRef<HTMLInputElement>(null);
@@ -184,6 +218,7 @@ export function ProdutosFornecedor({
     const meses = rascunho.meses.trim() ? lerNumero(rascunho.meses) : null;
     const amperagem = rascunho.amperagem.trim() ? lerNumero(rascunho.amperagem) : null;
     if (!preco || preco <= 0) return setErro('Informe o preço.');
+    if (rascunho.estoque.trim() && lerNumero(rascunho.estoque) == null) return setErro('O estoque é um número (ou deixe em branco).');
     const especificacao = {
       ...(rascunho.categoria === 'oleo_motor'
         ? {
@@ -213,7 +248,11 @@ export function ProdutosFornecedor({
           intervaloMeses: meses ? Math.round(meses) : null,
           referenciaId: rascunho.referenciaId ? Number(rascunho.referenciaId) : null,
           ativo: rascunho.ativo,
-          especificacao: Object.fromEntries(Object.entries(especificacao).filter(([, v]) => v !== undefined))
+          especificacao: Object.fromEntries(Object.entries(especificacao).filter(([, v]) => v !== undefined)),
+          codigo: rascunho.codigo.trim(),
+          estoque: rascunho.estoque.trim() ? Math.max(0, Math.round(lerNumero(rascunho.estoque) ?? 0)) : null,
+          aplicacoes: lerAplicacoesDoTexto(rascunho.aplicacoes),
+          prazoEntregaHoras: rascunho.prazoEntrega ? Number(rascunho.prazoEntrega) : null
         });
         if (!r.ok) return setErro(r.erro);
         if (rascunho.id) {
@@ -250,9 +289,10 @@ export function ProdutosFornecedor({
 
   function pedirImpulso() {
     if (!impulso) return;
+    const porClique = impulso.modelo === 'clique' ? { cpc: lerNumero(impulso.cpc) ?? 0, orcamentoDiario: lerNumero(impulso.teto) ?? 0 } : null;
     iniciar(async () => {
       try {
-        const r = await impulsionar(impulso.produto.id, impulso.dias, impulso.regiao === 'uf' && uf ? uf : '');
+        const r = await impulsionar(impulso.produto.id, impulso.dias, impulso.regiao === 'uf' && uf ? uf : '', porClique);
         if (!r.ok) return toast({ texto: r.erro, tom: 'erro' });
         toast({ texto: 'Pedido de impulso enviado. A equipe do Revisaí combina o pagamento e coloca no ar.' });
         setImpulso(null);
@@ -274,9 +314,12 @@ export function ProdutosFornecedor({
         <p className="text-[15px] text-tinta-2">
           Produto com foto, ficha técnica e prazo de troca entra nas recomendações certas para as oficinas.
         </p>
-        <Botao variante="escuro" onClick={() => abrir()}>
-          <Plus size={17} /> Produto
-        </Botao>
+        <div className="flex flex-wrap gap-2">
+          <Planilha produtos={produtos} />
+          <Botao variante="escuro" onClick={() => abrir()}>
+            <Plus size={17} /> Produto
+          </Botao>
+        </div>
       </div>
 
       {produtos.length ? (
@@ -337,7 +380,7 @@ export function ProdutosFornecedor({
                       <p className="line-clamp-2 text-[14.5px] leading-snug font-bold sm:text-[15.5px]">{[p.marca, p.nome].filter(Boolean).join(' ')}</p>
                       <SelosDoProduto produto={p} promo={promo} impulso={imp} />
                       <p className="largo num mt-auto pt-1 text-[18px] font-extrabold sm:text-[19px]">{formatarMoeda(p.preco)}</p>
-                      <AcoesDoProduto produto={p} impulso={imp} aoEditar={() => abrir(p)} aoImpulsionar={() => setImpulso({ produto: p, dias: 7, regiao: uf ? 'uf' : 'brasil' })} />
+                      <AcoesDoProduto produto={p} impulso={imp} aoEditar={() => abrir(p)} aoImpulsionar={() => setImpulso({ produto: p, dias: 7, regiao: uf ? 'uf' : 'brasil', modelo: 'periodo', cpc: '0,50', teto: '10' })} podeImpulsionar={podeImpulsionar} />
                     </div>
                   </li>
                 );
@@ -362,7 +405,7 @@ export function ProdutosFornecedor({
                     </div>
                     <p className="largo num shrink-0 text-[17px] font-extrabold sm:w-28 sm:text-right sm:text-[18px]">{formatarMoeda(p.preco)}</p>
                     <div className="w-full sm:flex sm:w-[232px] sm:justify-end">
-                      <AcoesDoProduto produto={p} impulso={imp} aoEditar={() => abrir(p)} aoImpulsionar={() => setImpulso({ produto: p, dias: 7, regiao: uf ? 'uf' : 'brasil' })} />
+                      <AcoesDoProduto produto={p} impulso={imp} aoEditar={() => abrir(p)} aoImpulsionar={() => setImpulso({ produto: p, dias: 7, regiao: uf ? 'uf' : 'brasil', modelo: 'periodo', cpc: '0,50', teto: '10' })} podeImpulsionar={podeImpulsionar} />
                     </div>
                   </li>
                 );
@@ -394,6 +437,22 @@ export function ProdutosFornecedor({
       >
         {rascunho ? (
           <div className="grid gap-4 sm:grid-cols-6">
+            {editando?.ocultoModeracao ? (
+              <p className="rounded-xl bg-atraso-claro px-4 py-3 text-[14px] text-atraso sm:col-span-6" role="status">
+                Este produto está fora da vitrine pela moderação, depois de denúncias de oficinas. Se acha que foi engano, fale com a equipe do Revisaí pelo botão Ajuda.
+              </p>
+            ) : null}
+            <details className="rounded-xl bg-papel-2 px-4 py-3 text-[14px] sm:col-span-6">
+              <summary className="cursor-pointer font-semibold">O que não pode ser vendido no Revisaí</summary>
+              <ul className="mt-2 flex list-disc flex-col gap-1 pl-5 text-tinta-2">
+                {ITENS_PROIBIDOS.map((i) => (
+                  <li key={i.titulo}>
+                    <strong className="text-tinta">{i.titulo}.</strong> {i.detalhe}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-[13px] text-tinta-3">{TEXTO_DA_MODERACAO}</p>
+            </details>
             {rascunho.id ? (
               <div className="flex items-center gap-4 sm:col-span-6">
                 <FotoProduto
@@ -441,6 +500,25 @@ export function ProdutosFornecedor({
             </Campo>
             <Campo rotulo="Preço (R$)" htmlFor="pf-preco" className="sm:col-span-2">
               <input id="pf-preco" className={`${classeEntrada} num font-bold`} value={rascunho.preco} onChange={(e) => mudar({ preco: e.target.value })} inputMode="decimal" placeholder="0,00" />
+            </Campo>
+            <Campo rotulo="Estoque" htmlFor="pf-estoque" className="sm:col-span-3" dica="Em branco se você não controla. Baixa sozinho quando você confirma um pedido.">
+              <input id="pf-estoque" className={`${classeEntrada} num`} value={rascunho.estoque} onChange={(e) => mudar({ estoque: e.target.value })} inputMode="numeric" placeholder="não controlo" />
+            </Campo>
+            <Campo rotulo="Código na sua loja" htmlFor="pf-codigo" className="sm:col-span-3" dica="Opcional. O mesmo da sua planilha ou do seu sistema (é por ele que a API acha o produto).">
+              <input id="pf-codigo" className={classeEntrada} value={rascunho.codigo} onChange={(e) => mudar({ codigo: e.target.value })} maxLength={60} autoComplete="off" />
+            </Campo>
+            <Campo rotulo="Prazo de entrega deste produto" htmlFor="pf-prazo" className="sm:col-span-3" dica="Para quando este produto demora mais (ou menos) que o resto da loja.">
+              <select id="pf-prazo" className={classeEntrada} value={rascunho.prazoEntrega} onChange={(e) => mudar({ prazoEntrega: e.target.value })}>
+                <option value="">O prazo da loja</option>
+                {PRAZOS_DE_ENTREGA.map((p) => (
+                  <option key={p.horas} value={p.horas}>
+                    {p.nome}
+                  </option>
+                ))}
+                {rascunho.prazoEntrega && !PRAZOS_DE_ENTREGA.some((p) => String(p.horas) === rascunho.prazoEntrega) ? (
+                  <option value={rascunho.prazoEntrega}>Em até {rascunho.prazoEntrega} horas</option>
+                ) : null}
+              </select>
             </Campo>
 
             {rascunho.categoria === 'oleo_motor' ? (
@@ -508,7 +586,19 @@ export function ProdutosFornecedor({
               <p className="text-[13px] text-tinta-3">O que o fabricante do produto indica. Em branco, vale a base ligada acima ou o padrão do app. O manual do carro sempre manda quando pede menos.</p>
             </div>
 
-            <Campo rotulo="Descrição" htmlFor="pf-desc" className="sm:col-span-6" dica="Aplicação, diferenciais, garantia.">
+            <Campo rotulo="Serve em quais carros" htmlFor="pf-aplic" className="sm:col-span-6" dica="Um carro por linha, como você fala: Gol 1.0 2015 a 2020. A oficina acha a peça pelo carro que está atendendo.">
+              <textarea id="pf-aplic" rows={3} className={classeArea} value={rascunho.aplicacoes} onChange={(e) => mudar({ aplicacoes: e.target.value })} placeholder={'Onix 1.0 2017 a 2022\nPrisma 1.4 2013 a 2019'} />
+            </Campo>
+            {rascunho.aplicacoes.trim() ? (
+              <div className="-mt-2 flex flex-wrap gap-1.5 sm:col-span-6" aria-label="Carros entendidos">
+                {lerAplicacoesDoTexto(rascunho.aplicacoes).map((a) => (
+                  <Chip key={a.texto} tom={a.modelo ? 'caneta' : 'neutro'}>
+                    {rotuloDaAplicacao(a)}
+                  </Chip>
+                ))}
+              </div>
+            ) : null}
+            <Campo rotulo="Descrição" htmlFor="pf-desc" className="sm:col-span-6" dica="Diferenciais e garantia.">
               <textarea id="pf-desc" rows={3} className={classeArea} value={rascunho.descricao} onChange={(e) => mudar({ descricao: e.target.value })} maxLength={600} />
             </Campo>
             <div className="rounded-xl border border-linha px-4 py-1 sm:col-span-6">
@@ -531,9 +621,15 @@ export function ProdutosFornecedor({
         rodape={
           impulso ? (
             <div className="flex w-full flex-wrap items-center justify-between gap-3">
-              <p>
-                Total <strong className="largo num text-[19px]">{formatarMoeda(PRECO_IMPULSO[impulso.dias])}</strong>
-              </p>
+              {impulso.modelo === 'clique' ? (
+                <p>
+                  Até <strong className="largo num text-[19px]">{formatarMoeda(lerNumero(impulso.teto) ?? 0)}</strong> por dia
+                </p>
+              ) : (
+                <p>
+                  Total <strong className="largo num text-[19px]">{formatarMoeda(PRECO_IMPULSO[impulso.dias])}</strong>
+                </p>
+              )}
               <Botao variante="primario" onClick={pedirImpulso} disabled={ocupado}>
                 <Rocket size={17} /> Pedir impulso
               </Botao>
@@ -543,6 +639,38 @@ export function ProdutosFornecedor({
       >
         {impulso ? (
           <div className="flex flex-col gap-5">
+            <div>
+              <p className="mb-2 font-semibold">Como pagar</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {(
+                  [
+                    { id: 'periodo', nome: 'Por período', texto: 'Um valor fechado pelos dias no ar.' },
+                    { id: 'clique', nome: 'Por clique', texto: 'Paga só quando uma oficina clica, com teto por dia.' }
+                  ] as const
+                ).map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    aria-pressed={impulso.modelo === m.id}
+                    onClick={() => setImpulso({ ...impulso, modelo: m.id })}
+                    className={`rounded-xl border px-4 py-3 text-left ${impulso.modelo === m.id ? 'border-tinta bg-tinta text-papel' : 'border-linha bg-papel hover:border-tinta-3'}`}
+                  >
+                    <span className="block font-bold">{m.nome}</span>
+                    <span className={`block text-[13.5px] ${impulso.modelo === m.id ? 'text-papel/80' : 'text-tinta-3'}`}>{m.texto}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            {impulso.modelo === 'clique' ? (
+              <div className="grid grid-cols-2 gap-3">
+                <Campo rotulo="Por clique (R$)" htmlFor="imp-cpc" dica="Cada oficina conta um clique por dia.">
+                  <input id="imp-cpc" className={`${classeEntrada} num`} value={impulso.cpc} onChange={(e) => setImpulso({ ...impulso, cpc: e.target.value })} inputMode="decimal" />
+                </Campo>
+                <Campo rotulo="Teto por dia (R$)" htmlFor="imp-teto" dica="Passou do teto, o anúncio sai até amanhã.">
+                  <input id="imp-teto" className={`${classeEntrada} num`} value={impulso.teto} onChange={(e) => setImpulso({ ...impulso, teto: e.target.value })} inputMode="decimal" />
+                </Campo>
+              </div>
+            ) : null}
             <div>
               <p className="mb-2 font-semibold">Por quanto tempo</p>
               <div className="grid grid-cols-3 gap-2">
@@ -555,7 +683,7 @@ export function ProdutosFornecedor({
                     className={`rounded-xl border px-3 py-3 text-left ${impulso.dias === d ? 'border-tinta bg-tinta text-papel' : 'border-linha bg-papel hover:border-tinta-3'}`}
                   >
                     <span className="block font-bold">{d} dias</span>
-                    <span className={`num block text-[14px] ${impulso.dias === d ? 'text-papel/80' : 'text-tinta-3'}`}>{formatarMoeda(PRECO_IMPULSO[d])}</span>
+                    {impulso.modelo === 'periodo' ? <span className={`num block text-[14px] ${impulso.dias === d ? 'text-papel/80' : 'text-tinta-3'}`}>{formatarMoeda(PRECO_IMPULSO[d])}</span> : null}
                   </button>
                 ))}
               </div>

@@ -1,82 +1,86 @@
 'use client';
 
-// O que está andando na loja: os alertas de preço com as respostas das lojas e os pedidos com a
-// situação de cada loja. Busca no servidor ao abrir, ao voltar para o app e, enquanto tem coisa
-// andando, de tempos em tempos (mais rápido com entrega a caminho, como nos apps de entrega).
+// O que está andando na loja: os alertas de preço com as respostas das lojas, os pedidos com a
+// situação de cada loja e os pedidos de garantia ou devolução com a resposta da loja. Só com a conta
+// (o banco mostra só o que é da oficina escolhida). Busca ao abrir, ao voltar para o app e quando o
+// banco avisa pelo tempo real que algo mudou (uma loja confirmou, respondeu um alerta ou uma
+// devolução, o entregador andou). Com coisa andando, busca também a cada 2 minutos com o app aberto,
+// para o caso de o tempo real cair.
 
 import { useRouter } from 'next/navigation';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { acompanhar, verAlertas } from '@/app/oficina/acoes-loja';
+import { useConta } from '@/components/conta/ProvedorConta';
 import { useToast } from '@/components/Toasts';
 import { faseDoAlerta, propostasEmOrdem, type AlertaDaOficina, type CotaAlertas } from '@/lib/alertas-dados';
-import { aCaminho, pedidoEmAndamento, type ParteAcompanhada, type PedidoAcompanhado } from '@/lib/entregas-dados';
+import { aCaminho, pedidoEmAndamento, situacaoDaDevolucao, type ParteAcompanhada, type PedidoAcompanhado } from '@/lib/entregas-dados';
+import type { Devolucao } from '@/lib/loja/dados';
 import { notificar } from '@/lib/notificacao';
 import { fotografar, novidades, type Visto } from '@/lib/novidades';
 import { useOficina } from '@/lib/store';
+import { assinarLojaDaOficina, INTERVALO_RESERVA_MS, juntarAvisos, type EstadoDoCanal } from './tempo-real';
 
 interface Andamento {
   alertas: AlertaDaOficina[];
   cota: CotaAlertas | null;
   pedidos: Record<string, PedidoAcompanhado>;
+  /** Os pedidos de garantia ou devolução da oficina (os mais novos primeiro). */
+  devolucoes: Devolucao[];
   /** Propostas para escolher e entregas a caminho (o número na aba da Loja). */
   pendencias: number;
-  /** Já buscou pelo menos uma vez. */
+  /** Já buscou pelo menos uma vez (ou não tem o que buscar, sem conta). */
   pronto: boolean;
-  /** Os códigos de pedido que a última busca consultou (um pedido fora dela ainda não foi buscado). */
+  /** Os códigos de pedido que a última busca cobriu (um pedido fora dela ainda não foi buscado). */
   buscados: ReadonlySet<string>;
   erro: string | null;
-  /** Busca de novo; com `alertas`, busca os alertas e a cota mesmo antes do primeiro alerta. */
-  atualizar(opcoes?: { alertas?: boolean }): Promise<void>;
+  /** Tem conta e oficina: os alertas e o acompanhamento só existem com ela. */
+  comConta: boolean;
+  /** O canal do tempo real (sem ele, as mudanças chegam na busca de 2 em 2 minutos). */
+  canal: EstadoDoCanal;
+  /** Busca de novo (alertas, cota e pedidos). */
+  atualizar(): Promise<void>;
   /** Põe ou troca um alerta na lista sem esperar o servidor. */
-  guardarAlerta(a: AlertaDaOficina, cota?: CotaAlertas): void;
-  /** Muda na tela, antes da próxima busca, o que a oficina acabou de fazer (pagou, cancelou). */
-  ajustarParte(codigo: string, fornecedorId: number, mudanca: Partial<ParteAcompanhada>): void;
+  guardarAlerta(a: AlertaDaOficina, cota?: CotaAlertas | null): void;
+  /** Muda na tela, antes da próxima busca, o que a oficina acabou de fazer (avisou que pagou). */
+  ajustarParte(parteId: number, mudanca: Partial<ParteAcompanhada>): void;
   ajustarAlerta(id: string, mudanca: Partial<AlertaDaOficina>): void;
+  /** Muda ou tira (null) um pedido de garantia ou devolução na tela, antes da próxima busca. */
+  ajustarDevolucao(id: string, mudanca: Partial<Devolucao> | null): void;
 }
 
 const Contexto = createContext<Andamento | null>(null);
 
 const DIA = 86_400_000;
 
-/** O pedido entra no acompanhamento: dos últimos 45 dias (os mais velhos já terminaram). */
+/** O pedido entra no acompanhamento: dos últimos 120 dias (dá para pedir garantia até 90 dias depois da entrega). */
 export function pedidoAcompanhavel(p: { codigo: string; quando: string }, agora = Date.now()): boolean {
-  return agora - Date.parse(p.quando) < 45 * DIA && /^[A-Z0-9]{6}$/.test(p.codigo);
-}
-
-function codigosRecentes(): string[] {
-  return useOficina
-    .getState()
-    .pedidos.filter((p) => pedidoAcompanhavel(p))
-    .slice(0, 30)
-    .map((p) => p.codigo);
-}
-
-/** O código do Pro guardado no aparelho (o servidor confere se ainda vale; a cota dos alertas vem dele). */
-export function codigoProGuardado(): string | null {
-  const { plano } = useOficina.getState();
-  return plano.codigo && /^[0-9A-Z]{16}$/.test(plano.codigo) ? plano.codigo : null;
+  return agora - Date.parse(p.quando) < 120 * DIA && /^[A-Z0-9]{6}$/.test(p.codigo);
 }
 
 export function ProvedorDeAndamento({ children }: { children: ReactNode }) {
-  const aparelhoId = useOficina((s) => s.aparelhoId);
-  const alertasDesde = useOficina((s) => s.alertasDesde);
+  const { oficina, banco } = useConta();
+  const oficinaId = oficina?.id ?? null;
   const chaveCodigos = useOficina((s) => s.pedidos.map((p) => p.codigo).join(','));
   // os pedidos que a oficina já deu entrada no estoque chegaram: não contam como a caminho
   const chaveRecebidos = useOficina((s) => s.pedidos.filter((p) => p.recebidoEm).map((p) => p.codigo).join(','));
   const [alertas, setAlertas] = useState<AlertaDaOficina[]>([]);
   const [cota, setCota] = useState<CotaAlertas | null>(null);
   const [pedidos, setPedidos] = useState<Record<string, PedidoAcompanhado>>({});
+  const [devolucoes, setDevolucoes] = useState<Devolucao[]>([]);
   const [pronto, setPronto] = useState(false);
   const [buscados, setBuscados] = useState<ReadonlySet<string>>(() => new Set());
   const [erro, setErro] = useState<string | null>(null);
+  const [canal, setCanal] = useState<EstadoDoCanal>('conectando');
+  const oficinaAtual = useRef<string | null>(null);
   const ultima = useRef(0);
   const buscando = useRef(false);
   // um pedido de atualização que chegou durante uma busca roda logo depois dela
-  const deNovo = useRef<{ alertas?: boolean } | null>(null);
-  // cada mudança feita na tela (pagou, cancelou, mandou um alerta) conta: a busca que começou antes
-  // dela traz dados velhos e é descartada (e busca de novo)
+  const deNovo = useRef(false);
+  // cada mudança feita na tela (pagou, mandou um alerta) conta: a busca que começou antes dela
+  // traz dados velhos e é descartada (e busca de novo)
   const mudancas = useRef(0);
   const visto = useRef<Visto | null>(null);
+  const estadoDoCanal = useRef<EstadoDoCanal>('conectando');
   const toast = useToast();
   const router = useRouter();
 
@@ -91,39 +95,39 @@ export function ProvedorDeAndamento({ children }: { children: ReactNode }) {
     [toast, router]
   );
 
-  /** Uma busca no servidor: alertas e cota, e a situação dos pedidos recentes. */
+  /** Uma busca no servidor: alertas e cota, e a situação dos pedidos da oficina. */
   const buscar = useCallback(
-    async (id: string, opcoes: { alertas?: boolean }) => {
-      const s = useOficina.getState();
+    async (id: string) => {
       ultima.current = Date.now();
       const versao = mudancas.current;
-      const codigos = codigosRecentes();
-      const codigoPro = codigoProGuardado();
+      // os pedidos deste aparelho que esta busca cobre: os que já tinham saído quando ela começou
+      const codigos = useOficina
+        .getState()
+        .pedidos.filter((p) => pedidoAcompanhavel(p))
+        .map((p) => p.codigo);
       try {
-        const [a, p] = await Promise.all([
-          s.alertasDesde || codigoPro || opcoes.alertas ? verAlertas({ aparelhoId: id, codigoPro, whatsapp: s.oficina.whatsapp }) : Promise.resolve(null),
-          codigos.length ? acompanhar({ aparelhoId: id, codigos }) : Promise.resolve(null)
-        ]);
+        const [a, p] = await Promise.all([verAlertas(), acompanhar()]);
+        // trocou de oficina no meio: o que voltou é da outra
+        if (oficinaAtual.current !== id) return;
         if (versao !== mudancas.current) {
-          deNovo.current = { alertas: !!opcoes.alertas || !!deNovo.current?.alertas };
+          deNovo.current = true;
           return;
         }
-        if (a?.ok) {
+        if (a.ok) {
           setAlertas(a.alertas);
           setCota(a.cota);
         }
-        if (p?.ok) {
+        if (p.ok) {
           setPedidos(Object.fromEntries(p.pedidos.map((x) => [x.codigo, x])));
-          setBuscados(new Set(codigos));
+          setBuscados(new Set([...codigos, ...p.pedidos.map((x) => x.codigo)]));
+          if (p.devolucoes) setDevolucoes(p.devolucoes);
         }
         // compara com a última olhada (só quando as duas buscas vieram, para não avisar o que só não carregou)
-        if ((!a || a.ok) && (!p || p.ok)) {
-          const novosAlertas = a?.ok ? a.alertas : [];
-          const novosPedidos = p?.ok ? p.pedidos : [];
-          avisar(novidades(visto.current, novosAlertas, novosPedidos));
-          visto.current = fotografar(novosAlertas, novosPedidos);
+        if (a.ok && p.ok) {
+          avisar(novidades(visto.current, a.alertas, p.pedidos, p.devolucoes));
+          visto.current = fotografar(a.alertas, p.pedidos, p.devolucoes);
         }
-        setErro(a && !a.ok ? a.erro : p && !p.ok ? p.erro : null);
+        setErro(!a.ok ? a.erro : !p.ok ? p.erro : null);
       } catch {
         setErro('Sem conexão. Mostrando o que já tinha.');
       }
@@ -131,39 +135,68 @@ export function ProvedorDeAndamento({ children }: { children: ReactNode }) {
     [avisar]
   );
 
-  const atualizar = useCallback(
-    async (opcoes?: { alertas?: boolean }): Promise<void> => {
-      // já está buscando: guarda o pedido e busca de novo logo depois (o que mudou agora não se perde)
-      if (buscando.current) {
-        deNovo.current = { alertas: !!opcoes?.alertas || !!deNovo.current?.alertas };
-        return;
+  const atualizar = useCallback(async (): Promise<void> => {
+    if (!oficinaAtual.current) return;
+    // já está buscando: busca de novo logo depois (o que mudou agora não se perde)
+    if (buscando.current) {
+      deNovo.current = true;
+      return;
+    }
+    buscando.current = true;
+    try {
+      for (;;) {
+        // a oficina é lida a cada volta (pode ter sido trocada no meio)
+        const id: string | null = oficinaAtual.current;
+        if (!id) break;
+        deNovo.current = false;
+        await buscar(id);
+        if (!deNovo.current && oficinaAtual.current === id) break;
       }
-      buscando.current = true;
-      try {
-        let vez: { alertas?: boolean } | null = opcoes ?? {};
-        while (vez) {
-          deNovo.current = null;
-          // o número do aparelho é lido a cada volta (pode ter sido criado ou trocado no meio)
-          const s = useOficina.getState();
-          const id = vez.alertas ? s.garantirAparelhoId() : s.aparelhoId;
-          if (!id) break;
-          await buscar(id, vez);
-          vez = deNovo.current;
-        }
-      } finally {
-        buscando.current = false;
-        setPronto(true);
-      }
-    },
-    [buscar]
-  );
+    } finally {
+      buscando.current = false;
+      setPronto(true);
+    }
+  }, [buscar]);
 
-  // busca ao abrir e quando sai um pedido ou o primeiro alerta
+  // ao abrir, ao trocar de oficina e quando sai um pedido (neste aparelho ou em outro, pela sincronia)
   useEffect(() => {
-    void atualizar();
-  }, [atualizar, aparelhoId, alertasDesde, chaveCodigos]);
+    if (oficinaAtual.current !== oficinaId) {
+      oficinaAtual.current = oficinaId;
+      visto.current = null;
+      setAlertas([]);
+      setCota(null);
+      setPedidos({});
+      setDevolucoes([]);
+      setBuscados(new Set());
+      setErro(null);
+      setPronto(!oficinaId);
+    }
+    if (oficinaId) void atualizar();
+  }, [oficinaId, chaveCodigos, atualizar]);
 
-  // com coisa andando, busca de novo de tempos em tempos (e quando o app volta para a frente)
+  // o tempo real: cada aviso do banco vira uma busca (juntando os que chegam em sequência)
+  useEffect(() => {
+    if (!oficinaId) return;
+    const sb = banco();
+    const mudar = (e: EstadoDoCanal) => {
+      // voltou depois de cair: o que mudou no meio não chegou
+      if (e === 'ligado' && estadoDoCanal.current === 'caiu') void atualizar();
+      estadoDoCanal.current = e;
+      setCanal(e);
+    };
+    if (!sb) {
+      mudar('caiu');
+      return;
+    }
+    mudar('conectando');
+    const juntar = juntarAvisos(() => void atualizar(), 800);
+    const desligar = assinarLojaDaOficina(sb, oficinaId, () => juntar.avisar(), mudar);
+    return () => {
+      juntar.parar();
+      desligar();
+    };
+  }, [oficinaId, banco, atualizar]);
+
   const agora = Date.now();
   const recebidos = new Set(chaveRecebidos.split(','));
   const naoRecebidos = Object.values(pedidos).filter((p) => !recebidos.has(p.codigo));
@@ -173,25 +206,27 @@ export function ProvedorDeAndamento({ children }: { children: ReactNode }) {
     return fase === 'esperando' || fase === 'escolher';
   });
   const andando = naoRecebidos.some(pedidoEmAndamento);
+  // garantia ou devolução esperando a loja (aberta ou aceita): a resposta chega pela busca de reserva também
+  const devolucaoAndando = devolucoes.some((d) => d.situacao === 'aberta' || d.situacao === 'aceita');
   const pendencias =
     alertas.filter((a) => {
       const fase = faseDoAlerta(a, propostasEmOrdem(a).length, agora);
       return (fase === 'esperando' || fase === 'escolher') && propostasEmOrdem(a).length > 0;
-    }).length + entregasACaminho;
-  const intervalo = entregasACaminho ? 20_000 : esperando ? 45_000 : andando ? 90_000 : 0;
+    }).length +
+    entregasACaminho +
+    // a loja perguntou algo num pedido de garantia ou devolução
+    devolucoes.filter((d) => situacaoDaDevolucao(d).acao === 'responder').length;
+
+  // a reserva: com coisa andando e o app aberto, busca a cada 2 minutos (o tempo real pode ter caído)
+  const precisaOlhar = !!oficinaId && (entregasACaminho > 0 || esperando || andando || devolucaoAndando);
   useEffect(() => {
-    if (!intervalo) return;
+    if (!precisaOlhar) return;
+    // confere a cada 15 s se já passaram 2 minutos desde a última busca (qualquer busca conta)
     const t = setInterval(() => {
-      // em segundo plano, só busca se der para avisar pela notificação do celular (e mais devagar)
-      const visivel = document.visibilityState === 'visible';
-      let notifica = false;
-      try {
-        notifica = typeof Notification !== 'undefined' && Notification.permission === 'granted';
-      } catch {}
-      if (visivel || (notifica && Date.now() - ultima.current >= Math.max(intervalo, 60_000))) void atualizar();
-    }, intervalo);
+      if (document.visibilityState === 'visible' && Date.now() - ultima.current >= INTERVALO_RESERVA_MS) void atualizar();
+    }, 15_000);
     return () => clearInterval(t);
-  }, [intervalo, atualizar]);
+  }, [precisaOlhar, atualizar]);
   useEffect(() => {
     const aoVoltar = () => {
       if (document.visibilityState === 'visible' && Date.now() - ultima.current > 15_000) void atualizar();
@@ -200,27 +235,33 @@ export function ProvedorDeAndamento({ children }: { children: ReactNode }) {
     return () => document.removeEventListener('visibilitychange', aoVoltar);
   }, [atualizar]);
 
-  const guardarAlerta = useCallback((a: AlertaDaOficina, c?: CotaAlertas) => {
+  const guardarAlerta = useCallback((a: AlertaDaOficina, c?: CotaAlertas | null) => {
     mudancas.current++;
     setAlertas((lista) => [a, ...lista.filter((x) => x.id !== a.id)]);
     if (c) setCota(c);
   }, []);
-  const ajustarParte = useCallback((codigo: string, fornecedorId: number, mudanca: Partial<ParteAcompanhada>) => {
+  const ajustarParte = useCallback((parteId: number, mudanca: Partial<ParteAcompanhada>) => {
     mudancas.current++;
     setPedidos((atual) => {
+      const codigo = Object.values(atual).find((p) => p.partes.some((x) => x.id === parteId))?.codigo;
+      if (!codigo) return atual;
       const p = atual[codigo];
-      if (!p) return atual;
-      return { ...atual, [codigo]: { ...p, partes: p.partes.map((x) => (x.fornecedorId === fornecedorId ? { ...x, ...mudanca } : x)) } };
+      return { ...atual, [codigo]: { ...p, partes: p.partes.map((x) => (x.id === parteId ? { ...x, ...mudanca } : x)) } };
     });
   }, []);
   const ajustarAlerta = useCallback((id: string, mudanca: Partial<AlertaDaOficina>) => {
     mudancas.current++;
     setAlertas((lista) => lista.map((a) => (a.id === id ? { ...a, ...mudanca } : a)));
   }, []);
+  const ajustarDevolucao = useCallback((id: string, mudanca: Partial<Devolucao> | null) => {
+    mudancas.current++;
+    setDevolucoes((lista) => (mudanca ? lista.map((d) => (d.id === id ? { ...d, ...mudanca } : d)) : lista.filter((d) => d.id !== id)));
+  }, []);
 
+  const comConta = !!oficinaId;
   const valor = useMemo(
-    () => ({ alertas, cota, pedidos, pendencias, pronto, buscados, erro, atualizar, guardarAlerta, ajustarParte, ajustarAlerta }),
-    [alertas, cota, pedidos, pendencias, pronto, buscados, erro, atualizar, guardarAlerta, ajustarParte, ajustarAlerta]
+    () => ({ alertas, cota, pedidos, devolucoes, pendencias, pronto, buscados, erro, comConta, canal, atualizar, guardarAlerta, ajustarParte, ajustarAlerta, ajustarDevolucao }),
+    [alertas, cota, pedidos, devolucoes, pendencias, pronto, buscados, erro, comConta, canal, atualizar, guardarAlerta, ajustarParte, ajustarAlerta, ajustarDevolucao]
   );
   return <Contexto.Provider value={valor}>{children}</Contexto.Provider>;
 }

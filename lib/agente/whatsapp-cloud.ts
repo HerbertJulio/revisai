@@ -93,16 +93,87 @@ export function lerMensagens(corpo: unknown): MensagemRecebida[] {
   return lista;
 }
 
-/** Baixa um áudio ou foto que chegou (dois passos: pega a URL e depois o arquivo, com o token). */
-export async function baixarMidia(c: ConfigWhatsApp, midiaId: string): Promise<{ bytes: Uint8Array; mime: string } | null> {
+/** Os endereços de onde a Meta entrega a mídia (o token não vai para mais ninguém). */
+const HOSTS_DA_META = [/^lookaside\.fbsbx\.com$/, /(^|\.)fbcdn\.net$/, /(^|\.)whatsapp\.net$/, /^graph\.facebook\.com$/];
+
+export function urlDaMeta(url: string): boolean {
   try {
-    const info = await fetch(`https://graph.facebook.com/${VERSAO}/${encodeURIComponent(midiaId)}`, { headers: { Authorization: `Bearer ${c.token}` } });
+    const u = new URL(url);
+    return u.protocol === 'https:' && HOSTS_DA_META.some((r) => r.test(u.hostname));
+  } catch {
+    return false;
+  }
+}
+
+/** Os tipos que o agente aceita e o tamanho máximo de cada um. */
+export const LIMITES_DE_MIDIA: Record<'audio' | 'imagem', { tipos: string[]; maximo: number }> = {
+  audio: { tipos: ['audio/ogg', 'audio/mpeg', 'audio/mp4', 'audio/aac', 'audio/amr', 'audio/webm'], maximo: 16_000_000 },
+  imagem: { tipos: ['image/jpeg', 'image/png', 'image/webp'], maximo: 5_000_000 }
+};
+
+export function midiaAceita(tipo: 'audio' | 'imagem', mime: string, tamanho: number): boolean {
+  const l = LIMITES_DE_MIDIA[tipo];
+  return l.tipos.includes(mime.split(';')[0].trim().toLowerCase()) && tamanho > 0 && tamanho <= l.maximo;
+}
+
+/** Lê o corpo até `maximo` bytes (passou, para e devolve null). */
+async function lerAte(r: Response, maximo: number): Promise<Uint8Array | null> {
+  const declarado = Number(r.headers.get('content-length') ?? 0);
+  if (declarado > maximo) return null;
+  if (!r.body) return null;
+  const leitor = r.body.getReader();
+  const partes: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await leitor.read();
+    if (done) break;
+    total += value.length;
+    if (total > maximo) {
+      await leitor.cancel().catch(() => {});
+      return null;
+    }
+    partes.push(value);
+  }
+  const bytes = new Uint8Array(total);
+  let i = 0;
+  for (const p of partes) {
+    bytes.set(p, i);
+    i += p.length;
+  }
+  return bytes;
+}
+
+/**
+ * Baixa um áudio ou foto que chegou (dois passos: pega a URL e depois o arquivo, com o token).
+ * Só de endereços da Meta, só os tipos aceitos e com tamanho máximo (16 MB áudio, 5 MB foto).
+ */
+export async function baixarMidia(c: ConfigWhatsApp, midiaId: string, tipo: 'audio' | 'imagem' = 'audio'): Promise<{ bytes: Uint8Array; mime: string } | null> {
+  if (!/^[A-Za-z0-9_.-]{1,200}$/.test(midiaId)) return null;
+  const limite = LIMITES_DE_MIDIA[tipo];
+  try {
+    const info = await fetch(`https://graph.facebook.com/${VERSAO}/${encodeURIComponent(midiaId)}`, { headers: { Authorization: `Bearer ${c.token}` }, signal: AbortSignal.timeout(15_000) });
     if (!info.ok) return null;
     const j = (await info.json()) as { url?: string; mime_type?: string; file_size?: number };
-    if (!j.url || (j.file_size ?? 0) > 16_000_000) return null;
-    const arquivo = await fetch(j.url, { headers: { Authorization: `Bearer ${c.token}` } });
-    if (!arquivo.ok) return null;
-    return { bytes: new Uint8Array(await arquivo.arrayBuffer()), mime: (j.mime_type ?? arquivo.headers.get('content-type') ?? 'application/octet-stream').split(';')[0] };
+    const mime = (j.mime_type ?? '').split(';')[0].trim().toLowerCase();
+    if (!j.url || !urlDaMeta(j.url) || !limite.tipos.includes(mime) || (j.file_size ?? 0) > limite.maximo) return null;
+    // segue no máximo 3 redirecionamentos, e só para endereços da Meta
+    let url = j.url;
+    let arquivo: Response | null = null;
+    for (let salto = 0; salto < 4; salto++) {
+      const r = await fetch(url, { headers: { Authorization: `Bearer ${c.token}` }, redirect: 'manual', signal: AbortSignal.timeout(30_000) });
+      const destino = r.status >= 300 && r.status < 400 ? r.headers.get('location') : null;
+      if (!destino) {
+        arquivo = r;
+        break;
+      }
+      const proximo = new URL(destino, url).toString();
+      if (!urlDaMeta(proximo)) return null;
+      url = proximo;
+    }
+    if (!arquivo?.ok) return null;
+    const bytes = await lerAte(arquivo, limite.maximo);
+    if (!bytes || !midiaAceita(tipo, mime, bytes.length)) return null;
+    return { bytes, mime };
   } catch (e) {
     console.error('[whatsapp] baixar mídia', e);
     return null;
@@ -132,7 +203,7 @@ export function comando(texto: string): 'fechar' | 'texto' | 'ajuda' | 'cancelar
     .replace(/[̀-ͯ]/g, '')
     .trim()
     .toLowerCase();
-  const c = /^(conectar|ligar|codigo)\s*:?\s*(\d{6})$/.exec(t) ?? /^(\d{6})$/.exec(t);
+  const c = /^(conectar|ligar|codigo)\s*:?\s*(\d{8})$/.exec(t) ?? /^(\d{8})$/.exec(t);
   if (c) return { conectar: c[c.length - 1] };
   if (/^(fechar|pronto|finalizar|terminei|fim|montar)( a ordem)?[!.\s]*$/.test(t)) return 'fechar';
   if (/^(texto|mensagem)( para| pro)?( o)? ?(cliente)?[!.?\s]*$/.test(t) || /(arruma|faz|escreve|manda)( um| o)? texto (para|pro) (o )?cliente/.test(t)) return 'texto';

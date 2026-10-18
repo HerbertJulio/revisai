@@ -221,3 +221,107 @@ export interface PedidoDoFornecedor {
 export function inicioDoMes(hoje: string): string {
   return `${hoje.slice(0, 7)}-01`;
 }
+
+// ---------------------------------------------------------------- pedido da oficina
+
+/**
+ * O contato que a oficina escreve no pedido. O nome e o WhatsApp do cadastro da oficina valem
+ * mais (o banco põe os da conta); o do formulário entra quando a conta ainda não tem WhatsApp.
+ */
+export const esquemaContatoDoPedido = z
+  .object({
+    whatsapp: z.string().trim().max(30).optional().default(''),
+    cidade: z.string().trim().max(80).optional().default(''),
+    uf: z
+      .string()
+      .trim()
+      .regex(/^([A-Z]{2})?$/)
+      .optional()
+      .default(''),
+    endereco: z.string().trim().max(160).optional().default('')
+  })
+  .optional()
+  .default({ whatsapp: '', cidade: '', uf: '', endereco: '' });
+
+export type ContatoDoPedido = z.infer<typeof esquemaContatoDoPedido>;
+
+export const PROPOSTA_MUDOU = 'A loja mudou a proposta. Confira a proposta nova e confirme de novo.';
+
+/** O que o banco diz quando o pedido não sai, numa frase para a oficina (null: erro inesperado). */
+export function mensagemDoPedido(e: { code?: string; message?: string } | null | undefined): string | null {
+  if (!e) return null;
+  const m = e.message ?? '';
+  switch (e.code) {
+    case 'RV001':
+      return 'Esta proposta não vale mais. Veja as outras respostas ou mande um alerta novo.';
+    case 'RV002':
+      return PROPOSTA_MUDOU;
+    case 'RV003':
+      return 'A quantidade não bate com a proposta. Confira e tente de novo.';
+    case 'RV030':
+      return m ? `${m.replace(/\.$/, '')}. Ponha mais itens dessa loja ou tire os dela do pedido.` : 'O pedido não chega ao mínimo de uma das lojas.';
+    case 'RV031':
+      return m ? `${m.replace(/\.$/, '')}. Confira o cashback no pedido e mande de novo.` : 'O seu saldo de cashback não cobre o valor escolhido. Confira e mande de novo.';
+    case 'RV032':
+      return m ? `${m.replace(/\.$/, '')}. Use no máximo o valor da compra.` : 'O cashback passa do valor da compra nessa loja.';
+    case 'RV033':
+      return 'O cashback do pedido não confere com as lojas do pedido. Confira o pedido e mande de novo.';
+    case '22023':
+      return /proposta|alerta/i.test(m) ? 'O produto da proposta saiu da loja.' : 'Algum produto do pedido saiu da loja. Atualize a página e confira o carrinho.';
+    case 'P0001':
+      return 'Recebemos muitos pedidos seguidos desta oficina. Espere um pouco e tente de novo.';
+    case '23514':
+      return /whatsapp/i.test(m) ? 'Confira o WhatsApp da oficina, com DDD. É por ele que a loja fala com você.' : null;
+    case '28000':
+      return 'Entre na sua conta para fazer pedidos.';
+    case '42501':
+      return 'Esta conta não pode fazer pedidos por esta oficina.';
+    default:
+      return null;
+  }
+}
+
+// ---------------------------------------------------------------- reputação das lojas
+
+/** Como a loja tem atendido nos últimos 90 dias (o banco calcula; menos de 5 pedidos é loja nova). */
+export type Reputacao =
+  | { nova: true; pedidos: number }
+  | { nova: false; pedidos: number; canceladosPct: number; atrasoPct: number | null; horasParaConfirmar: number | null };
+
+const esquemaReputacao = z.union([
+  z.object({ nova: z.literal(true), pedidos: numero }),
+  z.object({
+    nova: z.literal(false),
+    pedidos: numero,
+    canceladosPct: numero,
+    atrasoPct: numeroOuNulo.optional().transform((v) => v ?? null),
+    horasParaConfirmar: numeroOuNulo.optional().transform((v) => v ?? null)
+  })
+]);
+
+/** Lê o que reputacao_das_lojas devolve ({ "id": {...} }); o que vier fora do formato fica de fora. */
+export function lerReputacoes(dados: unknown): Map<number, Reputacao> {
+  const m = new Map<number, Reputacao>();
+  if (!dados || typeof dados !== 'object' || Array.isArray(dados)) return m;
+  for (const [id, valor] of Object.entries(dados as Record<string, unknown>)) {
+    const n = Number(id);
+    const r = esquemaReputacao.safeParse(valor);
+    if (Number.isInteger(n) && n > 0 && r.success) m.set(n, r.data);
+  }
+  return m;
+}
+
+const pct = (n: number) => `${String(Math.round(n * 10) / 10).replace('.', ',')}%`;
+
+/** O selo da loja ("Confirma em 2 h", "Loja nova no Revisaí"), o detalhe e o tom. */
+export function seloDaReputacao(r: Reputacao): { texto: string; detalhe: string; tom: 'ok' | 'neutro' | 'atencao' } {
+  if (r.nova)
+    return { texto: 'Loja nova no Revisaí', detalhe: r.pedidos ? `${r.pedidos} ${r.pedidos === 1 ? 'pedido' : 'pedidos'} pelo app nos últimos 90 dias` : 'Ainda sem pedidos pelo app', tom: 'neutro' };
+  const h = r.horasParaConfirmar;
+  const tempo = h == null ? null : h < 1 ? 'Confirma em menos de 1 h' : h < 24 ? `Confirma em ${Math.round(h)} h` : `Confirma em ${Math.round(h / 24)} ${Math.round(h / 24) === 1 ? 'dia' : 'dias'}`;
+  const detalhe = [`${r.pedidos} pedidos em 90 dias`, `${pct(r.canceladosPct)} cancelados pela loja`, ...(r.atrasoPct != null ? [`${pct(r.atrasoPct)} entregues com atraso`] : [])].join(', ');
+  const atencao = r.canceladosPct >= 15 || (r.atrasoPct ?? 0) >= 25;
+  const bom = r.canceladosPct <= 5 && (r.atrasoPct ?? 0) <= 10;
+  const texto = atencao ? 'Cancela ou atrasa mais que as outras' : (tempo ?? (bom ? 'Entrega em dia' : `${r.pedidos} pedidos em 90 dias`));
+  return { texto, detalhe, tom: atencao ? 'atencao' : bom ? 'ok' : 'neutro' };
+}

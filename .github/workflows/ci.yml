@@ -8,18 +8,58 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  tests:
+  testes:
+    name: Tipos, testes, banco e build
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+
       - run: npm ci
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run build
+
+      - name: Tipos
+        run: npx tsc --noEmit -p .
+
+      - name: Testes de unidade
+        run: npx vitest run
+
+      # Postgres, login (GoTrue) e API (PostgREST) locais, com todas as migrações e o seed
+      - name: Programas do Supabase local (cache)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.revisai-supabase/pg
+            ~/.revisai-supabase/auth
+            ~/.revisai-supabase/auth-migrations
+            ~/.revisai-supabase/postgrest
+          key: supabase-local-${{ runner.os }}-${{ hashFiles('scripts/supabase-local/sb.sh') }}
+
+      - name: Cliente do Postgres
+        run: command -v psql || (sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client)
+
+      - name: Supabase local
+        run: scripts/supabase-local/sb.sh reset
+
+      - name: Testes no banco (permissões, gatilhos e funções)
+        run: npx vitest run tests/banco
+        env:
+          BANCO_TESTE_URL: postgres://postgres@127.0.0.1:54322/postgres
+
+      - name: Build
+        run: npx next build
         env:
           NEXT_TELEMETRY_DISABLED: 1
+
+      - name: Registros do Supabase local (se falhou)
+        if: failure()
+        run: tail -n 50 ~/.revisai-supabase/data/logs/*.log || true

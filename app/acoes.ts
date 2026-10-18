@@ -1,76 +1,65 @@
 'use server';
 
-// Ações do servidor: pedido da loja e cadastro de interesse. O navegador manda só o que a pessoa
-// escolheu; o banco confere os produtos e recalcula preços (gatilho calcular_pedido).
+// Ações do servidor: pedido da loja, cadastro de interesse, sugestão para a base de prazos e a
+// previsão de compras. O pedido, a sugestão e a previsão saem como a pessoa que entrou, pela
+// oficina escolhida (o banco aplica as regras dela e recalcula os preços no gatilho
+// calcular_pedido); o cadastro de interesse do site é público.
 
+import { after } from 'next/server';
 import { z } from 'zod';
+import { itensFechados, type ItemFechado } from '@/lib/alertas';
 import { CATEGORIAS } from '@/lib/catalogo';
+import { captchaValido } from '@/lib/captcha';
 import { codigoPedido } from '@/lib/codigo-pedido';
-import { clienteEquipe } from '@/lib/equipe';
+import { acessoDaOficina } from '@/lib/conta';
+import { mensagemDoBanco } from '@/lib/conta-dados';
 import { normalizarTelefone } from '@/lib/formatos';
-import { permitido } from '@/lib/limite';
-import { supabaseServidor } from '@/lib/supabase';
+import { ipDaRequisicao, permitido } from '@/lib/limite';
+import { avisarLojasDoPedido } from '@/lib/loja/avisos';
+import { mensagemDoCredito } from '@/lib/loja/credito-dados';
+import { registrarBloqueio } from '@/lib/loja/moderacao';
+import { esquemaContatoDoPedido, mensagemDoPedido } from '@/lib/marketplace-dados';
+import { clienteSistema } from '@/lib/supabase-servidor';
 import type { Categoria } from '@/lib/tipos';
 
-type Resposta<T = object> = ({ ok: true } & T) | { ok: false; erro: string };
+/** `semConta`: a pessoa não entrou (ou saiu); a tela manda para o login. */
+type Resposta<T = object> = ({ ok: true } & T) | { ok: false; erro: string; semConta?: boolean };
 
 const esquemaPedido = z.object({
-  oficina: z.object({
-    nome: z.string().trim().min(2, 'Escreva o nome da oficina.').max(120),
-    whatsapp: z.string().trim().max(30),
-    cidade: z.string().trim().max(80).optional().default(''),
-    uf: z
-      .string()
-      .trim()
-      .regex(/^([A-Z]{2})?$/)
-      .optional()
-      .default('')
-  }),
   itens: z
     .array(z.object({ produtoId: z.number().int().positive(), quantidade: z.number().int().min(1).max(999) }))
     .min(1, 'O pedido está vazio.')
     .max(50),
   observacao: z.string().trim().max(500).optional().default(''),
-  /** Número aleatório do aparelho: com ele e o código, a oficina acompanha o pedido. */
-  aparelhoId: z.uuid().optional(),
-  endereco: z.string().trim().max(160).optional().default('')
+  contato: esquemaContatoDoPedido,
+  /** Quanto do cashback usar em cada loja ({ "<loja>": valor }); o banco confere o saldo. */
+  cashback: z
+    .record(z.string().regex(/^[1-9]\d{0,17}$/, 'Loja inválida no cashback.'), z.number().min(0).max(1_000_000))
+    .optional()
+    .default({})
+    .transform((c) => Object.fromEntries(Object.entries(c).map(([loja, v]) => [loja, Math.round(v * 100) / 100]).filter(([, v]) => (v as number) > 0)) as Record<string, number>),
+  /** Como pagar cada loja ({ "<loja>": "pix" | "faturado" }); faturado só com o crédito que a loja deu (o banco confere: RV061, RV062). */
+  pagamentos: z
+    .record(z.string().regex(/^[1-9]\d{0,17}$/, 'Loja inválida na forma de pagamento.'), z.enum(['pix', 'faturado']))
+    .optional()
+    .default({})
+    .transform((p) => Object.fromEntries(Object.entries(p).filter(([, f]) => f === 'faturado')) as Record<string, 'faturado'>)
 });
 
-function hojeEmSaoPaulo(): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
-}
-
-/** O total como o banco calcula (mesma regra do gatilho), para a oficina guardar o valor certo. */
-async function totalNoBanco(sb: NonNullable<ReturnType<typeof supabaseServidor>>, itens: Map<number, number>): Promise<number | null> {
-  const ids = [...itens.keys()];
-  const [p, pr] = await Promise.all([
-    sb.from('produtos').select('id, preco').in('id', ids),
-    sb.from('promocoes').select('produto_id, preco_promocional, quantidade_minima, inicio, fim').in('produto_id', ids)
-  ]);
-  if (p.error || pr.error) return null;
-  const hoje = hojeEmSaoPaulo();
-  let total = 0;
-  for (const [id, quantidade] of itens) {
-    const produto = p.data.find((x) => Number(x.id) === id);
-    if (!produto) return null;
-    const promocionais = pr.data
-      .filter((x) => Number(x.produto_id) === id && x.inicio <= hoje && x.fim >= hoje && quantidade >= x.quantidade_minima)
-      .map((x) => Number(x.preco_promocional));
-    total += Math.min(Number(produto.preco), ...promocionais) * quantidade;
-  }
-  return Math.round(total * 100) / 100;
-}
-
-export async function enviarPedido(entrada: unknown): Promise<Resposta<{ codigo: string; total: number | null }>> {
+/**
+ * O pedido da oficina para as lojas. Sai como a pessoa que entrou, pela oficina escolhida; o banco
+ * põe o nome e o WhatsApp do cadastro da oficina, confere os produtos, calcula os preços e divide
+ * o pedido entre as lojas. Volta com os itens como o banco calculou.
+ */
+export async function enviarPedido(entrada: unknown): Promise<Resposta<{ codigo: string; total: number; itens: ItemFechado[]; cashback: number }>> {
   const r = esquemaPedido.safeParse(entrada);
   if (!r.success) return { ok: false, erro: r.error.issues[0]?.message ?? 'Confira os dados do pedido.' };
-  const { oficina, itens, observacao, aparelhoId, endereco } = r.data;
-  const whatsapp = normalizarTelefone(oficina.whatsapp);
-  if (!whatsapp) return { ok: false, erro: 'Confira o WhatsApp da oficina, com DDD. É por ele que o fornecedor fala com você.' };
+  const a = await acessoDaOficina();
+  if (!a.ok) return { ok: false, erro: a.erro, semConta: true };
+  const { itens, observacao, contato, cashback, pagamentos } = r.data;
+  const whatsapp = normalizarTelefone(a.oficina.whatsapp ?? '') ?? normalizarTelefone(contato.whatsapp);
+  if (!whatsapp) return { ok: false, erro: 'Confira o WhatsApp da oficina, com DDD. É por ele que a loja fala com você.' };
   if (!(await permitido('pedido', 8, 10))) return { ok: false, erro: 'Muitos pedidos seguidos. Espere alguns minutos e tente de novo.' };
-
-  const sb = supabaseServidor();
-  if (!sb) return { ok: false, erro: 'A loja ainda não está recebendo pedidos por aqui.' };
 
   // junta itens repetidos
   const porProduto = new Map<number, number>();
@@ -78,22 +67,42 @@ export async function enviarPedido(entrada: unknown): Promise<Resposta<{ codigo:
 
   for (let tentativa = 0; tentativa < 3; tentativa++) {
     const codigo = codigoPedido();
-    const { error } = await sb.from('pedidos').insert({
-      codigo,
-      oficina_nome: oficina.nome,
-      oficina_whatsapp: whatsapp,
-      oficina_cidade: oficina.cidade || null,
-      oficina_uf: oficina.uf || null,
-      itens: [...porProduto].map(([produto_id, quantidade]) => ({ produto_id, quantidade })),
-      observacao: observacao || null,
-      aparelho_id: aparelhoId ?? null,
-      oficina_endereco: endereco || null
-    });
-    if (!error) return { ok: true, codigo, total: await totalNoBanco(sb, porProduto).catch(() => null) };
-    if (error.code === '23505') continue; // código repetido: tenta outro
-    if (error.code === 'P0001') return { ok: false, erro: 'Recebemos muitos pedidos seguidos deste WhatsApp. Espere um pouco e tente de novo.' };
+    const { data, error } = await a.sb
+      .from('pedidos')
+      .insert({
+        codigo,
+        oficina_id: a.oficina.id,
+        oficina_nome: a.oficina.nome,
+        oficina_whatsapp: whatsapp,
+        oficina_cidade: contato.cidade || null,
+        oficina_uf: contato.uf || null,
+        oficina_endereco: contato.endereco || null,
+        itens: [...porProduto].map(([produto_id, quantidade]) => ({ produto_id, quantidade })),
+        observacao: observacao || null,
+        cashback: Object.keys(cashback).length ? cashback : null,
+        pagamentos: Object.keys(pagamentos).length ? pagamentos : null
+      })
+      .select('id, itens, total')
+      .single();
+    if (!error && data) {
+      const pedido = data as { id: number | string; itens: unknown; total: number | string };
+      // o aviso no WhatsApp das lojas sai depois da resposta (sem o modelo configurado, não sai nada)
+      after(async () => {
+        try {
+          await avisarLojasDoPedido(a.sb, Number(pedido.id));
+        } catch (e) {
+          console.error('[pedido] aviso às lojas', e);
+        }
+      });
+      const usado = Math.round(Object.values(cashback).reduce((s, v) => s + v, 0) * 100) / 100;
+      return { ok: true, codigo, total: Number(pedido.total), itens: itensFechados(pedido.itens), cashback: usado };
+    }
+    if (error?.code === '23505') continue; // código repetido: tenta outro
+    // compra barrada pelo limite das oficinas novas: fica registrada para a equipe (o banco confere de novo)
+    if (error?.code === 'RV060') await registrarBloqueio(a.sb, a.oficina.id, error.details);
+    const m = mensagemDoCredito(error) ?? mensagemDoPedido(error);
+    if (m) return { ok: false, erro: m, ...(error?.code === '28000' ? { semConta: true } : {}) };
     console.error('[pedido]', error);
-    if (error.code === '22023') return { ok: false, erro: 'Algum produto do pedido saiu da loja. Atualize a página e confira o carrinho.' };
     return { ok: false, erro: 'Não deu para enviar agora. Tente de novo em instantes.' };
   }
   return { ok: false, erro: 'Não deu para enviar agora. Tente de novo em instantes.' };
@@ -117,7 +126,9 @@ const esquemaInteresse = z.object({
   origem: z.string().trim().max(60).optional().default(''),
   consentimento: z.literal(true, { error: 'Marque que concorda em receber o contato.' }),
   // campo escondido: gente não preenche, robô sim
-  site: z.string().max(0).optional().default('')
+  site: z.string().max(0).optional().default(''),
+  // o token da verificação de pessoa (só conta quando ela está ligada)
+  captcha: z.string().max(4096).optional().default('')
 });
 
 export async function registrarInteresse(entrada: unknown): Promise<Resposta> {
@@ -130,8 +141,10 @@ export async function registrarInteresse(entrada: unknown): Promise<Resposta> {
   if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { ok: false, erro: 'Confira o e-mail.' };
   if (!whatsapp && !email) return { ok: false, erro: 'Deixe um WhatsApp ou um e-mail para a gente falar com você.' };
   if (!(await permitido('interesse', 6, 10))) return { ok: false, erro: 'Recebemos vários envios seguidos. Espere alguns minutos.' };
+  if (!(await captchaValido(d.captcha, await ipDaRequisicao()))) return { ok: false, erro: 'Não conseguimos confirmar que é uma pessoa. Recarregue a página e tente de novo.' };
 
-  const sb = supabaseServidor();
+  // o banco só aceita o cadastro pelo servidor (com o limite por IP acima)
+  const sb = clienteSistema();
   if (!sb) return { ok: false, erro: 'O cadastro ainda não está ligado. Tente mais tarde.' };
   const { error } = await sb.from('interessados').insert({
     tipo: d.tipo,
@@ -166,17 +179,17 @@ const esquemaSugestao = z
   .refine((x) => x.intervaloKm != null || x.intervaloMeses != null, { message: 'Informe o prazo em km ou em meses.' });
 
 /**
- * A oficina sugere um produto dela para a base de prazos. Entra como não aprovado:
- * a equipe confere a fonte antes de aparecer para as outras oficinas.
+ * A oficina sugere um produto dela para a base de prazos. Entra como não aprovado: a equipe
+ * confere a fonte antes de aparecer para as outras oficinas.
  */
 export async function sugerirParaBase(entrada: unknown): Promise<Resposta> {
   const r = esquemaSugestao.safeParse(entrada);
   if (!r.success) return { ok: false, erro: r.error.issues[0]?.message ?? 'Confira os dados.' };
+  const a = await acessoDaOficina();
+  if (!a.ok) return { ok: false, erro: 'Entre na sua conta para sugerir produtos para a base.', semConta: true };
   if (!(await permitido('sugestao', 10, 60))) return { ok: false, erro: 'Recebemos várias sugestões seguidas. Tente de novo mais tarde.' };
-  const sb = clienteEquipe();
-  if (!sb) return { ok: false, erro: 'A base ainda não está ligada. Tente mais tarde.' };
   const d = r.data;
-  const { error } = await sb.from('produtos_referencia').insert({
+  const { error } = await a.sb.from('produtos_referencia').insert({
     categoria: d.categoria,
     marca: d.marca,
     linha: d.nome,
@@ -189,14 +202,13 @@ export async function sugerirParaBase(entrada: unknown): Promise<Resposta> {
     aprovado: false
   });
   if (error) {
-    console.error('[sugestao]', error);
-    return { ok: false, erro: 'Não deu para enviar agora. Tente de novo em instantes.' };
+    if (error.code !== '42501') console.error('[sugestao]', error);
+    return { ok: false, erro: mensagemDoBanco(error, 'Não deu para enviar agora. Tente de novo em instantes.') };
   }
   return { ok: true };
 }
 
 const esquemaDemanda = z.object({
-  id: z.uuid(),
   uf: z
     .string()
     .trim()
@@ -218,19 +230,28 @@ const esquemaDemanda = z.object({
 });
 
 /**
- * Previsão de compras dos próximos 30 dias, de uma oficina que aceitou compartilhar.
- * Vai só o que comprar, a cidade e o estado; o id é um número aleatório do aparelho.
+ * Previsão de compras dos próximos 30 dias, da oficina que aceitou compartilhar. Vai só o que
+ * comprar, a cidade e o estado; uma linha por oficina (o id é o da oficina). As lojas veem só a
+ * soma da região.
  */
 export async function enviarDemanda(entrada: unknown): Promise<Resposta> {
   const r = esquemaDemanda.safeParse(entrada);
   if (!r.success) return { ok: false, erro: 'Previsão inválida.' };
+  const a = await acessoDaOficina();
+  if (!a.ok) return { ok: false, erro: a.erro, semConta: true };
   if (!(await permitido('demanda', 6, 60))) return { ok: false, erro: 'Envios demais. Tente mais tarde.' };
-  const sb = clienteEquipe();
-  if (!sb) return { ok: false, erro: 'Ainda não está ligado.' };
   const d = r.data;
-  const { error } = await sb
-    .from('demandas')
-    .upsert({ id: d.id, uf: d.uf || null, cidade: d.cidade || null, itens: d.itens, atualizado_em: new Date().toISOString() }, { onConflict: 'id' });
+  const { error } = await a.sb.from('demandas').upsert(
+    {
+      id: a.oficina.id,
+      oficina_id: a.oficina.id,
+      uf: d.uf || (a.oficina.uf && /^[A-Z]{2}$/.test(a.oficina.uf) ? a.oficina.uf : null),
+      cidade: (d.cidade || a.oficina.cidade || '').slice(0, 80) || null,
+      itens: d.itens,
+      atualizado_em: new Date().toISOString()
+    },
+    { onConflict: 'id' }
+  );
   if (error) {
     console.error('[demanda]', error);
     return { ok: false, erro: 'Não deu para enviar agora.' };

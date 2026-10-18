@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { Calculadora } from '@/components/site/Calculadora';
+import { chaveDoSiteCaptcha } from '@/lib/captcha';
 
 export const metadata: Metadata = {
   title: 'Quando trocar o óleo?',
@@ -16,7 +17,7 @@ export default function Motorista() {
         </p>
       </div>
       <div className="mt-12">
-        <Calculadora />
+        <Calculadora captcha={chaveDoSiteCaptcha()} />
       </div>
     </div>
   );

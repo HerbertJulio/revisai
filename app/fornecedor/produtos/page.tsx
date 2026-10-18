@@ -1,31 +1,27 @@
 import type { Metadata } from 'next';
-import { AvisoErro } from '@/components/equipe/comum';
-import { MolduraFornecedor, SemAcesso } from '@/components/fornecedor/Moldura';
+import { ErroDoPainel, MolduraFornecedor, SemLoja } from '@/components/fornecedor/Moldura';
 import { ProdutosFornecedor } from '@/components/fornecedor/Produtos';
-import { painelDaSessao } from '@/lib/fornecedor-servidor';
+import { painelOuEntrada } from '@/lib/loja/painel';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Produtos' };
 
 export default async function PaginaProdutos({ searchParams }: { searchParams: Promise<{ novo?: string }> }) {
-  const r = await painelDaSessao();
-  if (!r.sessao) return <SemAcesso linkInvalido={false} />;
-  if (!r.painel)
-    return (
-      <main className="mx-auto max-w-xl px-4 py-16">
-        <AvisoErro>{r.erro ?? 'Não deu para abrir o painel agora.'}</AvisoErro>
-      </main>
-    );
-  const { fornecedor, produtos, promocoes, impulsos, pedidos, hoje } = r.painel;
+  const r = await painelOuEntrada('/fornecedor/produtos');
+  if (r.estado === 'sem-loja') return <SemLoja />;
+  if (r.estado === 'erro') return <ErroDoPainel erro={r.erro} />;
+  const { painel } = r;
   return (
-    <MolduraFornecedor
-      aba="produtos"
-      loja={fornecedor.nome}
-      novos={pedidos.filter((p) => p.status === 'novo').length}
-      alertas={r.painel.alertasNovos}
-      titulo="Produtos"
-    >
-      <ProdutosFornecedor produtos={produtos} promocoes={promocoes} impulsos={impulsos} uf={fornecedor.uf} hoje={hoje} abrirNovo={(await searchParams).novo === '1'} />
+    <MolduraFornecedor aba="produtos" painel={painel} titulo="Produtos">
+      <ProdutosFornecedor
+        produtos={painel.produtos}
+        promocoes={painel.promocoes}
+        impulsos={painel.impulsos}
+        uf={painel.loja.uf}
+        hoje={painel.hoje}
+        abrirNovo={(await searchParams).novo === '1'}
+        podeImpulsionar={painel.papel === 'dono'}
+      />
     </MolduraFornecedor>
   );
 }

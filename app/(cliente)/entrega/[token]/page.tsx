@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { Entregador } from '@/components/site/Entregador';
-import { dadosDaEntrega } from '@/lib/entregas';
 import { tokenValido } from '@/lib/entregas-dados';
+import { dadosDaEntrega } from '@/lib/loja/entregador';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = {

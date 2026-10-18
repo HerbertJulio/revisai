@@ -3,7 +3,8 @@
 import { ArrowLeft, Printer } from 'lucide-react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { QrCode } from '@/components/QrCode';
 import { Botao, Vazio, classeBotao } from '@/components/ui';
 import { calcularVencimento, estimarRodagem, pontosDoVeiculo } from '@/lib/agenda';
 import { formatarData } from '@/lib/datas';
@@ -11,10 +12,12 @@ import { formatarKm, formatarPlaca, formatarTelefone } from '@/lib/formatos';
 import { useHoje } from '@/lib/ganchos';
 import { servico } from '@/lib/manutencao';
 import { useOficina } from '@/lib/store';
+import { useContextoDaConta } from './servico/conta';
+import { publicarHistorico } from './servico/publicar';
 
 type Formato = 'rolo' | 'a4';
 
-/** Etiqueta de para-brisa com a próxima troca, em tamanho real (7 × 5 cm). */
+/** Etiqueta de para-brisa com a próxima troca, em tamanho real (7 × 5 cm). Com a conta, o QR leva ao histórico verificado do carro. */
 export function Etiqueta() {
   const id = useSearchParams().get('atendimento') ?? '';
   const atendimento = useOficina((s) => s.atendimentos[id]);
@@ -25,6 +28,14 @@ export function Etiqueta() {
   const kmMesPadrao = useOficina((s) => s.preferencias.kmMesPadrao);
   const hoje = useHoje();
   const [formato, setFormato] = useState<Formato>('a4');
+  const ctx = useContextoDaConta();
+  const historico = ctx ? (veiculo?.links?.historico?.url ?? null) : null;
+  const veiculoId = veiculo?.id;
+
+  // com a conta, a etiqueta já sai com o QR do histórico (publica se ainda não tem)
+  useEffect(() => {
+    if (ctx && veiculoId && !historico) void publicarHistorico(veiculoId, ctx);
+  }, [ctx, veiculoId, historico]);
 
   if (!atendimento || !veiculo) {
     return <Vazio titulo="Serviço não encontrado" acao={<Link href="/oficina" className={classeBotao()}>Voltar aos avisos</Link>} />;
@@ -73,11 +84,12 @@ export function Etiqueta() {
       </div>
 
       <div className="nao-imprimir rounded-3xl bg-vidro p-8 sm:p-12">
-        <RotuloImpresso {...{ titulo, oficina, veiculo, atendimento, item, venc, proximaData }} />
+        <RotuloImpresso {...{ titulo, oficina, veiculo, atendimento, item, venc, proximaData }} qr={historico} />
       </div>
       <div className="so-imprimir">
-        <RotuloImpresso {...{ titulo, oficina, veiculo, atendimento, item, venc, proximaData }} impressao recorte={formato === 'a4'} />
+        <RotuloImpresso {...{ titulo, oficina, veiculo, atendimento, item, venc, proximaData }} qr={historico} impressao recorte={formato === 'a4'} />
       </div>
+      {historico ? <p className="nao-imprimir -mt-2 text-[14px] text-tinta-2">O QR da etiqueta abre o histórico de serviços do carro, confirmado pela oficina.</p> : null}
 
       <div className="nao-imprimir">
         <Botao variante="primario" tamanho="grande" onClick={() => window.print()}>
@@ -97,7 +109,8 @@ function RotuloImpresso({
   venc,
   proximaData,
   impressao = false,
-  recorte = false
+  recorte = false,
+  qr = null
 }: {
   titulo: string;
   oficina: { nome: string; whatsapp: string };
@@ -108,6 +121,8 @@ function RotuloImpresso({
   proximaData: string | null;
   impressao?: boolean;
   recorte?: boolean;
+  /** Endereço do histórico verificado do carro (com a conta). */
+  qr?: string | null;
 }) {
   return (
     <div
@@ -131,14 +146,24 @@ function RotuloImpresso({
             </div>
           ) : null}
         </div>
-        <p className="text-[2.4mm] leading-tight text-[#4b545a]">
-          Feita em {formatarData(atendimento.data)} com {formatarKm(atendimento.km)}
-          {item.produto ? `. ${item.produto.nome}` : ''}
-        </p>
-        <p className="truncate border-t border-[#cbd1ce] pt-[1mm] text-[2.5mm] font-bold">
-          {oficina.nome || 'Oficina'}
-          {oficina.whatsapp ? <span className="font-semibold text-[#4b545a]"> {formatarTelefone(oficina.whatsapp)}</span> : null}
-        </p>
+        <div className="flex items-end gap-[2mm]">
+          <div className="flex min-w-0 flex-1 flex-col gap-[1.2mm]">
+            <p className="text-[2.4mm] leading-tight text-[#4b545a]">
+              Feita em {formatarData(atendimento.data)} com {formatarKm(atendimento.km)}
+              {item.produto ? `. ${item.produto.nome}` : ''}
+            </p>
+            <p className="truncate border-t border-[#cbd1ce] pt-[1mm] text-[2.5mm] font-bold">
+              {oficina.nome || 'Oficina'}
+              {oficina.whatsapp ? <span className="font-semibold text-[#4b545a]"> {formatarTelefone(oficina.whatsapp)}</span> : null}
+            </p>
+          </div>
+          {qr ? (
+            <div className="flex shrink-0 flex-col items-center">
+              <QrCode texto={qr} rotulo="QR do histórico de serviços do carro" className="h-[15mm] w-[15mm]" />
+              <span className="text-[1.7mm] leading-none font-bold">Histórico</span>
+            </div>
+          ) : null}
+        </div>
       </div>
     </div>
   );

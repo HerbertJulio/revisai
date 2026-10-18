@@ -3,13 +3,24 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { montarGrupos, resumir } from './avisos';
 import { hojeISO } from './datas';
-import { useOficina } from './store';
+import { aoHidratar, jaHidratou, useOficina } from './store';
 
-/** true depois que os dados guardados no aparelho foram carregados. */
+/**
+ * true depois que os dados guardados no aparelho foram carregados pela primeira vez. Recarregar
+ * depois (outra aba gravou, o app voltou para a frente) não volta para "carregando", e um erro
+ * na leitura também libera a tela (o app avisa do problema em vez de ficar parado).
+ */
 export function useHidratado(): boolean {
   return useSyncExternalStore(
-    (avisar) => useOficina.persist.onFinishHydration(avisar),
-    () => useOficina.persist.hasHydrated(),
+    (avisar) => {
+      const a = aoHidratar(avisar);
+      const b = useOficina.persist.onFinishHydration(avisar);
+      return () => {
+        a();
+        b();
+      };
+    },
+    () => jaHidratou(),
     () => false
   );
 }

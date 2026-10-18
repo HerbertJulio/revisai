@@ -1,21 +1,24 @@
 'use client';
 
 import { BellPlus, Copy, MessageCircle, Plus, Wrench } from 'lucide-react';
+import Link from 'next/link';
 import { useState, useTransition } from 'react';
-import { criarCodigoPro, liberarAlertasPro } from '@/app/admin/acoes';
+import { criarCodigoPro, liberarAlertasDaOficina } from '@/app/admin/acoes';
 import { Folha } from '@/components/Folha';
+import { Numero } from '@/components/painel/Numero';
 import { useToast } from '@/components/Toasts';
 import { Botao, Campo, Chip, Vazio, classeBotao, classeEntrada } from '@/components/ui';
+import { ALERTAS, PACOTES_ALERTAS } from '@/lib/alertas-dados';
+import type { PapelEquipe } from '@/lib/conta-dados';
 import { diasEntre, formatarData } from '@/lib/datas';
 import { dataCurta, type Cadastro } from '@/lib/equipe-dados';
+import { pode } from '@/lib/equipe/papeis';
+import type { UsoDeAlertasDaOficina } from '@/lib/equipe/tipos';
 import { formatarMoeda, formatarTelefone, lerNumero, plural } from '@/lib/formatos';
-import { ALERTAS, PACOTES_ALERTAS } from '@/lib/alertas-dados';
-import { formatarCodigo, normalizarCodigo, PRO } from '@/lib/plano';
-import type { UsoDeAlertas } from '@/lib/alertas';
-import { MAX_APARELHOS, MESES_PRO, mensagemDoCodigo, resumoDaAssinatura, vagasDeFundador, valorSugerido, type Assinatura } from '@/lib/pro-dados';
+import { formatarCodigo, PRO } from '@/lib/plano';
+import { MESES_PRO, mensagemDoCodigo, resumoDaAssinatura, vagasDeFundador, valorSugerido, type Assinatura } from '@/lib/pro-dados';
 import { linkWhatsApp } from '@/lib/whatsapp';
 import { AvisoErro } from './comum';
-import { Numero } from '@/components/painel/Numero';
 
 interface Rascunho {
   oficinaNome: string;
@@ -23,6 +26,20 @@ interface Rascunho {
   meses: number;
   valor: string;
   observacao: string;
+}
+
+export interface PedidoDeAlertas extends Cadastro {
+  /** A oficina do pedido (pelo texto do pedido ou pelo código do Pro), quando dá para saber. */
+  oficinaId: string | null;
+  quantidade: number;
+}
+
+interface Liberacao {
+  oficinaId: string;
+  oficina: string;
+  quantidade: number;
+  valor: string;
+  cadastroId: number | null;
 }
 
 function valorTexto(n: number): string {
@@ -33,28 +50,36 @@ export function ProAdmin({
   assinaturas,
   interessados,
   hoje,
-  usoAlertas = {},
-  pedidosDeAlertas = []
+  usoAlertas,
+  pedidosDeAlertas,
+  oficinas,
+  papel
 }: {
   assinaturas: Assinatura[];
   interessados: Cadastro[];
   hoje: string;
-  usoAlertas?: Record<string, UsoDeAlertas>;
-  pedidosDeAlertas?: Cadastro[];
+  usoAlertas: Record<string, UsoDeAlertasDaOficina>;
+  pedidosDeAlertas: PedidoDeAlertas[];
+  /** Nome de cada oficina ligada a um código (id para nome). */
+  oficinas: Record<string, string>;
+  papel: PapelEquipe;
 }) {
   const toast = useToast();
-  const [liberar, setLiberar] = useState<{ codigo: string; oficina: string; quantidade: number; valor: string; cadastroId: number | null } | null>(null);
+  const [liberar, setLiberar] = useState<Liberacao | null>(null);
   const [rascunho, setRascunho] = useState<Rascunho | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [criada, setCriada] = useState<Assinatura | null>(null);
   const [salvando, iniciar] = useTransition();
+  const podeCriar = pode(papel, 'criarCodigo');
+  const podeLiberar = pode(papel, 'liberarAlertas');
 
   const ativas = assinaturas.filter((a) => a.ate >= hoje);
-  const oficinasAtivas = new Set(ativas.map((a) => a.oficina_nome.trim().toLowerCase())).size;
+  const oficinasAtivas = new Set(ativas.map((a) => a.oficina_id ?? a.oficina_nome.trim().toLowerCase())).size;
   const mes = hoje.slice(0, 7);
   const recebidoNoMes = assinaturas.filter((a) => a.criado_em.slice(0, 7) === mes).reduce((s, a) => s + (a.valor ?? 0), 0);
   const vencendo = ativas.filter((a) => diasEntre(hoje, a.ate) <= 15);
   const vagas = vagasDeFundador(assinaturas);
+  const semAtivar = ativas.filter((a) => !a.oficina_id).length;
 
   function abrir(c?: Cadastro) {
     setErro(null);
@@ -102,7 +127,7 @@ export function ProAdmin({
   return (
     <div className="flex flex-col gap-8">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Numero rotulo="Oficinas no Pro" valor={String(oficinasAtivas)} />
+        <Numero rotulo="Oficinas com código valendo" valor={String(oficinasAtivas)} detalhe={semAtivar ? `${plural(semAtivar, 'código', 'códigos')} ainda sem ativar` : undefined} />
         <Numero rotulo="Recebido no mês" valor={formatarMoeda(recebidoNoMes)} />
         <Numero rotulo="Vencem em 15 dias" valor={String(vencendo.length)} />
         <Numero rotulo="Vagas de fundador" valor={String(vagas)} detalhe={`${formatarMoeda(PRO.precoFundador)} por mês`} />
@@ -114,11 +139,13 @@ export function ProAdmin({
             <h2 id="t-codigos" className="text-[21px]">
               Códigos
             </h2>
-            <p className="text-[14px] text-tinta-3">Cada código vale em até {MAX_APARELHOS} aparelhos da mesma oficina.</p>
+            <p className="text-[14px] text-tinta-3">Cada código vale para uma oficina: a primeira que ativar fica com ele. Para dar o Pro direto a uma oficina, use a página dela em Oficinas.</p>
           </div>
-          <Botao tamanho="pequeno" variante="escuro" onClick={() => abrir()}>
-            <Plus size={16} /> Novo código
-          </Botao>
+          {podeCriar ? (
+            <Botao tamanho="pequeno" variante="escuro" onClick={() => abrir()}>
+              <Plus size={16} /> Novo código
+            </Botao>
+          ) : null}
         </div>
         {assinaturas.length ? (
           <div className="overflow-hidden rounded-2xl bg-papel ring-1 ring-linha">
@@ -126,7 +153,7 @@ export function ProAdmin({
               <thead className="hidden bg-papel-2 text-[13px] text-tinta-3 sm:table-header-group">
                 <tr>
                   <th scope="col" className="px-4 py-2.5 font-semibold">
-                    Oficina
+                    Venda
                   </th>
                   <th scope="col" className="px-4 py-2.5 font-semibold">
                     Código
@@ -134,8 +161,8 @@ export function ProAdmin({
                   <th scope="col" className="px-4 py-2.5 font-semibold">
                     Vale até
                   </th>
-                  <th scope="col" className="px-4 py-2.5 text-right font-semibold">
-                    Aparelhos
+                  <th scope="col" className="px-4 py-2.5 font-semibold">
+                    Oficina
                   </th>
                   <th scope="col" className="px-4 py-2.5">
                     <span className="sr-only">Ações</span>
@@ -147,6 +174,8 @@ export function ProAdmin({
                   const vencida = a.ate < hoje;
                   const dias = diasEntre(hoje, a.ate);
                   const zap = a.oficina_whatsapp ? linkWhatsApp(a.oficina_whatsapp, mensagemDoCodigo(a)) : null;
+                  const uso = a.oficina_id ? usoAlertas[a.oficina_id] : undefined;
+                  const nomeOficina = a.oficina_id ? (oficinas[a.oficina_id] ?? a.oficina_nome) : null;
                   return (
                     <tr key={a.id} className="flex flex-col gap-1.5 px-4 py-3.5 sm:table-row sm:p-0">
                       <td className="sm:px-4 sm:py-3">
@@ -154,10 +183,10 @@ export function ProAdmin({
                         <p className="text-[13px] text-tinta-3">
                           {[resumoDaAssinatura(a), `criado ${dataCurta(a.criado_em.slice(0, 10), hoje)}`, a.observacao].filter(Boolean).join(', ')}
                         </p>
-                        {usoAlertas[a.codigo] ? (
+                        {uso ? (
                           <p className="num text-[13px] text-tinta-3">
-                            Alertas: {usoAlertas[a.codigo].noMes} de {ALERTAS.porMesPro} no mês
-                            {usoAlertas[a.codigo].creditos ? `, ${usoAlertas[a.codigo].extrasRestantes} de ${usoAlertas[a.codigo].creditos} extras sobrando` : ''}
+                            Alertas: {uso.noMes} de {ALERTAS.porMesPro} no mês
+                            {uso.creditos ? `, ${uso.extras} de ${uso.creditos} extras sobrando` : ''}
                           </p>
                         ) : null}
                       </td>
@@ -173,21 +202,36 @@ export function ProAdmin({
                           <span className="num">{formatarData(a.ate)}</span>
                         )}
                       </td>
-                      <td className="num sm:px-4 sm:py-3 sm:text-right">
-                        <span className="sm:hidden text-tinta-3">Aparelhos: </span>
-                        {a.ativacoes} de {MAX_APARELHOS}
+                      <td className="sm:px-4 sm:py-3">
+                        {a.oficina_id ? (
+                          <Link href={`/admin/oficinas/${a.oficina_id}`} className="font-semibold text-caneta hover:underline">
+                            {nomeOficina}
+                          </Link>
+                        ) : (
+                          <Chip>Ainda não ativado</Chip>
+                        )}
                       </td>
                       <td className="sm:px-4 sm:py-3">
                         <div className="flex justify-end gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => setLiberar({ codigo: a.codigo, oficina: a.oficina_nome, quantidade: PACOTES_ALERTAS[0].quantidade, valor: valorTexto(PACOTES_ALERTAS[0].preco), cadastroId: null })}
-                            className="grid h-9 w-9 place-items-center rounded-lg text-tinta-2 hover:bg-papel-2"
-                            aria-label={`Liberar alertas de preço para a ${a.oficina_nome}`}
-                            title="Liberar alertas extras"
-                          >
-                            <BellPlus size={17} />
-                          </button>
+                          {a.oficina_id && podeLiberar ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setLiberar({
+                                  oficinaId: a.oficina_id ?? '',
+                                  oficina: nomeOficina ?? a.oficina_nome,
+                                  quantidade: PACOTES_ALERTAS[0].quantidade,
+                                  valor: valorTexto(PACOTES_ALERTAS[0].preco),
+                                  cadastroId: null
+                                })
+                              }
+                              className="grid h-9 w-9 place-items-center rounded-lg text-tinta-2 hover:bg-papel-2"
+                              aria-label={`Liberar alertas de preço para a ${nomeOficina}`}
+                              title="Liberar alertas extras"
+                            >
+                              <BellPlus size={17} />
+                            </button>
+                          ) : null}
                           <button
                             type="button"
                             onClick={() => void copiar(mensagemDoCodigo(a), 'Mensagem com o código copiada.')}
@@ -218,8 +262,8 @@ export function ProAdmin({
             </table>
           </div>
         ) : (
-          <Vazio titulo="Nenhum código ainda" acao={<Botao onClick={() => abrir()}>Criar o primeiro código</Botao>}>
-            Depois que a oficina pagar, crie o código aqui e mande para ela. Ela digita em Ajustes, na parte Plano.
+          <Vazio titulo="Nenhum código ainda" acao={podeCriar ? <Botao onClick={() => abrir()}>Criar o primeiro código</Botao> : undefined}>
+            Depois que a oficina pagar, crie o código aqui e mande para ela. O dono digita em Ajustes, na parte Plano.
           </Vazio>
         )}
       </section>
@@ -232,24 +276,26 @@ export function ProAdmin({
           <p className="-mt-1 text-[15px] text-tinta-2">Libere depois de receber o pagamento. A oficina vê os alertas extras na hora.</p>
           <ul className="divide-y divide-linha rounded-2xl bg-papel ring-1 ring-linha">
             {pedidosDeAlertas.map((c) => {
-              const codigo = normalizarCodigo(c.mensagem?.match(/Código do Pro: ([0-9A-Z-]{16,19})/)?.[1] ?? '');
-              const quantidade = Number(c.mensagem?.match(/Quer (\d+) alertas/)?.[1] ?? 0);
-              const pacote = PACOTES_ALERTAS.find((p) => p.quantidade === quantidade);
-              const zap = c.whatsapp ? linkWhatsApp(c.whatsapp, `Olá! Aqui é da equipe do Revisaí. Recebemos o seu pedido de ${quantidade || ''} alertas de preço. Já liberamos assim que o Pix cair.`) : null;
+              const pacote = PACOTES_ALERTAS.find((p) => p.quantidade === c.quantidade);
+              const zap = c.whatsapp ? linkWhatsApp(c.whatsapp, `Olá! Aqui é da equipe do Revisaí. Recebemos o seu pedido de ${c.quantidade || ''} alertas de preço. Liberamos assim que o Pix cair.`) : null;
               return (
                 <li key={c.id} className="flex flex-wrap items-center gap-3 px-4 py-3 sm:px-5">
                   <BellPlus size={18} className="text-tinta-3" aria-hidden="true" />
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold">{c.empresa || c.nome}</p>
                     <p className="text-[13.5px] text-tinta-3">{[c.mensagem, dataCurta(c.criado_em.slice(0, 10), hoje)].filter(Boolean).join(', ')}</p>
+                    {!c.oficinaId ? <p className="text-[13px] text-atraso">Não deu para saber a oficina pelo pedido. Ache a oficina em Oficinas e libere por lá.</p> : null}
                   </div>
                   {zap ? (
                     <a href={zap} target="_blank" rel="noopener noreferrer" className={classeBotao('secundario', 'pequeno')}>
                       <MessageCircle size={15} aria-hidden="true" /> WhatsApp
                     </a>
                   ) : null}
-                  {codigo.length === 16 && pacote ? (
-                    <Botao tamanho="pequeno" onClick={() => setLiberar({ codigo, oficina: c.empresa || c.nome, quantidade: pacote.quantidade, valor: valorTexto(pacote.preco), cadastroId: c.id })}>
+                  {c.oficinaId && pacote && podeLiberar ? (
+                    <Botao
+                      tamanho="pequeno"
+                      onClick={() => setLiberar({ oficinaId: c.oficinaId ?? '', oficina: c.empresa || c.nome, quantidade: pacote.quantidade, valor: valorTexto(pacote.preco), cadastroId: c.id })}
+                    >
                       Liberar {pacote.quantidade}
                     </Botao>
                   ) : null}
@@ -281,9 +327,11 @@ export function ProAdmin({
                       <MessageCircle size={15} aria-hidden="true" /> WhatsApp
                     </a>
                   ) : null}
-                  <Botao tamanho="pequeno" onClick={() => abrir(c)}>
-                    Criar código
-                  </Botao>
+                  {podeCriar ? (
+                    <Botao tamanho="pequeno" onClick={() => abrir(c)}>
+                      Criar código
+                    </Botao>
+                  ) : null}
                 </li>
               );
             })}
@@ -377,7 +425,8 @@ export function ProAdmin({
   );
 }
 
-function FolhaLiberar({ pedido, aoFechar }: { pedido: { codigo: string; oficina: string; quantidade: number; valor: string; cadastroId: number | null } | null; aoFechar: () => void }) {
+/** Liberar alertas de preço extras para uma oficina (também usada no detalhe da oficina). */
+export function FolhaLiberar({ pedido, aoFechar }: { pedido: Liberacao | null; aoFechar: () => void }) {
   const toast = useToast();
   const [quantidade, setQuantidade] = useState('10');
   const [valor, setValor] = useState('');
@@ -385,8 +434,8 @@ function FolhaLiberar({ pedido, aoFechar }: { pedido: { codigo: string; oficina:
   const [erro, setErro] = useState<string | null>(null);
   const [aberto, setAberto] = useState<string | null>(null);
   const [salvando, iniciar] = useTransition();
-  if (pedido && aberto !== `${pedido.codigo}-${pedido.cadastroId}`) {
-    setAberto(`${pedido.codigo}-${pedido.cadastroId}`);
+  if (pedido && aberto !== `${pedido.oficinaId}-${pedido.cadastroId}`) {
+    setAberto(`${pedido.oficinaId}-${pedido.cadastroId}`);
     setQuantidade(String(pedido.quantidade));
     setValor(pedido.valor);
     setObservacao('');
@@ -402,7 +451,7 @@ function FolhaLiberar({ pedido, aoFechar }: { pedido: { codigo: string; oficina:
     if (valor.trim() && (v == null || v < 0)) return setErro('Confira o valor recebido.');
     iniciar(async () => {
       try {
-        const r = await liberarAlertasPro(pedido.codigo, q, v, observacao, pedido.cadastroId);
+        const r = await liberarAlertasDaOficina(pedido.oficinaId, q, v, observacao, pedido.cadastroId);
         if (!r.ok) return setErro(r.erro);
         toast({ texto: `${q} alertas liberados para a ${pedido.oficina}.` });
         setAberto(null);
@@ -418,7 +467,7 @@ function FolhaLiberar({ pedido, aoFechar }: { pedido: { codigo: string; oficina:
       aberta={pedido != null}
       aoFechar={aoFechar}
       titulo="Liberar alertas de preço"
-      descricao={pedido ? `Para a ${pedido.oficina}, código ${formatarCodigo(pedido.codigo)}. Libere depois de receber o pagamento.` : undefined}
+      descricao={pedido ? `Para a ${pedido.oficina}. Libere depois de receber o pagamento.` : undefined}
       rodape={
         <div className="flex w-full justify-end gap-2">
           <Botao variante="fantasma" onClick={aoFechar}>
