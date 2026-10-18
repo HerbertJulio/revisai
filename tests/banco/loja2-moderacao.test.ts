@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { criarEquipe, criarLoja, criarOficina, criarPessoa, emTransacao, fechar, linhas, pessoa, temBanco, tentar, type Banco, type Pessoa } from './ajuda';
-import { cenario, tentarPedir } from './loja2-ajuda';
+import { cenario, codigoNovo, tentarPedir } from './loja2-ajuda';
 
 const d = temBanco ? describe : describe.skip;
 
@@ -8,12 +8,27 @@ afterAll(fechar);
 
 const DENUNCIAR = 'select public.denunciar($1, $2, $3, $4, $5) as id';
 
-/** Uma oficina nova (com dono novo) que denuncia o produto. */
-async function oficinaQueDenuncia(b: Banco, produtoId: number, motivo = 'falsificado'): Promise<{ dono: Pessoa; oficina: string; id: string }> {
+/**
+ * Uma oficina (com dono novo) que denuncia o produto. Por padrão é uma oficina que conta para tirar o
+ * produto da vitrine: tem mais de 30 dias e uma compra entregue. Com `nova`, acabou de ser criada.
+ */
+async function oficinaQueDenuncia(b: Banco, produtoId: number, motivo = 'falsificado', opcoes: { nova?: boolean } = {}): Promise<{ dono: Pessoa; oficina: string; id: string }> {
   const dono = await criarPessoa(b, pessoa('denuncia'));
   const oficina = await criarOficina(b, dono, 'Oficina que denuncia');
+  if (!opcoes.nova) await comCompraAntiga(b, oficina, produtoId);
   const [r] = await linhas(b, dono, DENUNCIAR, [oficina, produtoId, null, motivo, 'Veio sem lacre']);
   return { dono, oficina, id: String(r.id) };
+}
+
+/** A oficina passa a ter 60 dias e uma compra entregue da loja do produto (gravadas direto, como antigas). */
+async function comCompraAntiga(b: Banco, oficina: string, produtoId: number): Promise<void> {
+  await b.query(`update public.oficinas set criado_em = now() - interval '60 days' where id = $1`, [oficina]);
+  const loja = Number((await b.query('select fornecedor_id from public.produtos where id = $1', [produtoId])).rows[0].fornecedor_id);
+  const codigo = codigoNovo();
+  await b.query('set local session_replication_role = replica');
+  const ped = await b.query(`insert into public.pedidos (codigo, oficina_id, oficina_nome, oficina_whatsapp, itens, total, status) values ($1, $2, 'Antiga', '5521911112222', $3::jsonb, 10, 'novo') returning id`, [codigo, oficina, JSON.stringify([{ produto_id: produtoId, quantidade: 1 }])]);
+  await b.query(`insert into public.pedidos_fornecedores (pedido_id, fornecedor_id, oficina_id, subtotal, status, codigo) values ($1, $2, $3, 10, 'entregue', $4)`, [ped.rows[0].id, loja, oficina, codigo]);
+  await b.query('set local session_replication_role = origin');
 }
 
 async function oculto(b: Banco, produtoId: number): Promise<boolean> {
@@ -115,6 +130,23 @@ d('o produto sai da vitrine sozinho', () => {
         const o = await criarOficina(b, dono, nome);
         expect((await tentar(b, dono, DENUNCIAR, [o, c.loja.produtoId, null, 'falsificado', null])).erro).toBeNull();
       }
+      expect(await oculto(b, c.loja.produtoId)).toBe(false);
+    }));
+});
+
+d('denúncias que não tiram da vitrine', () => {
+  it('três oficinas recém-criadas não escondem o produto, e as que tiveram denúncia descartada não contam de novo', () =>
+    emTransacao(async (b) => {
+      const c = await cenario(b);
+      for (let i = 0; i < 3; i++) await oficinaQueDenuncia(b, c.loja.produtoId, 'falsificado', { nova: true });
+      expect(await oculto(b, c.loja.produtoId)).toBe(false);
+      // três que contam escondem; a equipe mostra de novo e as mesmas três não conseguem esconder outra vez
+      const q = [await oficinaQueDenuncia(b, c.loja.produtoId), await oficinaQueDenuncia(b, c.loja.produtoId), await oficinaQueDenuncia(b, c.loja.produtoId)];
+      expect(await oculto(b, c.loja.produtoId)).toBe(true);
+      const suporte = await equipe(b, 'suporte');
+      await linhas(b, suporte, `select public.moderacao_decidir($1, 'mostrar', 'Conferido') as r`, [q[0].id]);
+      expect(await oculto(b, c.loja.produtoId)).toBe(false);
+      for (const x of q) await linhas(b, x.dono, DENUNCIAR, [x.oficina, c.loja.produtoId, null, 'falsificado', 'De novo']);
       expect(await oculto(b, c.loja.produtoId)).toBe(false);
     }));
 });

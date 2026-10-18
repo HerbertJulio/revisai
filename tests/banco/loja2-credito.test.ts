@@ -74,6 +74,43 @@ d('venda faturada: o pedido', () => {
       expect((await pedir(b, c, itens, { [c.loja.fornecedorId]: 'pix' })).partes[0]).toEqual(expect.objectContaining({ forma: 'pix', prazo: null }));
     }));
 
+  it('o mecânico não compra faturado nem usa o cashback, e o pedido dele vai para o endereço da oficina', () =>
+    emTransacao(async (b) => {
+      const c = await cenario(b, { comprou: true });
+      await b.query(`update public.oficinas set endereco = 'Rua da Oficina, 10' where id = $1`, [c.oficina]);
+      await darCredito(b, c.lojista, c.loja.fornecedorId, c.oficina, 1500, 30);
+      const mecanico = await criarPessoa(b, pessoa('mecanico'));
+      await linhas(b, c.donoOficina, `select public.convidar('oficina', $1, $2, 'mecanico')`, [c.oficina, mecanico.email]);
+      await linhas(b, mecanico, 'select public.aceitar_convite()');
+      const doMecanico = { donoOficina: mecanico, oficina: c.oficina };
+      const itens = [{ produto_id: c.loja.produtoId, quantidade: 1 }];
+      const faturado = await tentarPedir(b, doMecanico, itens, { [c.loja.fornecedorId]: 'faturado' });
+      expect(faturado.codigo).toBe('42501');
+      expect(faturado.erro).toMatch(/dono ou o gerente/);
+      const comCashback = await tentarPedir(b, doMecanico, itens, null, { [c.loja.fornecedorId]: 5 });
+      expect(comCashback.codigo).toBe('42501');
+      // no Pix ele compra, mas o endereço que ele manda não vale: a entrega vai para a oficina
+      const [p] = await linhas(
+        b,
+        mecanico,
+        `insert into public.pedidos (codigo, oficina_id, oficina_nome, oficina_whatsapp, oficina_endereco, itens)
+         values ('MEC001', $1, 'x', '5521911112222', 'Rua do Mecanico 99', $2::jsonb) returning oficina_endereco`,
+        [c.oficina, JSON.stringify(itens)]
+      );
+      expect(p.oficina_endereco).toBe('Rua da Oficina, 10');
+      // o dono compra faturado normalmente
+      expect((await pedir(b, c, itens, { [c.loja.fornecedorId]: 'faturado' })).partes[0]).toEqual(expect.objectContaining({ forma: 'faturado' }));
+    }));
+
+  it('o dono da loja que deu crédito consegue apagar a conta (a linha fica, sem quem criou)', () =>
+    emTransacao(async (b) => {
+      const c = await cenario(b, { comprou: true });
+      expect((await darCredito(b, c.lojista, c.loja.fornecedorId, c.oficina, 800, 30)).erro).toBeNull();
+      await b.query('delete from auth.users where id = $1', [c.lojista.id]);
+      const r = await b.query('select criado_por, limite from public.lojas_credito where fornecedor_id = $1 and oficina_id = $2', [c.loja.fornecedorId, c.oficina]);
+      expect(r.rows[0]).toEqual({ criado_por: null, limite: '800.00' });
+    }));
+
   it('o que está em aberto mais a compra cabe no limite (RV061, com o valor livre); pago e cancelado liberam', () =>
     emTransacao(async (b) => {
       const c = await cenario(b, { comprou: true });
