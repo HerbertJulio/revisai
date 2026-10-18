@@ -126,7 +126,7 @@ function FormCredito({ cliente, aoSalvar }: { cliente: ClienteComCredito; aoSalv
   return (
     <div className="flex flex-col gap-4">
       {erro ? <AvisoErro>{erro}</AvisoErro> : null}
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Campo rotulo="Limite em aberto (R$)" htmlFor="cred-limite" dica="Quanto a oficina pode dever para a loja ao mesmo tempo.">
           <input id="cred-limite" className={`${classeEntrada} num`} value={limite} onChange={(e) => setLimite(e.target.value)} inputMode="decimal" placeholder="2.000" />
         </Campo>

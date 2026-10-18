@@ -399,7 +399,7 @@ function FormEmissao({ tipo, doc, config, aoFechar, aoReceber }: { tipo: TipoNot
   return (
     <form onSubmit={emitir} className="flex flex-col gap-3 rounded-xl bg-papel-2 px-3.5 py-3" aria-label={`Emitir a ${NOMES_DA_NOTA[tipo].curto}`}>
       <p className="font-semibold">Para quem é a nota</p>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Campo rotulo="Nome ou razão social" htmlFor={`tom-nome-${tipo}`}>
           <input id={`tom-nome-${tipo}`} className={classeEntrada} value={t.nome} onChange={(e) => mudar('nome', e.target.value)} maxLength={150} />
         </Campo>

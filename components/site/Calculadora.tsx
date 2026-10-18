@@ -55,7 +55,7 @@ export function Calculadora({ captcha }: { captcha?: string | null }) {
   return (
     <div className="grid gap-10 lg:grid-cols-[1fr_1fr]">
       <div className="flex flex-col gap-5 rounded-[22px] bg-papel p-6 ring-1 ring-linha sm:p-8">
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Campo rotulo="Data da última troca" htmlFor="c-data">
             <input id="c-data" type="date" className={classeEntrada} value={data} max={hoje} onChange={(e) => setData(e.target.value)} />
           </Campo>

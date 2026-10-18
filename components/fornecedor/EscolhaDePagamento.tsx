@@ -64,7 +64,9 @@ export function EscolhaDePagamento({
         return (
           <fieldset key={loja.id} className="flex flex-col gap-2 rounded-xl bg-papel-2 px-4 py-3">
             <legend className="sr-only">Como pagar a {loja.nome}</legend>
-            <p className="text-[14px] font-semibold">Como pagar a {loja.nome}</p>
+            <p className="text-[14px] font-semibold" aria-hidden="true">
+              Como pagar a {loja.nome}
+            </p>
             <label className="flex cursor-pointer items-center gap-2 text-[14.5px]">
               <input type="radio" name={nome} checked={escolhido === 'pix'} onChange={() => aoMudar({ ...valor, [String(loja.id)]: 'pix' })} className="h-4 w-4 shrink-0 accent-[var(--color-tinta)]" />
               Pix, quando a loja confirmar

@@ -78,7 +78,7 @@ export function Conferir({ r, carro, hoje, aoMudar, aoEditar }: { r: Rascunho; c
       </div>
 
       {r.tipo === 'orcamento' ? (
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Campo rotulo="Vale por quantos dias" htmlFor="c-validade" dica={`Até ${formatarData(somarDias(hoje, r.validadeDias))}.`}>
             <input
               id="c-validade"

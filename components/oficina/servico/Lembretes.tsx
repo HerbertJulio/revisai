@@ -65,7 +65,7 @@ function CartaoDoLembrete({ item, hoje, noCarro = false }: { item: ItemDeLembret
         {!noCarro && veiculo ? <Placa placa={veiculo.placa} /> : null}
         {!noCarro ? <span className="min-w-0 truncate text-[14px] text-tinta-2">{[veiculo?.modelo, nome].filter(Boolean).join(', ')}</span> : null}
         <span className={`ml-auto text-[13px] font-semibold ${atrasado ? 'text-atraso' : 'text-tinta-3'}`}>
-          {l.situacao === 'avisado' && l.avisadoEm ? `Avisado em ${formatarData(l.avisadoEm.slice(0, 10))}` : l.data > hoje ? `Para ${formatarData(l.data)}` : `Desde ${formatarData(l.data)}`}
+          {l.situacao === 'avisado' && l.avisadoEm ? `Avisado em ${formatarData(l.avisadoEm)}` : l.data > hoje ? `Para ${formatarData(l.data)}` : `Desde ${formatarData(l.data)}`}
         </span>
       </div>
       <p className="font-semibold">

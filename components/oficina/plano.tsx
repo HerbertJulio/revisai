@@ -396,7 +396,7 @@ export function PlanoDaOficina() {
           <p className="text-[14.5px] text-tinta-2">
             Sem conta, os avisos funcionam ({PRO.avisosGratis} por mês) e os dados ficam só aqui. A voz com IA e o teste do Pro usam a conta da oficina.
           </p>
-          <div className="grid gap-4 border-t border-linha pt-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 border-t border-linha pt-4 sm:grid-cols-2">
             <Uso rotulo="Avisos neste mês" usado={p.avisos} total={PRO.avisosGratis} />
           </div>
           <Link href={ENTRAR} className={`${classeBotao('escuro')} self-start`}>
@@ -444,7 +444,7 @@ export function PlanoDaOficina() {
           )}
         </div>
 
-        <div className="grid gap-4 border-t border-linha pt-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 border-t border-linha pt-4 sm:grid-cols-2">
           {p.tipo === 'gratis' ? <Uso rotulo="Avisos neste mês" usado={p.avisos} total={PRO.avisosGratis} /> : null}
           <Uso rotulo="Ordens por voz neste mês" usado={p.montagens} total={p.limiteOrdens} />
           {uso ? <Uso rotulo="Áudios transcritos neste mês" usado={uso.transcricao.usado} total={uso.transcricao.limite} /> : null}

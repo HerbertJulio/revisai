@@ -79,7 +79,7 @@ export function EmAndamento({ aoAbrirAlerta, aoAbrirPedido }: { aoAbrirAlerta: (
       <h2 id="t-andamento" className="text-[17px] font-bold">
         Em andamento
       </h2>
-      <ul className="grid gap-2 md:grid-cols-2">
+      <ul className="grid grid-cols-1 gap-2 md:grid-cols-2">
         {ativos.map((a) => {
           const escolher = faseVisivel(a, agora) === 'escolher' || a.respostas.some((r) => r.tipo !== 'recusa');
           return (
@@ -467,9 +467,10 @@ function Pagamento({ parte }: { parte: ParteAcompanhada }) {
   const aPagar = Math.max(0, Math.round((parte.subtotal - parte.cashback) * 100) / 100);
   if (aPagar <= 0)
     return <p className="rounded-xl bg-ok-claro px-4 py-3 text-[14.5px] font-semibold text-ok">O seu cashback cobriu esta compra. Não tem Pix para pagar.</p>;
-  if (!parte.pix) return <p className="text-[14px] text-tinta-3">Esta loja ainda não aceita Pix pelo app. Combine o pagamento com ela.</p>;
+  // no faturado, o aviso do prazo já diz como pagar; o Pix só aparece como atalho depois da confirmação
+  if (!parte.pix) return parte.faturado ? null : <p className="text-[14px] text-tinta-3">Esta loja ainda não aceita Pix pelo app. Combine o pagamento com ela.</p>;
   // só paga depois que a loja confirma que tem o produto e o preço
-  if (!pixLiberado(parte.status)) return <p className="text-[14px] text-tinta-3">O Pix aparece aqui quando a loja confirmar o pedido.</p>;
+  if (!pixLiberado(parte.status)) return parte.faturado ? null : <p className="text-[14px] text-tinta-3">O Pix aparece aqui quando a loja confirmar o pedido.</p>;
 
   function abrir() {
     setErro(null);
@@ -532,7 +533,7 @@ function Pagamento({ parte }: { parte: ParteAcompanhada }) {
         <p className="flex max-w-[40ch] items-start gap-2 rounded-xl bg-oleo-claro px-3 py-2 text-left text-[13.5px] text-oleo-tinta">
           <TriangleAlert size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
           <span>
-            A {parte.fornecedor} trocou a chave Pix {pix.trocadaEm ? formatarDiaHora(pix.trocadaEm) : 'há pouco'}. Confira se quem recebe é a loja antes de pagar e, na dúvida, fale com ela.
+            A {parte.fornecedor} cadastrou ou trocou a chave Pix {pix.trocadaEm ? formatarDiaHora(pix.trocadaEm) : 'há pouco'}. Confira se quem recebe é a loja antes de pagar e, na dúvida, fale com ela.
           </span>
         </p>
       ) : null}

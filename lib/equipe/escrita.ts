@@ -1,11 +1,12 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { z } from 'zod';
+import { cnpjValido, soNumeros } from '@/lib/cnpj';
 import { mensagemDoBanco, type PapelEquipe } from '@/lib/conta-dados';
 import { somarDias } from '@/lib/datas';
 import type { SituacaoCadastro, SituacaoPedido } from '@/lib/equipe-dados';
 import { COLUNAS_IMPULSO, lerImpulsos, type SituacaoImpulso } from '@/lib/marketplace-dados';
-import { fimDoImpulso } from '@/lib/planos-fornecedor';
+import { fimDoImpulso, PLANOS_FORNECEDOR } from '@/lib/planos-fornecedor';
 import { hojeEmBrasilia } from './dados';
 import { emailValido } from './entrada';
 import { pode } from './papeis';
@@ -80,6 +81,7 @@ export const esquemaLoja = z.object({
   comissao: z.number().min(0, 'A comissão vai de 0 a 30%.').max(30, 'A comissão vai de 0 a 30%.'),
   mensalidade: z.number().min(0, 'Confira a mensalidade.').max(100000),
   email: z.string().trim().toLowerCase().max(160).optional().default(''),
+  cnpj: z.string().trim().max(20).optional().default(''),
   observacao: z.string().trim().max(300).optional().default('')
 });
 
@@ -92,6 +94,7 @@ export async function salvarLoja(sb: Cliente, papel: PapelEquipe, entrada: unkno
   if (!r.success) return { ok: false, erro: r.error.issues[0]?.message ?? 'Confira os dados.' };
   const d = r.data;
   if (d.email && !emailValido(d.email)) return { ok: false, erro: 'Confira o e-mail.' };
+  if (d.cnpj && !cnpjValido(d.cnpj)) return { ok: false, erro: 'Confira o CNPJ.' };
   if (!d.id && !pode(papel, 'criarLoja')) return { ok: false, erro: 'Só o suporte cadastra lojas.' };
   if (d.id && !pode(papel, 'editarLoja')) return { ok: false, erro: 'Seu papel na equipe não deixa mudar a loja.' };
   const linha = {
@@ -103,15 +106,19 @@ export async function salvarLoja(sb: Cliente, papel: PapelEquipe, entrada: unkno
     ativo: d.ativo,
     email: d.email || null,
     destaque: d.plano === 'destaque',
-    destaque_ate: d.plano === 'destaque' && d.destaqueAte ? d.destaqueAte : null
+    destaque_ate: d.plano === 'destaque' && d.destaqueAte ? d.destaqueAte : null,
+    // vazio não apaga o CNPJ que a loja já tem
+    ...(d.cnpj ? { cnpj: soNumeros(d.cnpj) } : {})
   };
   let id = d.id;
   if (id) {
     const { data, error } = await sb.from('fornecedores').update(linha).eq('id', id).select('id').maybeSingle();
+    if (error?.code === '23505') return { ok: false, erro: 'Já existe uma loja aprovada com este CNPJ.' };
     if (error) return falhou('editar loja', error);
     if (!data) return { ok: false, erro: 'Loja não encontrada.' };
   } else {
     const { data, error } = await sb.from('fornecedores').insert({ ...linha, demonstracao: false, verificacao: 'aprovada' }).select('id').single();
+    if (error?.code === '23505') return { ok: false, erro: 'Já existe uma loja aprovada com este CNPJ.' };
     if (error || !data) return falhou('nova loja', error);
     id = Number(data.id);
   }
@@ -159,7 +166,19 @@ export async function decidirLoja(sb: Cliente, fornecedorId: number, aprovar: bo
   const mudanca = aprovar ? { verificacao: 'aprovada', verificacao_obs: obs || null, ativo: true } : { verificacao: 'recusada', verificacao_obs: obs, ativo: false };
   const { data, error } = await sb.from('fornecedores').update(mudanca).eq('id', fornecedorId).in('verificacao', ['pendente', 'recusada']).select('id').maybeSingle();
   if (error) return falhou('decidir loja', error);
-  return data ? { ok: true } : { ok: false, erro: 'Essa loja já foi aprovada ou não existe mais. Atualize a página.' };
+  if (!data) return { ok: false, erro: 'Essa loja já foi aprovada ou não existe mais. Atualize a página.' };
+  if (aprovar) {
+    // a loja que se cadastrou sozinha entra no plano Vitrine de tabela, o mesmo do contrato das lojas
+    const existe = await sb.from('fornecedores_contrato').select('fornecedor_id').eq('fornecedor_id', fornecedorId).maybeSingle();
+    if (!existe.error && !existe.data) {
+      const v = PLANOS_FORNECEDOR.vitrine;
+      const contrato = await sb
+        .from('fornecedores_contrato')
+        .insert({ fornecedor_id: fornecedorId, plano: 'vitrine', comissao_percentual: v.comissao, mensalidade: v.mensalidade, atualizado_em: new Date().toISOString() });
+      if (contrato.error) return falhou('contrato da loja aprovada', contrato.error, 'A loja foi aprovada, mas o plano não foi gravado. Abra a loja em Lojas e salve o plano.');
+    }
+  }
+  return { ok: true };
 }
 
 export async function decidirImpulso(sb: Cliente, id: number, decisao: Exclude<SituacaoImpulso, 'pedido'>, inicio: string | null): Promise<Gravacao> {

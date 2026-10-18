@@ -3,6 +3,7 @@
 
 import { z } from 'zod';
 import { formatarMoeda, plural, primeiroNome } from './formatos';
+import { diaEmBrasilia } from './datas';
 
 export const FUSO = 'America/Sao_Paulo';
 
@@ -196,13 +197,10 @@ export function contarPor<T, K extends string>(lista: T[], chave: (item: T) => K
 
 // ---------- datas ----------
 
-const formatoDia = new Intl.DateTimeFormat('en-CA', { timeZone: FUSO, year: 'numeric', month: '2-digit', day: '2-digit' });
 const formatoHora = new Intl.DateTimeFormat('pt-BR', { timeZone: FUSO, hour: '2-digit', minute: '2-digit', hour12: false });
 
-/** O dia no horário de Brasília, como 'AAAA-MM-DD'. */
-export function diaEmBrasilia(instante: number | string | Date): string {
-  return formatoDia.format(new Date(instante));
-}
+/** O dia no horário de Brasília, como 'AAAA-MM-DD' (o mesmo de lib/datas). */
+export { diaEmBrasilia };
 
 /** 'hoje às 21:17', 'ontem às 09:05', '12/10 às 14:30' ou '12/10/2025 às 14:30'. */
 export function quandoFoi(iso: string, agora: number): string {
@@ -219,7 +217,7 @@ export function quandoFoi(iso: string, agora: number): string {
 
 /** Data de calendário 'AAAA-MM-DD' como '31/10' (ano atual) ou '31/10/2027'. */
 export function dataCurta(dia: string, hoje: string): string {
-  const [a, m, d] = dia.slice(0, 10).split('-');
+  const [a, m, d] = diaEmBrasilia(dia).split('-');
   return a === hoje.slice(0, 4) ? `${d}/${m}` : `${d}/${m}/${a}`;
 }
 
@@ -248,6 +246,21 @@ export function quantidadeDeItens(p: Pick<Pedido, 'itens'>): string {
 
 export function mensagemPedido(p: Pick<Pedido, 'codigo' | 'oficina_nome' | 'itens' | 'total'>): string {
   return `Olá! Aqui é da equipe do Revisaí. Recebemos o pedido ${p.codigo} da ${p.oficina_nome}, com ${quantidadeDeItens(p)}, no total de ${formatarMoeda(p.total)}. Vamos combinar o pagamento e a entrega?`;
+}
+
+/**
+ * A situação do pedido para a equipe. Com cada loja cuidando da sua parte, vale o andamento delas:
+ * novo enquanto nenhuma loja mexeu, entregue quando todas entregaram (ou cancelaram), cancelado quando
+ * todas cancelaram. O pedido antigo, sem partes, fica com a situação que a equipe deu.
+ */
+export function situacaoDoPedido(p: Pick<Pedido, 'status' | 'partes'>): SituacaoPedido {
+  const partes = (p.partes ?? []).map((x) => x.status);
+  if (!partes.length) return p.status;
+  if (partes.every((x) => x === 'cancelado')) return 'cancelado';
+  if (partes.every((x) => x === 'entregue' || x === 'cancelado')) return 'entregue';
+  if (partes.some((x) => x === 'confirmado' || x === 'saiu_entrega' || x === 'entregue')) return 'confirmado';
+  if (partes.some((x) => x === 'em_contato')) return 'em_contato';
+  return 'novo';
 }
 
 export function somaDosPedidos(pedidos: Pick<Pedido, 'total'>[]): number {

@@ -214,7 +214,7 @@ function FormFiscal({
   return (
     <form onSubmit={salvar} className="flex flex-col gap-8" aria-label="Cadastro fiscal">
       <Secao titulo="Empresa" descricao={provedor ? `A oficina fica cadastrada como empresa no ${NOMES_DOS_EMISSORES[provedor]}.` : undefined}>
-        <div className="grid gap-4 rounded-2xl bg-papel px-4 py-4 ring-1 ring-linha sm:grid-cols-2 sm:px-5">
+        <div className="grid grid-cols-1 gap-4 rounded-2xl bg-papel px-4 py-4 ring-1 ring-linha sm:grid-cols-2 sm:px-5">
           <Campo rotulo="CNPJ" htmlFor="fis-cnpj">
             {texto('cnpj', 'fis-cnpj', { inputMode: 'text', autoComplete: 'off', placeholder: '00.000.000/0000-00' })}
           </Campo>
@@ -274,7 +274,7 @@ function FormFiscal({
       </Secao>
 
       <Secao titulo="Nota de serviço (NFS-e)" descricao="A mão de obra da ordem de serviço.">
-        <div className="grid gap-4 rounded-2xl bg-papel px-4 py-4 ring-1 ring-linha sm:grid-cols-2 sm:px-5">
+        <div className="grid grid-cols-1 gap-4 rounded-2xl bg-papel px-4 py-4 ring-1 ring-linha sm:grid-cols-2 sm:px-5">
           <Campo rotulo="Onde a nota é emitida" htmlFor="fis-padrao" dica="O MEI e muitas cidades já usam o Emissor Nacional. Se a sua prefeitura ainda tem sistema próprio, escolha a prefeitura.">
             <select id="fis-padrao" className={classeEntrada} value={f.padraoNfse} onChange={(e) => mudar('padraoNfse', e.target.value as Formulario['padraoNfse'])}>
               <option value="nacional">Emissor Nacional (padrão nacional)</option>
@@ -318,7 +318,7 @@ function FormFiscal({
             rotulo="As peças têm ICMS por substituição tributária"
             descricao="O mais comum em autopeças: a venda sai com o CFOP 5405. Sem substituição, sai com o 5102. Dá para trocar em cada peça na hora de emitir."
           />
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Campo rotulo="CST do PIS e da COFINS" htmlFor="fis-pis" dica="49 (outras operações de saída), se o contador não indicar outro.">
               {texto('pisCofins', 'fis-pis', { inputMode: 'numeric', maxLength: 2 })}
             </Campo>
@@ -401,7 +401,7 @@ function Certificado({ config, aoEnviar }: { config: ConfigFiscal; aoEnviar: (va
             <span className="text-tinta-2">Nenhum certificado enviado ainda.</span>
           )}
         </p>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Campo rotulo="Arquivo do certificado" htmlFor="cert-arquivo">
             <input id="cert-arquivo" name="certificado" type="file" accept=".pfx,.p12,application/x-pkcs12" className="text-[14px]" required />
           </Campo>

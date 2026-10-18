@@ -178,7 +178,8 @@ export interface Novos {
 export const contarNovos = cache(async (sb: Cliente): Promise<Novos> => {
   const contar = (q: PromiseLike<{ count: number | null }>) => Promise.resolve(q).then((r) => r.count ?? 0, () => 0);
   const [pedidos, cadastros, impulsos, sugestoes, lojas, chamados] = await Promise.all([
-    contar(sb.from('pedidos').select('id', { count: 'exact', head: true }).eq('status', 'novo')),
+    // cada loja cuida da sua parte: conta as partes que a loja ainda não respondeu
+    contar(sb.from('pedidos_fornecedores').select('id', { count: 'exact', head: true }).eq('status', 'novo')),
     contar(sb.from('interessados').select('id', { count: 'exact', head: true }).eq('situacao', 'novo')),
     contar(sb.from('impulsos').select('id', { count: 'exact', head: true }).eq('status', 'pedido')),
     contar(sb.from('produtos_referencia').select('id', { count: 'exact', head: true }).eq('aprovado', false).eq('ativo', true)),

@@ -516,7 +516,7 @@ function FolhaKm({
         </>
       }
     >
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Campo rotulo="Data" htmlFor="km-data">
           <input id="km-data" type="date" className={classeEntrada} value={data} max={hoje} onChange={(e) => setData(e.target.value)} />
         </Campo>

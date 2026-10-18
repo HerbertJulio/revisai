@@ -36,7 +36,7 @@ export function CartaoReputacao({ reputacao, compacto = false }: { reputacao: Re
       {r.nova ? (
         <p className="text-[14.5px] text-tinta-2">A reputação aparece a partir de 5 pedidos. Responda rápido, confirme só o que tem e marque a entrega: é isso que conta.</p>
       ) : (
-        <dl className="grid gap-3 sm:grid-cols-3">
+        <dl className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div className="rounded-xl bg-papel-2 px-3.5 py-3">
             <dt className="text-[13px] text-tinta-3">Cancelados pela loja</dt>
             <dd className="num text-[20px] font-extrabold">{porcento(r.canceladosPct)}</dd>

@@ -79,6 +79,17 @@ export function primeiroNome(nome: string): string {
   return n.split(/\s+/)[0] ?? '';
 }
 
+/** A primeira letra maiúscula, só ela ("outubro de 2026" vira "Outubro de 2026"). */
+export function inicialMaiuscula(t: string): string {
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : t;
+}
+
+/** A frase com a primeira letra minúscula, para entrar no meio de outra ("R$" e nomes ficam como estão). */
+export function noMeioDaFrase(t: string): string {
+  const s = t.trim();
+  return /^[A-ZÀ-Ú][a-zà-ú]/.test(s) ? s.charAt(0).toLowerCase() + s.slice(1) : s;
+}
+
 export function plural(n: number, um: string, varios: string): string {
   return `${formatarNumero(n)} ${n === 1 ? um : varios}`;
 }

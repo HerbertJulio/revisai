@@ -436,7 +436,7 @@ export function ProdutosFornecedor({
         }
       >
         {rascunho ? (
-          <div className="grid gap-4 sm:grid-cols-6">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-6">
             {editando?.ocultoModeracao ? (
               <p className="rounded-xl bg-atraso-claro px-4 py-3 text-[14px] text-atraso sm:col-span-6" role="status">
                 Este produto está fora da vitrine pela moderação, depois de denúncias de oficinas. Se acha que foi engano, fale com a equipe do Revisaí pelo botão Ajuda.
@@ -641,7 +641,7 @@ export function ProdutosFornecedor({
           <div className="flex flex-col gap-5">
             <div>
               <p className="mb-2 font-semibold">Como pagar</p>
-              <div className="grid gap-2 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {(
                   [
                     { id: 'periodo', nome: 'Por período', texto: 'Um valor fechado pelos dias no ar.' },
@@ -690,7 +690,7 @@ export function ProdutosFornecedor({
             </div>
             <div>
               <p className="mb-2 font-semibold">Onde</p>
-              <div className="grid gap-2 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {uf ? (
                   <button
                     type="button"

@@ -54,7 +54,7 @@ export function ChecklistDoLink({ token, dados, oficina, resposta }: { token: st
       {dados.itens.length ? (
         <section className="flex flex-col gap-2">
           <h2 className="text-[16px] font-bold">Itens do carro</h2>
-          <ul className="grid gap-2 sm:grid-cols-2">
+          <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {dados.itens.map((i) => (
               <li key={i.nome} className="flex items-center justify-between gap-2 rounded-xl bg-papel px-3.5 py-2.5 ring-1 ring-linha">
                 <span>{i.nome}</span>

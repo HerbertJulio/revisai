@@ -12,7 +12,7 @@ import { IconeServico } from '@/components/icones';
 import { Placa } from '@/components/pecas';
 import { Alternar, Botao, Campo, classeEntrada } from '@/components/ui';
 import { pontosDoVeiculo } from '@/lib/agenda';
-import { formatarData } from '@/lib/datas';
+import { diaEmBrasilia, formatarData } from '@/lib/datas';
 import { tituloDoDocumento } from '@/lib/documentos';
 import { escolherPorFala, modeloFalado } from '@/lib/fala';
 import { formatarKm, formatarPlaca, lerNumero, normalizarPlaca, normalizarTelefone, placaValida, SEM_NOME } from '@/lib/formatos';
@@ -531,7 +531,7 @@ export function PassoAPasso() {
       {retomar && passo === lista[0] ? (
         <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-caneta-claro px-4 py-3 text-caneta">
           <p className="min-w-0 flex-1 text-[14.5px] font-semibold">
-            {retomar.tipo === 'orcamento' ? 'Um orçamento' : 'Uma ordem'} ficou pela metade{retomar.criadoEm ? ` (${formatarData(retomar.criadoEm.slice(0, 10))})` : ''}.
+            {retomar.tipo === 'orcamento' ? 'Um orçamento' : 'Uma ordem'} ficou pela metade{retomar.criadoEm ? ` (${formatarData(retomar.criadoEm)})` : ''}.
           </p>
           <Botao
             tamanho="pequeno"
@@ -788,7 +788,7 @@ function PassoCarro({ hoje, aoEscolher, aoNovo }: { hoje: string; aoEscolher: (i
     for (const a of Object.values(atendimentos)) if (a.data > (quando.get(a.veiculoId) ?? '')) quando.set(a.veiculoId, a.data);
     for (const d of Object.values(documentos)) if (d.veiculoId && d.data > (quando.get(d.veiculoId) ?? '')) quando.set(d.veiculoId, d.data);
     return Object.values(veiculos)
-      .sort((a, b) => ((quando.get(b.id) ?? b.criadoEm.slice(0, 10)) > (quando.get(a.id) ?? a.criadoEm.slice(0, 10)) ? 1 : -1))
+      .sort((a, b) => ((quando.get(b.id) ?? diaEmBrasilia(b.criadoEm)) > (quando.get(a.id) ?? diaEmBrasilia(a.criadoEm)) ? 1 : -1))
       .slice(0, 6);
   }, [veiculos, atendimentos, documentos]);
 
@@ -808,7 +808,7 @@ function PassoCarro({ hoje, aoEscolher, aoNovo }: { hoje: string; aoEscolher: (i
       {achados.length ? (
         <>
           {t.length < 2 ? <p className="text-[13.5px] font-semibold text-tinta-3">Os últimos que passaram aqui</p> : null}
-          <ul className="grid gap-2 sm:grid-cols-2">
+          <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {achados.map((v) => {
               const c = clientes[v.clienteId];
               return (

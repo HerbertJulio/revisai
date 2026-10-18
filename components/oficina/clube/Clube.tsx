@@ -25,7 +25,7 @@ import {
 } from '@/lib/clube';
 import { recebedorDaOficina } from '@/lib/cobranca-cliente';
 import { formatarData } from '@/lib/datas';
-import { formatarMoeda, plural, SEM_NOME } from '@/lib/formatos';
+import { formatarMoeda, inicialMaiuscula, plural, SEM_NOME } from '@/lib/formatos';
 import { useHoje } from '@/lib/ganchos';
 import type { ClubeCobranca, ClubeMembro } from '@/lib/registros-oficina';
 import { useOficina } from '@/lib/store';
@@ -229,9 +229,9 @@ function Mensalidades({ aoMensagem }: { aoMensagem: (m: Mensagem) => void }) {
           <span className="num ml-auto font-extrabold">{formatarMoeda(c.valor)}</span>
         </div>
         <p className="text-[13.5px] text-tinta-2">
-          {nomeDaCompetencia(c.competencia)} · vence em {formatarData(c.vencimento)}
+          {inicialMaiuscula(nomeDaCompetencia(c.competencia))} · vence em {formatarData(c.vencimento)}
           {c.link?.codigo ? ` · link ${c.link.codigo}` : ''}
-          {c.lembradoEm ? ` · lembrado em ${formatarData(c.lembradoEm.slice(0, 10))}` : ''}
+          {c.lembradoEm ? ` · lembrado em ${formatarData(c.lembradoEm)}` : ''}
         </p>
         {!c.pagoEm ? (
           <div className="flex flex-wrap gap-2">
@@ -258,7 +258,7 @@ function Mensalidades({ aoMensagem }: { aoMensagem: (m: Mensagem) => void }) {
         <Botao tamanho="pequeno" variante="fantasma" onClick={() => setCompetencia(somarCompetencia(competencia, -1))} aria-label="Mês anterior">
           <ChevronLeft size={17} />
         </Botao>
-        <span className="min-w-[160px] text-center font-bold capitalize">{nomeDaCompetencia(competencia)}</span>
+        <span className="min-w-[160px] text-center font-bold">{inicialMaiuscula(nomeDaCompetencia(competencia))}</span>
         <Botao tamanho="pequeno" variante="fantasma" onClick={() => setCompetencia(somarCompetencia(competencia, 1))} aria-label="Próximo mês">
           <ChevronRight size={17} />
         </Botao>

@@ -32,7 +32,7 @@ export default function Inicio() {
       <section id="como-funciona" className="scroll-mt-20 border-y border-linha bg-papel">
         <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
           <h2 className="largo max-w-[22ch] text-[32px] sm:text-[40px]">Do serviço feito ao cliente de volta</h2>
-          <ol className="mt-12 grid gap-10 md:grid-cols-3">
+          <ol className="mt-12 grid grid-cols-1 gap-10 md:grid-cols-3">
             {[
               {
                 titulo: 'Registre o serviço',
@@ -86,7 +86,7 @@ export default function Inicio() {
       <section className="border-y border-linha bg-papel">
         <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
           <h2 className="largo text-[32px] sm:text-[40px]">Um lugar para os três lados da troca</h2>
-          <div className="mt-10 grid gap-5 md:grid-cols-3">
+          <div className="mt-10 grid grid-cols-1 gap-5 md:grid-cols-3">
             <Publico titulo="Oficinas" texto="Mais clientes voltando na hora certa e menos agenda vazia. Grátis para começar hoje." link="/oficina" acao="Abrir o painel" destaque />
             <Publico
               titulo="Fornecedores"

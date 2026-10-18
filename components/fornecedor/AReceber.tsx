@@ -11,7 +11,7 @@ import { confirmarPagamentoDoPedido } from '@/app/fornecedor/acoes';
 import { Numero } from '@/components/painel/Numero';
 import { useToast } from '@/components/Toasts';
 import { Botao, Chip, Vazio, classeBotao } from '@/components/ui';
-import { formatarMoeda, formatarTelefone } from '@/lib/formatos';
+import { formatarMoeda, formatarTelefone, plural } from '@/lib/formatos';
 import { quandoFoi } from '@/lib/loja/comum';
 import { AVISO_DO_RISCO, mensagemDeCobranca, resumirFaturas, SITUACOES_DA_FATURA, situacaoDaFatura, textoDoVencimento, type Fatura, type SituacaoDaFatura } from '@/lib/loja/credito-dados';
 import { linkWhatsApp } from '@/lib/whatsapp';
@@ -38,7 +38,7 @@ export function AReceber({ faturas, loja, hoje, temCredito }: { faturas: Fatura[
   return (
     <div className="flex flex-col gap-5">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <Numero rotulo="Em aberto" valor={formatarMoeda(resumo.aberto)} detalhe={`${resumo.porSituacao.aberta.length + resumo.porSituacao.vencida.length + resumo.porSituacao.aguardando_entrega.length} faturas`} />
+        <Numero rotulo="Em aberto" valor={formatarMoeda(resumo.aberto)} detalhe={plural(resumo.porSituacao.aberta.length + resumo.porSituacao.vencida.length + resumo.porSituacao.aguardando_entrega.length, 'fatura', 'faturas')} />
         <Numero rotulo="Vencido" valor={formatarMoeda(resumo.vencido)} detalhe={resumo.porSituacao.vencida.length ? 'Lembre a oficina pelo WhatsApp' : 'Nada vencido'} />
         <Numero rotulo="Recebido no mês" valor={formatarMoeda(resumo.recebidoNoMes)} />
       </div>

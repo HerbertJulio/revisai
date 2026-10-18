@@ -20,7 +20,7 @@ export function Mais() {
         <p className="text-tinta-2">Tudo o que a oficina tem além dos avisos, das ordens e da loja.</p>
       </header>
       {telas.length ? (
-        <ul className="grid gap-3 sm:grid-cols-2">
+        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {telas.map(({ href, rotulo, descricao, Icone }) => (
             <li key={href}>
               <Link href={href} className="flex items-center gap-3 rounded-2xl bg-papel-2 px-4 py-3.5 ring-1 ring-linha hover:brightness-[0.98]">

@@ -133,7 +133,7 @@ export function EquipeAdmin({ membros, convites, eu, entrada, agora }: { membros
         ) : (
           <Vazio titulo="Ninguém na equipe ainda" />
         )}
-        <ul className="grid gap-2 text-[13.5px] text-tinta-3 sm:grid-cols-3">
+        <ul className="grid grid-cols-1 gap-2 text-[13.5px] text-tinta-3 sm:grid-cols-3">
           {PAPEIS_EQUIPE.map((p) => (
             <li key={p.id}>
               <span className="font-semibold text-tinta-2">{p.nome}:</span> {p.descricao}
@@ -146,7 +146,7 @@ export function EquipeAdmin({ membros, convites, eu, entrada, agora }: { membros
         <h2 id="t-convidar" className="text-[21px]">
           Convidar
         </h2>
-        <form onSubmit={convidar} className="grid gap-4 rounded-2xl bg-papel p-4 ring-1 ring-linha sm:grid-cols-6 sm:p-5">
+        <form onSubmit={convidar} className="grid grid-cols-1 gap-4 rounded-2xl bg-papel p-4 ring-1 ring-linha sm:grid-cols-6 sm:p-5">
           <Campo rotulo="E-mail" htmlFor="eq-conv-email" className="sm:col-span-3">
             <input id="eq-conv-email" type="email" inputMode="email" autoCapitalize="none" spellCheck={false} className={classeEntrada} value={email} onChange={(e) => setEmail(e.target.value)} />
           </Campo>

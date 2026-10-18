@@ -15,7 +15,7 @@ import { aceiteEquivalente, embalagemComparavel, resumoDaResposta, textoDoPedido
 import { nomeCategoria } from '@/lib/catalogo';
 import { formatarDiaHora } from '@/lib/datas';
 import { haQuantoTempo } from '@/lib/entregas-dados';
-import { formatarMoeda, lerNumero } from '@/lib/formatos';
+import { formatarMoeda, lerNumero, noMeioDaFrase } from '@/lib/formatos';
 import type { ProdutoDaLoja } from '@/lib/loja/alertas';
 import { FUSO } from '@/lib/loja/comum';
 
@@ -208,7 +208,7 @@ function CartaoAlerta({ alerta: a, produtos }: { alerta: AlertaParaLoja; produto
 
       {a.minha ? (
         <p className={`rounded-xl px-3.5 py-2.5 text-[14px] ${a.minha.status === 'escolhida' ? 'bg-ok-claro text-ok' : 'bg-papel-2 text-tinta-2'}`}>
-          Sua resposta: {resumoDaResposta(a.minha, produtos.find((p) => p.id === a.minha?.produtoId) ?? null).toLowerCase()}
+          Sua resposta: {noMeioDaFrase(resumoDaResposta(a.minha, produtos.find((p) => p.id === a.minha?.produtoId) ?? null))}
           {a.minha.prazoEntrega ? `, entrega ${a.minha.prazoEntrega}` : ''}.
           {a.resultado === 'voce' && a.pedido ? (
             <>
@@ -224,7 +224,7 @@ function CartaoAlerta({ alerta: a, produtos }: { alerta: AlertaParaLoja; produto
       {aberto ? (
         modo ? (
           <div className="flex flex-col gap-3 rounded-xl bg-papel-2 p-3.5">
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Campo rotulo="Produto" htmlFor={`prod-${a.id}`}>
                 <select id={`prod-${a.id}`} className={classeEntrada} value={produto?.id ?? ''} onChange={(e) => setProdutoId(Number(e.target.value))}>
                   {(modo === 'aceita' ? comparaveis : daCategoria).map((p) => (

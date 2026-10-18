@@ -109,7 +109,7 @@ export function ComparativoDaRegiao() {
             {estado.dados.nivel === 'cidade' ? `${cidade}, ${uf}` : `Estado de ${uf} (a sua cidade ainda não tem 5 oficinas com conta)`}: {estado.dados.oficinas} ou mais oficinas.
           </p>
           <LegendaDaRegua />
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             {METRICAS.map((m) => (
               <LinhaDoComparativo key={m.id} metrica={m.id} valor={meus[m.id]} faixa={estado.dados![m.id]} />
             ))}

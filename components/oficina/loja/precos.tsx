@@ -39,7 +39,7 @@ export function SeloPrecoPago({ produto, preco }: { produto: Produto; preco: num
   const subiu = atual > pago.comparavel * 1.005;
   const desceu = atual < pago.comparavel * 0.995;
   return (
-    <span className={`inline-flex items-center gap-1 text-[12px] font-semibold ${subiu ? 'text-atraso' : desceu ? 'text-ok' : 'text-tinta-3'}`} title={`Última compra em ${formatarData(pago.quando.slice(0, 10))}`}>
+    <span className={`inline-flex items-center gap-1 text-[12px] font-semibold ${subiu ? 'text-atraso' : desceu ? 'text-ok' : 'text-tinta-3'}`} title={`Última compra em ${formatarData(pago.quando)}`}>
       {subiu ? <TrendingUp size={13} aria-hidden="true" /> : desceu ? <TrendingDown size={13} aria-hidden="true" /> : null}
       Pagou {textoComparavel(pago.comparavel, porLitro(produto))}
     </span>

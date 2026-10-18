@@ -70,7 +70,7 @@ export function Caixa({ dia, aoMudarDia, hoje, aoAbrir }: { dia: string; aoMudar
 
       {caixa.lancamentos.length ? (
         <>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <PorForma titulo="Entrou por forma" linhas={caixa.entradas} vazio="Nada entrou." />
             <PorForma titulo="Saiu por forma" linhas={caixa.saidas} vazio="Nada saiu." />
           </div>

@@ -181,7 +181,7 @@ export function ProAdmin({
                       <td className="sm:px-4 sm:py-3">
                         <p className="font-bold">{a.oficina_nome}</p>
                         <p className="text-[13px] text-tinta-3">
-                          {[resumoDaAssinatura(a), `criado ${dataCurta(a.criado_em.slice(0, 10), hoje)}`, a.observacao].filter(Boolean).join(', ')}
+                          {[resumoDaAssinatura(a), `criado ${dataCurta(a.criado_em, hoje)}`, a.observacao].filter(Boolean).join(', ')}
                         </p>
                         {uso ? (
                           <p className="num text-[13px] text-tinta-3">
@@ -283,7 +283,7 @@ export function ProAdmin({
                   <BellPlus size={18} className="text-tinta-3" aria-hidden="true" />
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold">{c.empresa || c.nome}</p>
-                    <p className="text-[13.5px] text-tinta-3">{[c.mensagem, dataCurta(c.criado_em.slice(0, 10), hoje)].filter(Boolean).join(', ')}</p>
+                    <p className="text-[13.5px] text-tinta-3">{[c.mensagem, dataCurta(c.criado_em, hoje)].filter(Boolean).join(', ')}</p>
                     {!c.oficinaId ? <p className="text-[13px] text-atraso">Não deu para saber a oficina pelo pedido. Ache a oficina em Oficinas e libere por lá.</p> : null}
                   </div>
                   {zap ? (
@@ -356,7 +356,7 @@ export function ProAdmin({
         }
       >
         {rascunho ? (
-          <div className="grid gap-4 sm:grid-cols-6">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-6">
             <Campo rotulo="Oficina" htmlFor="pa-nome" className="sm:col-span-4">
               <input id="pa-nome" className={classeEntrada} value={rascunho.oficinaNome} onChange={(e) => setRascunho({ ...rascunho, oficinaNome: e.target.value })} maxLength={120} />
             </Campo>
@@ -479,7 +479,7 @@ export function FolhaLiberar({ pedido, aoFechar }: { pedido: Liberacao | null; a
         </div>
       }
     >
-      <div className="grid gap-4 sm:grid-cols-6">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-6">
         <div className="sm:col-span-6">
           <p className="mb-2 text-[14px] font-semibold">Pacote</p>
           <div className="flex flex-wrap gap-2">

@@ -21,7 +21,7 @@ export default function Fornecedores() {
         </p>
       </div>
 
-      <div className="mt-14 grid gap-5 lg:grid-cols-2">
+      <div className="mt-14 grid grid-cols-1 gap-5 lg:grid-cols-2">
         {(Object.keys(PLANOS_FORNECEDOR) as PlanoFornecedor[]).map((id) => {
           const p = PLANOS_FORNECEDOR[id];
           const escuro = id === 'destaque';
@@ -49,7 +49,7 @@ export default function Fornecedores() {
         })}
       </div>
 
-      <div className="mt-5 grid gap-5 md:grid-cols-2">
+      <div className="mt-5 grid grid-cols-1 gap-5 md:grid-cols-2">
         <div className="flex flex-col gap-3 rounded-[22px] bg-papel px-6 py-7 ring-1 ring-linha">
           <Rocket size={24} className="text-tinta-2" aria-hidden="true" />
           <h2 className="text-[22px]">Impulsionar um produto</h2>

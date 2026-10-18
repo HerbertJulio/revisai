@@ -54,7 +54,7 @@ export function CadastroDaLoja({ loja, dono }: { loja: LinhaLoja; dono: boolean 
   const [salvando, iniciar] = useTransition();
 
   const fixos = (
-    <dl className="grid gap-x-6 gap-y-1 text-[14px] sm:grid-cols-3">
+    <dl className="grid grid-cols-1 gap-x-6 gap-y-1 text-[14px] sm:grid-cols-3">
       <div>
         <dt className="text-tinta-3">CNPJ</dt>
         <dd className="num font-semibold">{loja.cnpj ? formatarCnpj(loja.cnpj) : 'Não informado'}</dd>
@@ -109,7 +109,7 @@ export function CadastroDaLoja({ loja, dono }: { loja: LinhaLoja; dono: boolean 
         salvar();
       }}
     >
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Campo rotulo="Nome da loja" htmlFor="loja-nome" className="sm:col-span-2">
           <input id="loja-nome" className={classeEntrada} value={nome} onChange={(e) => setNome(e.target.value)} maxLength={120} required />
         </Campo>
@@ -257,7 +257,7 @@ export function ChavePixDaLoja({ pix, config, email, cidadeDaLoja }: { pix: PixD
 
       {editando ? (
         <div className="flex flex-col gap-4 rounded-xl bg-papel-2/60 p-4">
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Campo rotulo="Tipo da chave" htmlFor="pix-tipo">
               <select id="pix-tipo" className={classeEntrada} value={tipo} onChange={(e) => setTipo(e.target.value as TipoChavePix)}>
                 {TIPOS_PIX.map((t) => (

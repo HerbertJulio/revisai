@@ -29,7 +29,7 @@ import {
 } from '@/lib/alertas-dados';
 import { nomeCategoria, precoNaQuantidade, quantidadeComUnidade, type Produto } from '@/lib/catalogo';
 import { formatarDiaHora } from '@/lib/datas';
-import { formatarMoeda, formatarNumero, lerNumero, plural } from '@/lib/formatos';
+import { formatarMoeda, formatarNumero, lerNumero, noMeioDaFrase, plural } from '@/lib/formatos';
 import { useHoje } from '@/lib/ganchos';
 import { litrosPorUnidade } from '@/lib/catalogo';
 import { chaveDoProduto, ultimoPrecoPago } from '@/lib/precos';
@@ -278,7 +278,7 @@ export function FolhaNovoAlerta({
             </div>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <p className="text-sm font-semibold">Quantas {litros ? 'embalagens' : 'unidades'}</p>
               <div className="flex items-center gap-3">
@@ -698,7 +698,7 @@ export function ListaDeAlertas({ aoAbrir, aoComprar }: { aoAbrir: (id: string) =
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-semibold">{a.titulo}</span>
                   <span className="block truncate text-[13.5px] text-tinta-3">
-                    {textoDoPedidoDeAlerta(a)}, {resumoDoAlerta(a).toLowerCase()}
+                    {textoDoPedidoDeAlerta(a)}, {noMeioDaFrase(resumoDoAlerta(a))}
                   </span>
                 </span>
                 <Chip tom={FASES[fase].tom}>{FASES[fase].nome}</Chip>

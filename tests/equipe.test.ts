@@ -9,6 +9,7 @@ import {
   mensagemPedido,
   porFornecedor,
   quandoFoi,
+  situacaoDoPedido,
   situacaoPromocao,
   somaDosPedidos
 } from '@/lib/equipe-dados';
@@ -116,6 +117,21 @@ describe('pedidos no painel', () => {
     expect(mensagemPedido(p).replace(/\s/g, ' ')).toBe(
       'Olá! Aqui é da equipe do Revisaí. Recebemos o pedido NVF9VX da Auto Center Serra, com 2 itens, no total de R$ 179,30. Vamos combinar o pagamento e a entrega?'
     );
+  });
+
+  it('a situação do pedido vem das lojas; o pedido sem partes fica com a da equipe', () => {
+    const parte = (status: string) => ({ fornecedorId: 1, fornecedor: 'Loja', status, pagamento: 'pendente', subtotal: 10 });
+    const com = (...s: string[]) => situacaoDoPedido({ status: 'novo', partes: s.map(parte) });
+    expect(situacaoDoPedido({ status: 'em_contato' })).toBe('em_contato');
+    expect(situacaoDoPedido({ status: 'novo', partes: [] })).toBe('novo');
+    expect(com('novo', 'novo')).toBe('novo');
+    expect(com('novo', 'em_contato')).toBe('em_contato');
+    expect(com('novo', 'confirmado')).toBe('confirmado');
+    expect(com('saiu_entrega')).toBe('confirmado');
+    expect(com('entregue', 'novo')).toBe('confirmado');
+    expect(com('entregue', 'cancelado')).toBe('entregue');
+    expect(com('entregue')).toBe('entregue');
+    expect(com('cancelado', 'cancelado')).toBe('cancelado');
   });
 
   it('diz quando foi no horário de Brasília', () => {

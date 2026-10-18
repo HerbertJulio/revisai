@@ -172,7 +172,7 @@ export function SeusProdutos() {
         }
       >
         {rascunho ? (
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Campo rotulo="Categoria" htmlFor="pp-cat" className="sm:col-span-2">
               <select id="pp-cat" className={classeEntrada} value={rascunho.categoria} onChange={(e) => setRascunho({ ...rascunho, categoria: e.target.value as Categoria })}>
                 {CATEGORIAS.map((c) => (

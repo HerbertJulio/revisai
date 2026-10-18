@@ -203,7 +203,7 @@ export function Carrinho({ aberto, aoFechar, aoAcompanhar }: { aberto: boolean; 
             </p>
           ) : null}
           <p className="text-tinta-2">
-            A loja chama você no WhatsApp {formatarTelefone(whatsappDaConta ?? oficina.whatsapp)} para combinar a entrega. Dá para acompanhar o pedido e pagar por Pix aqui na Loja, em Pedidos. Os preços seguem as promoções de hoje.
+            A loja chama você no WhatsApp {formatarTelefone(whatsappDaConta ?? oficina.whatsapp)} para combinar a entrega. Dá para acompanhar o pedido aqui na Loja, em Pedidos, e pagar por lá o que for por Pix. Os preços seguem as promoções de hoje.
           </p>
         </div>
       </Folha>
@@ -319,7 +319,7 @@ export function Carrinho({ aberto, aoFechar, aoAcompanhar }: { aberto: boolean; 
             />
           ) : null}
           {conta ? (
-            <div className="grid gap-3 rounded-xl bg-papel-2 p-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 rounded-xl bg-papel-2 p-4 sm:grid-cols-2">
               <p className="text-[14px] font-semibold sm:col-span-2">Para a loja falar com você</p>
               <p className="-mt-2 text-[13px] text-tinta-3 sm:col-span-2">
                 O pedido sai em nome de <strong className="text-tinta-2">{daConta?.nome ?? oficina.nome}</strong>

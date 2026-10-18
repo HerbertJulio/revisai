@@ -28,7 +28,7 @@ export function PlanoFornecedorTela({ atual, comissao, mensalidade, dono }: { at
 
   return (
     <div className="flex flex-col gap-8">
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {(Object.keys(PLANOS_FORNECEDOR) as PlanoFornecedor[]).map((id) => {
           const p = PLANOS_FORNECEDOR[id];
           const eh = id === atual;

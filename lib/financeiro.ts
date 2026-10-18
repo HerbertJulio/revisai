@@ -2,7 +2,7 @@
 // do dia, o fiado com lembrete pelo WhatsApp e o Pix do balcão. Funções puras, sem navegador nem
 // banco, para testar; as telas ficam em components/oficina/financeiro.
 
-import { diasEntre, formatarData, somarDias, somarMeses } from './datas';
+import { diaEmBrasilia, diasEntre, formatarData, somarDias, somarMeses } from './datas';
 import { totais } from './documentos';
 import { formatarMoeda, lerNumero, primeiroNome } from './formatos';
 import { codigoPix, normalizarChavePix, txidPix, type TipoChavePix } from './pix';
@@ -534,7 +534,7 @@ export function txidDoFiado(lancamentoId: Id): string {
 export function pedidosSemConta(pedidos: PedidoEnviado[], lancamentos: Pick<Lancamento, 'pedidoCodigo'>[], hoje: string, dias = 60): PedidoEnviado[] {
   const lancados = new Set(lancamentos.map((l) => l.pedidoCodigo).filter(Boolean));
   const desde = somarDias(hoje, -dias);
-  return pedidos.filter((p) => !lancados.has(p.codigo) && p.total > 0 && p.quando.slice(0, 10) >= desde).sort((a, b) => b.quando.localeCompare(a.quando));
+  return pedidos.filter((p) => !lancados.has(p.codigo) && p.total > 0 && diaEmBrasilia(p.quando) >= desde).sort((a, b) => b.quando.localeCompare(a.quando));
 }
 
 /** As lojas do pedido ("Auto Peças Sul e Lubrificantes Norte"). */

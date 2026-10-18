@@ -1,4 +1,5 @@
-// A voz natural de uma frase do passo a passo (WAV). Sem voz pronta, 404: o navegador lê o texto.
+// A voz natural de uma frase do passo a passo (WAV). Sem voz pronta, 204 sem corpo: o navegador lê o
+// texto (sem erro no console de quem usa o app).
 
 import { permitido } from '@/lib/limite';
 import { fraseValida, versaoDaFrase } from '@/lib/voz-frases';
@@ -14,7 +15,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (new URL(req.url).searchParams.get('v') !== versaoDaFrase(id)) return new Response('Versão da frase não confere', { status: 404 });
   try {
     const wav = await vozDaFrase(id, () => permitido('voz-gerar', 30, 60));
-    if (!wav) return new Response('Sem voz pronta', { status: 404, headers: { 'Cache-Control': 'no-store' } });
+    if (!wav) return new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store' } });
     return new Response(new Blob([wav as Uint8Array<ArrayBuffer>], { type: 'audio/wav' }), {
       headers: {
         'Content-Type': 'audio/wav',
@@ -25,6 +26,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     });
   } catch (e) {
     console.error('[voz]', e);
-    return new Response('Sem voz pronta', { status: 404, headers: { 'Cache-Control': 'no-store' } });
+    return new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store' } });
   }
 }

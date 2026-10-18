@@ -41,7 +41,7 @@ function Distribuicao({ conta }: { conta: ContaNps }) {
       <div className="flex h-3 overflow-hidden rounded-full bg-papel-2" aria-hidden="true">
         {conta.respostas ? partes.map((p) => <span key={p.nome} className={p.cor} style={{ width: `${(100 * p.n) / conta.respostas}%` }} />) : null}
       </div>
-      <dl className="grid gap-2 sm:grid-cols-3">
+      <dl className="grid grid-cols-1 gap-2 sm:grid-cols-3">
         {partes.map((p) => (
           <div key={p.nome} className="rounded-xl bg-papel-2 px-3 py-2">
             <dt className="text-[13px] text-tinta-3">{p.nome}</dt>
