@@ -245,7 +245,8 @@ d('notas fiscais da oficina', () => {
       const { dono, o } = await comMecanico(b);
       await b.query(`update public.oficinas set teste_ate = current_date + 7 where id = $1`, [o]);
       await configurar(b, dono, o);
-      await b.query(`update public.oficinas set teste_ate = current_date - 1 where id = $1`, [o]);
+      // ontem no fuso de Brasília, que é o que o plano usa (o banco do Supabase roda em UTC)
+      await b.query(`update public.oficinas set teste_ate = (now() at time zone 'America/Sao_Paulo')::date - 1 where id = $1`, [o]);
       expect((await registrar(b, dono, o)).codigo).toBe('RV090');
     }));
 });
