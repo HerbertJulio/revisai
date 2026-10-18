@@ -33,6 +33,18 @@ export function planoDaConta(o: PlanoDaConta, hoje: string): PlanoAtual {
   return { tipo: 'gratis', ate: null, diasRestantes: null, podeTestar: !o.testeAte };
 }
 
+/**
+ * Beta: enquanto o Revisaí está em demonstração, o Pro fica liberado para todo mundo — com conta
+ * ou só no aparelho, sem precisar entrar nem pagar. Deixe `false` para voltar aos planos normais.
+ */
+export const BETA_PRO = true;
+
+/** O plano que o beta entrega: Pro, válido por muito tempo e sem oferta de teste. */
+export function planoBeta(hoje: string): PlanoAtual {
+  const ate = somarDias(hoje, 3650);
+  return { tipo: 'pro', ate, diasRestantes: diasEntre(hoje, ate), podeTestar: false };
+}
+
 /** O uso do mês que o banco devolve (uso_do_mes). */
 export interface UsoDoMes {
   plano: TipoPlano;
