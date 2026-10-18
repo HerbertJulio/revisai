@@ -20,9 +20,11 @@ import { formatarMoeda, plural, primeiroNome } from '@/lib/formatos';
 import { useHoje } from '@/lib/ganchos';
 import {
   avisosNoMes,
+  BETA_PRO,
   lerUsoDoMes,
   liberado,
   normalizarCodigo,
+  planoBeta,
   planoDaConta,
   podeAvisar,
   PRO,
@@ -103,7 +105,7 @@ export function usePlano(): UsoDoPlano {
   const contatos = useOficina((s) => s.contatos);
   const hoje = useHoje();
   return useMemo(() => {
-    const atual: PlanoAtual = oficina ? planoDaConta(oficina, hoje) : { tipo: 'gratis', ate: null, diasRestantes: null, podeTestar: false };
+    const atual: PlanoAtual = BETA_PRO ? planoBeta(hoje) : oficina ? planoDaConta(oficina, hoje) : { tipo: 'gratis', ate: null, diasRestantes: null, podeTestar: false };
     // os clientes de exemplo não gastam os avisos do grátis
     const avisos = avisosNoMes(Object.values(contatos).filter((c) => !ehExemplo(c.veiculoId)), hoje);
     const aberto = liberado(atual);
@@ -314,6 +316,12 @@ function FolhaDoPro({ motivo, aoFechar }: { motivo: MotivoPro | null; aoFechar: 
 /** A linha do plano no pé da lateral. */
 export function LinhaDoPlano() {
   const p = usePlano();
+  if (BETA_PRO)
+    return (
+      <Link href="/oficina/ajustes#plano" className="text-[13px] text-tinta-3 hover:text-caneta">
+        Pro liberado no beta
+      </Link>
+    );
   if (p.semConta)
     return (
       <Link href="/oficina/ajustes#plano" className="text-[13px] text-tinta-3 hover:text-caneta">
@@ -387,6 +395,21 @@ export function PlanoDaOficina() {
       }
     });
   }
+
+  if (BETA_PRO)
+    return (
+      <Secao id="plano" titulo="Plano">
+        <div className="flex flex-col gap-3 rounded-2xl bg-papel px-5 py-5 ring-1 ring-linha">
+          <div className="flex items-center gap-2">
+            <p className="text-[19px] font-extrabold">Pro</p>
+            <Chip tom="ok">Liberado no beta</Chip>
+          </div>
+          <p className="text-[14.5px] text-tinta-2">
+            Enquanto o Revisaí está em testes, o Pro fica liberado para todo mundo, sem pagar. Aproveite para experimentar tudo: avisos sem limite, ordem por voz, relatório de retorno, pedido de avaliação no Google e o alerta de preço.
+          </p>
+        </div>
+      </Secao>
+    );
 
   if (p.semConta)
     return (
