@@ -1,0 +1,5 @@
+# O mínimo para a integração do Supabase com o GitHub reconhecer a pasta: com "Deploy to production"
+# ligado, cada push na main aplica no banco as migrações novas de supabase/migrations. Nada de Auth,
+# API ou seed vai daqui para a produção (a integração ignora). O banco local do dia a dia é o de
+# scripts/supabase-local, que não usa este arquivo.
+project_id = "revisai"
