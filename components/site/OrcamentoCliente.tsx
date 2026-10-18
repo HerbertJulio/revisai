@@ -153,7 +153,7 @@ function Orcamento({ d }: { d: DadosOrcamento }) {
       </section>
 
       {d.pz || d.pg ? (
-        <dl className="grid gap-3 sm:grid-cols-2">
+        <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {d.pz ? (
             <div className="rounded-2xl bg-papel px-4 py-3 ring-1 ring-linha">
               <dt className="text-[13px] font-semibold text-tinta-3">Prazo</dt>

@@ -151,7 +151,7 @@ function limparOleo(o: EspecOleo): EspecOleo {
 export function CamposCliente({ valor, aoMudar, erros = {} }: { valor: RascunhoCliente; aoMudar: (c: RascunhoCliente) => void; erros?: Partial<Record<keyof RascunhoCliente, string>> }) {
   const muda = (campo: keyof RascunhoCliente) => (e: React.ChangeEvent<HTMLInputElement>) => aoMudar({ ...valor, [campo]: e.target.value });
   return (
-    <div className="grid gap-4 sm:grid-cols-2">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
       <Campo rotulo="Nome do cliente" htmlFor="cli-nome" erro={erros.nome} className="sm:col-span-2">
         <input id="cli-nome" className={classeEntrada} value={valor.nome} onChange={muda('nome')} autoComplete="off" />
       </Campo>
@@ -178,7 +178,7 @@ export function CamposVeiculo({
 }) {
   const muda = (campo: keyof RascunhoVeiculo) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => aoMudar({ ...valor, [campo]: e.target.value });
   return (
-    <div className="grid gap-4 sm:grid-cols-6">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-6">
       <Campo rotulo="Placa" htmlFor="v-placa" erro={erros.placa} className="sm:col-span-2">
         <input
           id="v-placa"
@@ -287,7 +287,7 @@ export function EditorOleo({ valor, aoMudar, textoCarro }: { valor: RascunhoVeic
         </div>
         <p className="text-[13px] text-tinta-3">Marque mais de uma se o manual aceitar alternativas.</p>
       </div>
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Campo rotulo="API mínima" htmlFor="o-api">
           <select id="o-api" className={classeEntrada} value={oleo.api ?? ''} onChange={(e) => mudaOleo({ api: e.target.value || undefined })}>
             <option value="">Não sei</option>

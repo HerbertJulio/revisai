@@ -56,7 +56,7 @@ export function DemoEtiqueta() {
       </div>
 
       <div className="rounded-[22px] bg-papel p-5 ring-1 ring-linha sm:p-6">
-        <div className="grid gap-5 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
           <label className="flex flex-col gap-2">
             <span className="flex items-baseline justify-between gap-2 text-[14px] font-semibold">
               Última troca

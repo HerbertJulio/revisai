@@ -48,7 +48,7 @@ export function Planos() {
         </Botao>
       </div>
       {lista.length ? (
-        <ul className="grid gap-3 sm:grid-cols-2">
+        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {lista.map((p) => (
             <li key={p.id} className="flex flex-col gap-2 rounded-2xl bg-papel px-4 py-3.5 ring-1 ring-linha">
               <div className="flex flex-wrap items-center gap-2">

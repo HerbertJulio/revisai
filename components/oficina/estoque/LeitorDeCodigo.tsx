@@ -334,7 +334,7 @@ function CodigoNovo({ codigo, aoLigar, aoVoltar }: { codigo: string; aoLigar: (i
       ) : null}
       <section className="flex flex-col gap-3">
         <h3 className="font-bold">Ou cadastre um produto novo com esse código</h3>
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Campo rotulo="Nome" htmlFor="cod-nome" className="sm:col-span-2">
             <input id="cod-nome" className={classeEntrada} value={novo.nome} onChange={(e) => setNovo({ ...novo, nome: e.target.value })} placeholder="Ex.: Filtro de óleo PSL 55" />
           </Campo>

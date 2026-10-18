@@ -2,7 +2,7 @@
 // com a vistoria cobrada); aprovado, vira uma ordem já descrita. A ordem concluída registra o serviço,
 // que é o que gera os avisos das próximas trocas, e tira as peças do estoque.
 
-import { formatarData } from './datas';
+import { diaEmBrasilia, formatarData } from './datas';
 import { formatarMoeda, formatarPlaca, primeiroNome } from './formatos';
 import { servico as infoServico } from './manutencao';
 import type { Documento, Id, ItemServico, LinhaDocumento, ProdutoUsado, ServicoId, SituacaoDocumento, TipoDocumento } from './tipos';
@@ -48,7 +48,7 @@ export function totais(d: Pick<Documento, 'linhas' | 'desconto'>): Totais {
 
 /** Até quando vale o orçamento: a data em que foi mandado (ou feito) mais a validade. */
 export function validoAte(d: Pick<Documento, 'data' | 'enviadoEm' | 'validadeDias'>): string {
-  const inicio = d.enviadoEm ? d.enviadoEm.slice(0, 10) : d.data;
+  const inicio = d.enviadoEm ? diaEmBrasilia(d.enviadoEm) : d.data;
   const [a, m, dia] = inicio.split('-').map(Number);
   return new Date(Date.UTC(a, m - 1, dia + (d.validadeDias ?? VALIDADE_PADRAO))).toISOString().slice(0, 10);
 }

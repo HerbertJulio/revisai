@@ -67,7 +67,7 @@ export default function Planos() {
     <div className="mx-auto max-w-6xl px-4 pt-12 sm:px-6 lg:pt-16">
       <h1 className="largo max-w-[20ch] text-[38px] leading-[1.02] sm:text-[52px]">Comece grátis. Avise todos os clientes no Pro.</h1>
 
-      <div className="mt-12 grid gap-5 lg:grid-cols-2">
+      <div className="mt-12 grid grid-cols-1 gap-5 lg:grid-cols-2">
         <div className="flex flex-col gap-6 rounded-[22px] bg-papel px-6 py-8 ring-1 ring-linha sm:px-8">
           <div>
             <h2 className="text-[26px]">Grátis</h2>

@@ -11,6 +11,7 @@ import {
   porFornecedor,
   quandoFoi,
   SITUACOES_PEDIDO,
+  situacaoDoPedido,
   type Pedido,
   type SituacaoPedido
 } from '@/lib/equipe-dados';
@@ -43,8 +44,8 @@ export function ListaPedidos({
   const [lista, aplicar] = useOptimistic(pedidos, (atual: Pedido[], m: { id: number; status: SituacaoPedido }) =>
     atual.map((p) => (p.id === m.id ? { ...p, status: m.status } : p))
   );
-  const contagem = useMemo(() => contarPor(lista, (p) => p.status), [lista]);
-  const [filtro, setFiltro] = useState<FiltroPedido>(() => ((contarPor(pedidos, (p) => p.status).novo ?? 0) > 0 ? 'novo' : 'todos'));
+  const contagem = useMemo(() => contarPor(lista, situacaoDoPedido), [lista]);
+  const [filtro, setFiltro] = useState<FiltroPedido>(() => ((contarPor(pedidos, situacaoDoPedido).novo ?? 0) > 0 ? 'novo' : 'todos'));
   const [busca, setBusca] = useState('');
   const [limite, setLimite] = useState(POR_PAGINA);
   const textos = useMemo(
@@ -53,7 +54,7 @@ export function ListaPedidos({
   );
   const filtrados = !comFiltros
     ? lista
-    : (filtro === 'todos' ? lista : lista.filter((p) => p.status === filtro)).filter((p) => !busca.trim() || combina(textos.get(p.id) ?? '', busca));
+    : (filtro === 'todos' ? lista : lista.filter((p) => situacaoDoPedido(p) === filtro)).filter((p) => !busca.trim() || combina(textos.get(p.id) ?? '', busca));
   const visiveis = comFiltros ? filtrados.slice(0, limite) : filtrados;
 
   function filtrar(f: FiltroPedido) {
@@ -143,7 +144,9 @@ function CartaoPedido({
   /** null quando o papel só vê. */
   aoMudar: ((p: Pedido, s: SituacaoPedido, comDesfazer?: boolean) => void) | null;
 }) {
-  const s = situacao(p.status);
+  const s = situacao(situacaoDoPedido(p));
+  // com as lojas cuidando das partes, a situação vem delas; a equipe só muda a do pedido antigo
+  const daEquipe = !p.partes?.length;
   const grupos = porFornecedor(p.itens);
   const whatsapp = linkWhatsApp(p.oficina_whatsapp, mensagemPedido(p));
   const local = [p.oficina_cidade, p.oficina_uf].filter(Boolean).join(', ');
@@ -212,14 +215,14 @@ function CartaoPedido({
             rel="noopener noreferrer"
             className={classeBotao('whatsapp', 'pequeno')}
             onClick={() => {
-              if (p.status === 'novo' && aoMudar) aoMudar(p, 'em_contato', true);
+              if (daEquipe && p.status === 'novo' && aoMudar) aoMudar(p, 'em_contato', true);
             }}
           >
             <MessageCircle size={16} aria-hidden="true" />
             Chamar {formatarTelefone(p.oficina_whatsapp)}
           </a>
         ) : null}
-        {aoMudar ? (
+        {aoMudar && daEquipe ? (
           <SeletorSituacao valor={p.status} opcoes={SITUACOES_PEDIDO} aoMudar={(v) => aoMudar(p, v)} rotulo={`Situação do pedido ${p.codigo}`} />
         ) : (
           <span className="ml-auto">

@@ -2,18 +2,16 @@
 
 import { z } from 'zod';
 import type { SituacaoParte } from '../marketplace-dados';
+import { diaEmBrasilia } from '../datas';
 
 export const FUSO = 'America/Sao_Paulo';
 
 export type Tom = 'neutro' | 'oleo' | 'atraso' | 'ok' | 'caneta';
 
-const formatoDia = new Intl.DateTimeFormat('en-CA', { timeZone: FUSO, year: 'numeric', month: '2-digit', day: '2-digit' });
 const formatoHora = new Intl.DateTimeFormat('pt-BR', { timeZone: FUSO, hour: '2-digit', minute: '2-digit', hour12: false });
 
-/** O dia no horário de Brasília, como 'AAAA-MM-DD'. */
-export function diaEmBrasilia(instante: number | string | Date): string {
-  return formatoDia.format(new Date(instante));
-}
+/** O dia no horário de Brasília, como 'AAAA-MM-DD' (o mesmo de lib/datas). */
+export { diaEmBrasilia };
 
 export function hojeEmBrasilia(): string {
   return diaEmBrasilia(Date.now());
@@ -34,7 +32,7 @@ export function quandoFoi(iso: string, agora: number): string {
 
 /** Data de calendário 'AAAA-MM-DD' como '31/10' (ano atual) ou '31/10/2027'. */
 export function dataCurta(dia: string, hoje: string): string {
-  const [a, m, d] = dia.slice(0, 10).split('-');
+  const [a, m, d] = diaEmBrasilia(dia).split('-');
   return a === hoje.slice(0, 4) ? `${d}/${m}` : `${d}/${m}/${a}`;
 }
 

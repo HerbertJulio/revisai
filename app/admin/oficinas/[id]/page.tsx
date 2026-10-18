@@ -78,7 +78,7 @@ export default async function PaginaOficina({ params }: { params: Promise<{ id: 
         <ChipPlano plano={plano} proAte={o.pro_ate} testeAte={o.teste_ate} />
         {o.fundador ? <Chip tom="caneta">Fundadora</Chip> : null}
         {!o.ativa ? <Chip tom="atraso">Desativada</Chip> : null}
-        {o.excluir_em ? <Chip tom="atraso">Pediu para apagar, sai em {formatarData(o.excluir_em.slice(0, 10))}</Chip> : null}
+        {o.excluir_em ? <Chip tom="atraso">Pediu para apagar, sai em {formatarData(o.excluir_em)}</Chip> : null}
         {zap ? (
           <a href={zap} target="_blank" rel="noopener noreferrer" className={classeBotao('secundario', 'pequeno', 'ml-auto')}>
             <MessageCircle size={15} aria-hidden="true" /> {formatarTelefone(o.whatsapp ?? '')}
@@ -103,7 +103,7 @@ export default async function PaginaOficina({ params }: { params: Promise<{ id: 
         <Numero rotulo="Compras recentes na loja" valor={formatarMoeda(totalCompras)} detalhe={plural(compras.length, 'parte de pedido', 'partes de pedido')} />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Secao titulo="Cadastro">
           <dl className="divide-y divide-linha rounded-2xl bg-papel ring-1 ring-linha">
             <Linha rotulo="Pro até">{o.pro_ate ? formatarData(o.pro_ate) : 'nunca teve'}</Linha>
@@ -120,7 +120,7 @@ export default async function PaginaOficina({ params }: { params: Promise<{ id: 
                 <li key={m.user_id} className="flex flex-wrap items-baseline justify-between gap-x-3 px-4 py-2.5 sm:px-5">
                   <span className="font-semibold break-all">{m.email ?? m.nome ?? 'Conta sem e-mail'}</span>
                   <span className="text-[14px] text-tinta-3">
-                    {nomeDoPapel('oficina', m.papel)}, desde {formatarData(m.criado_em.slice(0, 10))}
+                    {nomeDoPapel('oficina', m.papel)}, desde {formatarData(m.criado_em)}
                   </span>
                 </li>
               ))}
@@ -128,7 +128,7 @@ export default async function PaginaOficina({ params }: { params: Promise<{ id: 
                 <li key={c.id} className="flex flex-wrap items-baseline justify-between gap-x-3 px-4 py-2.5 sm:px-5">
                   <span className="font-semibold break-all text-tinta-2">{c.email}</span>
                   <span className="text-[14px] text-tinta-3">
-                    convite de {nomeDoPapel('oficina', c.papel).toLowerCase()}, vale até {formatarData(c.expira_em.slice(0, 10))}
+                    convite de {nomeDoPapel('oficina', c.papel).toLowerCase()}, vale até {formatarData(c.expira_em)}
                   </span>
                 </li>
               ))}

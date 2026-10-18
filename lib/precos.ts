@@ -184,7 +184,7 @@ export function lerPreco(atual: Oferta, pago: PrecoPago | null, ofertas: Oferta[
   const litro = porLitro(atual.produto);
   const outras = ofertas.filter((o) => o.produto.id !== atual.produto.id);
   const maisBarata = outras.filter((o) => o.comparavel < atual.comparavel * (1 - IGUAL)).sort((a, b) => a.comparavel - b.comparavel)[0];
-  const quando = pago ? ` em ${formatarData(pago.quando.slice(0, 10))}` : '';
+  const quando = pago ? ` em ${formatarData(pago.quando)}` : '';
 
   if (pago) {
     const diferenca = Math.round((atual.comparavel - pago.comparavel) * 100) / 100;

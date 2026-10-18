@@ -8,7 +8,7 @@ import { ListaPedidos } from '@/components/equipe/ListaPedidos';
 import { Moldura } from '@/components/equipe/Moldura';
 import { Numero } from '@/components/painel/Numero';
 import { Secao, Vazio } from '@/components/ui';
-import { dataCurta, diaEmBrasilia, diasParaAcabar, situacaoPromocao, somaDosPedidos } from '@/lib/equipe-dados';
+import { dataCurta, diaEmBrasilia, diasParaAcabar, situacaoDoPedido, situacaoPromocao, somaDosPedidos } from '@/lib/equipe-dados';
 import { buscarCadastros, buscarLoja, buscarPedidos, contarNovos, listarLojas } from '@/lib/equipe/dados';
 import { COOKIE_APARELHO_NOVO, descricaoDoAparelho } from '@/lib/equipe/entrada';
 import { pode } from '@/lib/equipe/papeis';
@@ -40,9 +40,9 @@ export default async function PaginaResumo() {
   const mensalidades = lojas.dados.filter((f) => f.ativo && f.contrato?.plano === 'destaque').reduce((s, f) => s + (f.contrato?.mensalidade ?? 0), 0);
   const erro = pedidos.erro ?? cadastros.erro ?? loja.erro ?? lojas.erro;
 
-  const pedidosNovos = pedidos.dados.filter((p) => p.status === 'novo');
+  const pedidosNovos = pedidos.dados.filter((p) => situacaoDoPedido(p) === 'novo');
   const cadastrosNovos = cadastros.dados.filter((c) => c.situacao === 'novo');
-  const emAndamento = pedidos.dados.filter((p) => p.status === 'em_contato' || p.status === 'confirmado');
+  const emAndamento = pedidos.dados.filter((p) => ['em_contato', 'confirmado'].includes(situacaoDoPedido(p)));
   const produtos = new Map(loja.dados.produtos.map((p) => [p.id, p]));
   const acabando = loja.dados.promocoes
     .filter((pr) => situacaoPromocao(pr, hoje) === 'em_vigor' && diasParaAcabar(pr.fim, hoje) <= 7)

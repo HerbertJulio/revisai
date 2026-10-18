@@ -69,7 +69,7 @@ export function ListaDeDevolucoes({ aoAbrir, aoAbrirPedido }: { aoAbrir: (a: Abe
   const partes = new Map(Object.values(pedidos).flatMap((p) => p.partes.map((x) => [x.id, x] as const)));
   return (
     <Secao titulo="Garantia e devolução" descricao="Os pedidos que você fez às lojas e o que cada uma respondeu.">
-      <ul className="grid gap-3 md:grid-cols-2">
+      <ul className="grid grid-cols-1 gap-3 md:grid-cols-2">
         {devolucoes.map((d) => (
           <li key={d.id}>
             <CartaoDevolucao d={d} parte={partes.get(d.parteId)} aoAbrir={aoAbrir} aoAbrirPedido={aoAbrirPedido} />
@@ -139,7 +139,7 @@ function CartaoDevolucao({
           </p>
           <p className="text-[13px] text-tinta-3">
             {d.codigo ? <span className="num tracking-wider">{d.codigo}</span> : null}
-            {d.codigo ? ', ' : ''}pedido em {formatarData(d.criadoEm.slice(0, 10))}
+            {d.codigo ? ', ' : ''}pedido em {formatarData(d.criadoEm)}
           </p>
         </div>
         <Chip tom={s.tom}>{s.nome}</Chip>
@@ -327,7 +327,7 @@ function FormularioDevolucao({ abertura, aoFechar }: { abertura: AberturaDaDevol
 
         <fieldset className="flex flex-col gap-2">
           <legend className="mb-1 text-[14px] font-bold">O que você precisa</legend>
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {(['devolucao', 'garantia'] as const).map((t) => (
               <label key={t} className={`flex cursor-pointer flex-col gap-0.5 rounded-xl px-3.5 py-3 ring-1 ${tipo === t ? 'bg-papel-2 ring-2 ring-tinta' : 'ring-linha hover:ring-tinta-3'}`}>
                 <span className="flex items-center gap-2 font-semibold">

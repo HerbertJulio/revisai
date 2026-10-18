@@ -31,6 +31,7 @@ interface Rascunho {
   comissao: string;
   mensalidade: string;
   email: string;
+  cnpj: string;
   observacao: string;
   /** A loja já tem contrato (só o financeiro muda). */
   temContrato: boolean;
@@ -51,6 +52,7 @@ function rascunhoDe(f?: LojaAdmin): Rascunho {
     comissao: String(f?.contrato?.comissao_percentual ?? PLANOS_FORNECEDOR[plano].comissao).replace('.', ','),
     mensalidade: String(f?.contrato?.mensalidade ?? PLANOS_FORNECEDOR[plano].mensalidade).replace('.', ','),
     email: f?.contrato?.email ?? f?.email ?? '',
+    cnpj: f?.cnpj ? formatarCnpj(f.cnpj) : '',
     observacao: f?.contrato?.observacao ?? '',
     temContrato: f?.contrato != null
   };
@@ -209,6 +211,7 @@ export function FornecedoresAdmin({ lojas, leads, hoje, papel, site }: { lojas: 
                         {[
                           [f.cidade, f.uf].filter(Boolean).join(', '),
                           f.cnpj ? `CNPJ ${formatarCnpj(f.cnpj)}` : null,
+                          f.contrato?.email || f.email || null,
                           plural(f.produtosAtivos, 'produto ativo', 'produtos ativos'),
                           `comissão de ${String(f.contrato?.comissao_percentual ?? 5).replace('.', ',')}%`
                         ]
@@ -238,7 +241,7 @@ export function FornecedoresAdmin({ lojas, leads, hoje, papel, site }: { lojas: 
                     {f.convites.map((c) => (
                       <p key={c.id} className="flex flex-wrap items-center gap-x-2">
                         <span className="font-semibold">{c.email}</span>
-                        <span className="text-tinta-3">convite de {c.papel === 'dono' ? 'dono' : 'vendedor'}, vale até {dataCurta(c.expiraEm.slice(0, 10), hoje)}</span>
+                        <span className="text-tinta-3">convite de {c.papel === 'dono' ? 'dono' : 'vendedor'}, vale até {dataCurta(c.expiraEm, hoje)}</span>
                         {podeConvidar ? (
                           <button
                             type="button"
@@ -327,7 +330,7 @@ export function FornecedoresAdmin({ lojas, leads, hoje, papel, site }: { lojas: 
         }
       >
         {rascunho ? (
-          <div className="grid gap-4 sm:grid-cols-6">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-6">
             <Campo rotulo="Nome da loja" htmlFor="fa-nome" className="sm:col-span-6">
               <input id="fa-nome" className={classeEntrada} value={rascunho.nome} onChange={(e) => setRascunho({ ...rascunho, nome: e.target.value })} maxLength={120} />
             </Campo>
@@ -347,12 +350,15 @@ export function FornecedoresAdmin({ lojas, leads, hoje, papel, site }: { lojas: 
             <Campo rotulo="E-mail" htmlFor="fa-email" className="sm:col-span-3">
               <input id="fa-email" className={classeEntrada} value={rascunho.email} onChange={(e) => setRascunho({ ...rascunho, email: e.target.value })} inputMode="email" />
             </Campo>
+            <Campo rotulo="CNPJ" htmlFor="fa-cnpj" className="sm:col-span-3" dica="A loja vê, mas só a equipe muda.">
+              <input id="fa-cnpj" className={classeEntrada} value={rascunho.cnpj} onChange={(e) => setRascunho({ ...rascunho, cnpj: e.target.value })} inputMode="numeric" maxLength={18} placeholder="00.000.000/0000-00" />
+            </Campo>
             <Campo rotulo="Descrição na loja" htmlFor="fa-desc" className="sm:col-span-6" dica="Aparece no detalhe dos produtos. Ex.: entrega em 24 horas na capital.">
               <textarea id="fa-desc" rows={2} className={classeArea} value={rascunho.descricao} onChange={(e) => setRascunho({ ...rascunho, descricao: e.target.value })} maxLength={400} />
             </Campo>
             <div className="sm:col-span-6">
               <p className="mb-2 text-[14px] font-semibold">Plano</p>
-              <div className="grid gap-2 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {(Object.keys(PLANOS_FORNECEDOR) as PlanoFornecedor[]).map((id) => {
                   const p = PLANOS_FORNECEDOR[id];
                   const sel = rascunho.plano === id;

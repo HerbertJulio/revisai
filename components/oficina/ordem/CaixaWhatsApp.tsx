@@ -84,7 +84,7 @@ export function CaixaWhatsApp({ aoAbrir }: { aoAbrir: (r: RascunhoParaApp, fotos
                   {r.ordem.servicos.length ? `, ${r.ordem.servicos.map((s) => infoServico(s.servico).nome.toLowerCase()).join(', ')}` : ''}
                 </p>
                 <p className="text-[13.5px] text-tinta-3">
-                  {formatarData(r.criadoEm.slice(0, 10))}, {audios} {audios === 1 ? 'áudio' : 'áudios'} e {fotos} {fotos === 1 ? 'foto' : 'fotos'}
+                  {formatarData(r.criadoEm)}, {audios} {audios === 1 ? 'áudio' : 'áudios'} e {fotos} {fotos === 1 ? 'foto' : 'fotos'}
                 </p>
               </div>
               <Botao tamanho="pequeno" variante="escuro" onClick={() => void abrir(r)} disabled={abrindo != null}>

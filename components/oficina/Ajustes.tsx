@@ -107,7 +107,7 @@ function DadosOficina() {
   return (
     <Secao id="oficina" titulo="Oficina" descricao="Aparece na mensagem para o cliente, no cartão de manutenção e nos pedidos da loja.">
       <Cartao>
-        <div className="grid gap-4 sm:grid-cols-6">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-6">
           <Campo rotulo="Nome" htmlFor="of-nome" className="sm:col-span-3">
             <input id="of-nome" className={classeEntrada} value={oficina.nome} onChange={(e) => salvar({ nome: e.target.value })} />
           </Campo>
@@ -218,7 +218,7 @@ function Avisos() {
             <p className="font-semibold">Ou quando faltar (pela quilometragem)</p>
             <Opcoes valor={prefs.antecedenciaKm} opcoes={kmOpcoes.includes(prefs.antecedenciaKm) ? kmOpcoes : [...kmOpcoes, prefs.antecedenciaKm].sort((a, b) => a - b)} aoMudar={(v) => salvar({ antecedenciaKm: v })} formato={(v) => `${v.toLocaleString('pt-BR')} km`} />
           </div>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Campo rotulo="Rodagem para carros sem histórico (km por mês)" htmlFor="aj-kmmes" dica="A média no Brasil fica perto de 1.000 km por mês. Com duas visitas, o app usa o histórico do carro.">
               <input
                 id="aj-kmmes"

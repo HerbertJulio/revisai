@@ -355,7 +355,7 @@ function VistaSemana({ dia, hoje, filtro, aoAbrirDia }: { dia: string; hoje: str
   const dias = diasDaSemana(dia);
 
   return (
-    <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-label="Semana">
+    <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-label="Semana">
       {dias.map((d) => {
         const doDia = todos.filter((a) => a.data === d);
         const visiveis = filtro ? doDia.filter((a) => a.profissionalId === filtro) : doDia;

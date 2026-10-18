@@ -2,14 +2,21 @@
 // cada tela que abriu com internet, mais os arquivos do app), mostra as notificações do resumo do
 // dia e os avisos que chegam por Web Push, e abre a tela certa ao tocar neles. Ao sair da conta, o
 // app apaga essa cópia (components/conta/sair.ts).
-const CACHE = 'revisai-app-v1';
+//
+// Guardar é só para abrir sem internet: se o aparelho não tiver espaço, a tela segue com a resposta
+// da internet e as cópias mais antigas saem. Cada publicação traz arquivos novos, então só ficam os
+// mais recentes (LIMITE_ARQUIVOS e LIMITE_TELAS).
+const ARQUIVOS = 'revisai-app-v2-arquivos';
+const TELAS = 'revisai-app-v2-telas';
+const LIMITE_ARQUIVOS = 300;
+const LIMITE_TELAS = 40;
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (evento) =>
   evento.waitUntil(
     (async () => {
       const chaves = await caches.keys();
-      await Promise.all(chaves.filter((k) => k.startsWith('revisai-app-') && k !== CACHE).map((k) => caches.delete(k)));
+      await Promise.all(chaves.filter((k) => k.startsWith('revisai-app-') && k !== ARQUIVOS && k !== TELAS).map((k) => caches.delete(k)));
       await self.clients.claim();
     })()
   )
@@ -25,28 +32,62 @@ function ehArquivoFixo(url) {
   return url.pathname.startsWith('/_next/static/') || /^\/icone[-\w]*\.png$/.test(url.pathname) || url.pathname === '/manifest.webmanifest';
 }
 
+// deixa só as `manter` cópias mais novas (as chaves vêm na ordem em que foram guardadas)
+async function aparar(cache, manter) {
+  const chaves = await cache.keys();
+  if (chaves.length > manter) await Promise.all(chaves.slice(0, chaves.length - manter).map((k) => cache.delete(k)));
+}
+
+async function guardar(nome, pedido, resposta, limite) {
+  try {
+    const cache = await caches.open(nome);
+    try {
+      await cache.put(pedido, resposta);
+    } catch {
+      // sem espaço no aparelho: solta a metade mais antiga e segue sem esta cópia
+      await aparar(cache, Math.floor((await cache.keys()).length / 2));
+      return;
+    }
+    await aparar(cache, limite);
+  } catch {
+    // nunca quebra a tela por não conseguir guardar
+  }
+}
+
+async function guardado(nome, pedido, opcoes) {
+  try {
+    return await caches.match(pedido, { ...opcoes, cacheName: nome });
+  } catch {
+    return undefined;
+  }
+}
+
 // arquivos do app têm o nome com o conteúdo: o que está guardado vale para sempre
-async function primeiroGuardado(pedido) {
-  const cache = await caches.open(CACHE);
-  const guardado = await cache.match(pedido);
-  if (guardado) return guardado;
+async function primeiroGuardado(evento) {
+  const pedido = evento.request;
+  const copia = await guardado(ARQUIVOS, pedido);
+  if (copia) return copia;
   const resposta = await fetch(pedido);
-  if (resposta.ok && resposta.type === 'basic') await cache.put(pedido, resposta.clone());
+  // no desenvolvimento (?v=) cada mudança vira um arquivo novo: não vale guardar
+  if (resposta.ok && resposta.type === 'basic' && !new URL(pedido.url).searchParams.has('v')) {
+    evento.waitUntil(guardar(ARQUIVOS, pedido, resposta.clone(), LIMITE_ARQUIVOS));
+  }
   return resposta;
 }
 
 // telas: sempre da internet; sem internet, a última cópia daquela tela (ou do início do app)
-async function primeiroInternet(pedido) {
-  const cache = await caches.open(CACHE);
+async function primeiroInternet(evento) {
+  const pedido = evento.request;
+  let resposta;
   try {
-    const resposta = await fetch(pedido);
-    if (resposta.ok && resposta.type === 'basic' && !resposta.redirected) await cache.put(pedido, resposta.clone());
-    return resposta;
-  } catch (erro) {
-    const guardado = (await cache.match(pedido, { ignoreSearch: true })) || (await cache.match('/oficina', { ignoreSearch: true }));
-    if (guardado) return guardado;
+    resposta = await fetch(pedido);
+  } catch {
+    const copia = (await guardado(TELAS, pedido, { ignoreSearch: true })) || (await guardado(TELAS, '/oficina', { ignoreSearch: true }));
+    if (copia) return copia;
     return new Response(PAGINA_SEM_INTERNET, { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
   }
+  if (resposta.ok && resposta.type === 'basic' && !resposta.redirected) evento.waitUntil(guardar(TELAS, pedido, resposta.clone(), LIMITE_TELAS));
+  return resposta;
 }
 
 self.addEventListener('fetch', (evento) => {
@@ -55,10 +96,10 @@ self.addEventListener('fetch', (evento) => {
   const url = new URL(pedido.url);
   if (url.origin !== self.location.origin) return;
   if (ehArquivoFixo(url)) {
-    evento.respondWith(primeiroGuardado(pedido));
+    evento.respondWith(primeiroGuardado(evento));
     return;
   }
-  if (pedido.mode === 'navigate' && ehDoApp(url)) evento.respondWith(primeiroInternet(pedido));
+  if (pedido.mode === 'navigate' && ehDoApp(url)) evento.respondWith(primeiroInternet(evento));
 });
 
 self.addEventListener('push', (evento) => {

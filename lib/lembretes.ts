@@ -83,7 +83,9 @@ export function mensagemDoLembrete(
     return `${oi} Lembra do que vimos no seu ${carro} e ficou para depois: ${item}${valor}? Quer marcar um horário para fazer? É só responder esta mensagem.`;
   }
   if (l.motivo === 'recall') {
-    return `${oi} Saiu um recall para o seu ${carro}: ${item}. O reparo do recall é feito sem custo pela montadora. Quer ajuda para agendar? É só responder esta mensagem.`;
+    // a descrição do lembrete já começa com "Recall:" e pode terminar com ponto
+    const defeito = noMeioDaFrase(l.descricao.trim().replace(/^recall\s*[:\-–]\s*/i, '')).replace(/[.!;\s]+$/, '');
+    return `${oi} Saiu um recall para o seu ${carro}: ${defeito}. O reparo do recall é feito sem custo pela montadora. Quer ajuda para agendar? É só responder esta mensagem.`;
   }
   return `${oi} Passando para lembrar sobre o seu ${carro}: ${item}. Quer marcar um horário? É só responder esta mensagem.`;
 }

@@ -50,7 +50,7 @@ export function Estoque() {
         <div>
           <h1 className="largo text-[30px] sm:text-[34px]">Estoque</h1>
           <p className="mt-1 max-w-[60ch] text-tinta-2">
-            {itens.length ? `${itens.length} ${itens.length === 1 ? 'produto' : 'produtos'}, uns ${formatarMoeda(valorEmEstoque)} em mercadoria. ` : ''}O que sai nas ordens de serviço é descontado sozinho.
+            {itens.length ? `${itens.length} ${itens.length === 1 ? 'produto' : 'produtos'}${valorEmEstoque > 0 ? `, uns ${formatarMoeda(valorEmEstoque)} em mercadoria` : ''}. ` : ''}O que sai nas ordens de serviço é descontado sozinho.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -107,7 +107,7 @@ export function Estoque() {
                 </div>
               ) : null}
             </div>
-            <ul className="grid gap-2.5 sm:grid-cols-2">
+            <ul className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
               {visiveis.map((i) => (
                 <li key={i.id}>
                   <CartaoItem item={i} aoAbrir={() => setAberto(i.id)} />
@@ -439,7 +439,7 @@ function DetalheItem({ item, aoFechar }: { item: ItemEstoque; aoFechar: () => vo
         </div>
       </section>
 
-      <section className="grid gap-3 sm:grid-cols-3" aria-label="Ajustes">
+      <section className="grid grid-cols-1 gap-3 sm:grid-cols-3" aria-label="Ajustes">
         <Campo rotulo="Contei e tem" htmlFor="e-contagem">
           <div className="flex gap-2">
             <input id="e-contagem" className={`${classeEntrada} num`} value={contagem} onChange={(e) => setContagem(e.target.value)} inputMode="decimal" />
@@ -595,7 +595,7 @@ function FolhaNovo({ aberta, aoFechar, aoCriado }: { aberta: boolean; aoFechar: 
                 </button>
               </div>
             ) : (
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Campo rotulo="Nome" htmlFor="n-nome" className="sm:col-span-2">
                   <input id="n-nome" className={classeEntrada} value={f.nome} onChange={(e) => setF({ ...f, nome: e.target.value })} placeholder="Ex.: Filtro de óleo PSL 55" autoFocus />
                 </Campo>

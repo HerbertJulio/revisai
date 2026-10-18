@@ -3,7 +3,7 @@
 import { Building2, Check, ChevronRight, Store, Wrench, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, useTransition, type FormEvent } from 'react';
+import { useEffect, useState, useSyncExternalStore, useTransition, type FormEvent } from 'react';
 import { abrirLoja, abrirOficina, aceitarTermos, apagarMinhaConta, criarLoja, criarOficina, responderConvite } from '@/app/conta/acoes';
 import { Botao, Campo, Chip, classeEntrada } from '@/components/ui';
 import { formatarCnpj } from '@/lib/cnpj';
@@ -59,7 +59,7 @@ export function PainelConta({ conta, termosPendentes, para, config }: { conta: C
               <div className="min-w-0">
                 <p className="font-bold">{c.nome || (c.tipo === 'oficina' ? 'Uma oficina' : 'Uma loja')}</p>
                 <p className="text-[14px] text-tinta-2">
-                  {c.tipo === 'oficina' ? 'Oficina' : 'Loja'} · entrar como {nomeDoPapel(c.tipo, c.papel).toLowerCase()} · vale até {formatarData(c.expiraEm.slice(0, 10))}
+                  {c.tipo === 'oficina' ? 'Oficina' : 'Loja'} · entrar como {nomeDoPapel(c.tipo, c.papel).toLowerCase()} · vale até {formatarData(c.expiraEm)}
                 </p>
               </div>
               <div className="flex gap-2">
@@ -122,7 +122,7 @@ export function PainelConta({ conta, termosPendentes, para, config }: { conta: C
 
       <section className="flex flex-col gap-3">
         <h2 className="text-[18px]">{vazio ? 'Para começar' : 'Mais'}</h2>
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <button type="button" onClick={() => setAberto(aberto === 'oficina' ? null : 'oficina')} aria-expanded={aberto === 'oficina'} className={`flex items-center gap-3 rounded-2xl border p-4 text-left ${aberto === 'oficina' ? 'border-tinta' : 'border-linha hover:border-tinta-3'}`}>
             <Building2 size={20} aria-hidden="true" />
             <span>
@@ -153,11 +153,24 @@ export function PainelConta({ conta, termosPendentes, para, config }: { conta: C
   );
 }
 
+/**
+ * true só depois que o React assumiu a página. Antes disso, o botão mandaria o formulário pelo
+ * navegador (sem o que foi marcado ou digitado), então ele espera esse instante.
+ */
+function useNoNavegador(): boolean {
+  return useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  );
+}
+
 function AceiteDosTermos({ pendentes, para }: { pendentes: string[]; para: string }) {
   const router = useRouter();
   const [marcado, setMarcado] = useState(false);
   const [ocupado, iniciar] = useTransition();
   const [erro, setErro] = useState<string | null>(null);
+  const pronto = useNoNavegador();
   return (
     <form
       className="flex flex-col gap-4"
@@ -193,7 +206,7 @@ function AceiteDosTermos({ pendentes, para }: { pendentes: string[]; para: strin
           {erro}
         </p>
       ) : null}
-      <Botao type="submit" variante="escuro" tamanho="grande" disabled={ocupado}>
+      <Botao type="submit" variante="escuro" tamanho="grande" disabled={ocupado || !pronto}>
         {ocupado ? 'Guardando…' : 'Aceitar e continuar'}
       </Botao>
     </form>
@@ -210,6 +223,7 @@ function FormOficina() {
   const [endereco, setEndereco] = useState('');
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, iniciar] = useTransition();
+  const pronto = useNoNavegador();
 
   // quem já usava o Revisaí neste aparelho começa com o cadastro que já tinha
   useEffect(() => {
@@ -233,7 +247,7 @@ function FormOficina() {
   }
 
   return (
-    <form onSubmit={enviar} className="grid gap-4 rounded-2xl bg-papel-2/60 p-4 sm:grid-cols-2">
+    <form onSubmit={enviar} className="grid grid-cols-1 gap-4 rounded-2xl bg-papel-2/60 p-4 sm:grid-cols-2">
       <Campo rotulo="Nome da oficina" htmlFor="of-nome" className="sm:col-span-2" erro={erro}>
         <input id="of-nome" className={classeEntrada} value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Auto Center Serra" autoComplete="organization" required />
       </Campo>
@@ -255,7 +269,7 @@ function FormOficina() {
       <Campo rotulo="Endereço (para as entregas da loja)" htmlFor="of-end" className="sm:col-span-2">
         <input id="of-end" className={classeEntrada} value={endereco} onChange={(e) => setEndereco(e.target.value)} autoComplete="street-address" />
       </Campo>
-      <Botao type="submit" variante="primario" tamanho="grande" className="sm:col-span-2" disabled={ocupado}>
+      <Botao type="submit" variante="primario" tamanho="grande" className="sm:col-span-2" disabled={ocupado || !pronto}>
         {ocupado ? 'Criando…' : 'Criar a oficina'}
       </Botao>
       <p className="text-[13px] text-tinta-3 sm:col-span-2">Você entra no plano grátis e pode testar o Pro por 30 dias quando quiser.</p>
@@ -272,6 +286,7 @@ function FormLoja() {
   const [uf, setUf] = useState('RJ');
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, iniciar] = useTransition();
+  const pronto = useNoNavegador();
 
   function enviar(e: FormEvent) {
     e.preventDefault();
@@ -285,7 +300,7 @@ function FormLoja() {
   }
 
   return (
-    <form onSubmit={enviar} className="grid gap-4 rounded-2xl bg-papel-2/60 p-4 sm:grid-cols-2">
+    <form onSubmit={enviar} className="grid grid-cols-1 gap-4 rounded-2xl bg-papel-2/60 p-4 sm:grid-cols-2">
       <Campo rotulo="Nome da loja" htmlFor="lj-nome" className="sm:col-span-2" erro={erro}>
         <input id="lj-nome" className={classeEntrada} value={nome} onChange={(e) => setNome(e.target.value)} autoComplete="organization" required />
       </Campo>
@@ -307,7 +322,7 @@ function FormLoja() {
           </select>
         </Campo>
       </div>
-      <Botao type="submit" variante="escuro" tamanho="grande" className="sm:col-span-2" disabled={ocupado}>
+      <Botao type="submit" variante="escuro" tamanho="grande" className="sm:col-span-2" disabled={ocupado || !pronto}>
         {ocupado ? 'Enviando…' : 'Pedir para vender no Revisaí'}
       </Botao>
     </form>

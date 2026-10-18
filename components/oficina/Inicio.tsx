@@ -52,7 +52,7 @@ export function Inicio() {
         </div>
         <p className="text-[15px] font-semibold text-tinta-2">Ou teste sem conta, só neste aparelho:</p>
         <form
-          className="grid max-w-xl gap-4 sm:grid-cols-2"
+          className="grid grid-cols-1 max-w-xl gap-4 sm:grid-cols-2"
           onSubmit={(e) => {
             e.preventDefault();
             comecar(true);

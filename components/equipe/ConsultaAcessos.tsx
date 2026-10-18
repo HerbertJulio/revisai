@@ -67,7 +67,7 @@ export function ConsultaAcessos() {
       <p className="rounded-2xl bg-oleo-claro px-4 py-3 text-[14.5px] text-oleo-tinta sm:px-5">
         Os registros de acesso ficam em sigilo por 6 meses (Marco Civil da Internet, art. 15) e só saem com ordem judicial. Cada consulta fica no histórico da equipe com o motivo e quem consultou.
       </p>
-      <form onSubmit={consultar} className="grid gap-4 rounded-2xl bg-papel p-4 ring-1 ring-linha sm:grid-cols-6 sm:p-5">
+      <form onSubmit={consultar} className="grid grid-cols-1 gap-4 rounded-2xl bg-papel p-4 ring-1 ring-linha sm:grid-cols-6 sm:p-5">
         <Campo rotulo="E-mail da conta" htmlFor="ac-email" className="sm:col-span-3">
           <input id="ac-email" type="email" inputMode="email" autoCapitalize="none" spellCheck={false} className={classeEntrada} value={email} onChange={(e) => setEmail(e.target.value)} />
         </Campo>

@@ -419,7 +419,7 @@ function Formulario({
       <form onSubmit={enviar} className="flex flex-col gap-6 rounded-2xl bg-papel px-5 py-5 ring-1 ring-linha">
         <fieldset className="flex flex-col gap-2">
           <legend className="mb-2 text-sm font-semibold">Como você quer pagar</legend>
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {opcoes.map((m) => {
               const Icone = ICONES[m.id];
               const marcado = metodo === m.id;
@@ -440,7 +440,7 @@ function Formulario({
           </div>
         </fieldset>
 
-        <fieldset className="grid gap-4 sm:grid-cols-6">
+        <fieldset className="grid grid-cols-1 gap-4 sm:grid-cols-6">
           <legend className="mb-2 text-sm font-semibold sm:col-span-6">Dados para a nota fiscal</legend>
           <Campo rotulo="Nome ou razão social" htmlFor="as-nome" className="sm:col-span-6">
             <input id="as-nome" className={classeEntrada} value={nome} onChange={(e) => setNome(e.target.value)} autoComplete="organization" required maxLength={120} />

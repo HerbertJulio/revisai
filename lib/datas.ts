@@ -16,6 +16,21 @@ export function dataLocal(instante: string): string {
   return Number.isNaN(d.getTime()) ? instante.slice(0, 10) : hojeISO(d);
 }
 
+const FORMATO_DIA_BRASILIA = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' });
+const COM_FUSO = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}(?::?\d{2})?)$/i;
+
+/**
+ * O dia em Brasília ('AAAA-MM-DD') de um instante (ISO com fuso, milissegundos ou Date), o mesmo dia
+ * que o banco usa: o instante de 21h47 em Brasília (00h47 em UTC) é do dia em Brasília. Uma data
+ * 'AAAA-MM-DD' ou uma hora sem fuso (já local) voltam como estão.
+ */
+export function diaEmBrasilia(instante: number | string | Date): string {
+  if (typeof instante === 'string' && !COM_FUSO.test(instante.trim())) return instante.slice(0, 10);
+  const texto = typeof instante === 'string' ? instante.trim().replace(' ', 'T').replace(/([+-]\d{2})$/, '$1:00') : instante;
+  const d = new Date(texto);
+  return Number.isNaN(d.getTime()) ? String(instante).slice(0, 10) : FORMATO_DIA_BRASILIA.format(d);
+}
+
 export function dataValida(iso: string | null | undefined): iso is string {
   if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return false;
   const [a, m, d] = iso.split('-').map(Number);
@@ -60,13 +75,13 @@ export function menorData(...datas: (string | null | undefined)[]): string | nul
 
 export function formatarData(iso: string | null | undefined): string {
   if (!iso) return '';
-  const [a, m, d] = iso.slice(0, 10).split('-');
+  const [a, m, d] = diaEmBrasilia(iso).split('-');
   return `${d}/${m}/${a}`;
 }
 
 export function formatarDataCurta(iso: string | null | undefined): string {
   if (!iso) return '';
-  const [, m, d] = iso.slice(0, 10).split('-');
+  const [, m, d] = diaEmBrasilia(iso).split('-');
   return `${d}/${m}`;
 }
 
@@ -75,7 +90,7 @@ const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'o
 /** '22 out' ou '22 out 2027' quando o ano é outro. */
 export function formatarDataExtensa(iso: string | null | undefined, hoje?: string): string {
   if (!iso) return '';
-  const [a, m, d] = iso.slice(0, 10).split('-');
+  const [a, m, d] = diaEmBrasilia(iso).split('-');
   const base = `${Number(d)} ${MESES[Number(m) - 1]}`;
   return hoje && hoje.slice(0, 4) === a ? base : `${base} ${a}`;
 }

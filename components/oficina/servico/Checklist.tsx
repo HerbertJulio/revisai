@@ -221,7 +221,7 @@ function Editor({ c }: { c: Checklist }) {
           {!ctx ? <AvisoSemConta texto="Sem conta, imprima ou assine aqui. Entre com sua conta para mandar o link ao cliente." /> : null}
         </header>
 
-        <section className="grid gap-4 sm:grid-cols-2" aria-label="Quilometragem e combustível">
+        <section className="grid grid-cols-1 gap-4 sm:grid-cols-2" aria-label="Quilometragem e combustível">
           <Campo rotulo="Quilometragem" htmlFor="ck-km">
             <input
               id="ck-km"
@@ -261,7 +261,7 @@ function Editor({ c }: { c: Checklist }) {
           <h2 id="t-ck-itens" className="text-[19px]">
             Itens do carro
           </h2>
-          <ul className="grid gap-2 sm:grid-cols-2">
+          <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {ITENS_DO_CHECKLIST.map((item) => (
               <li key={item.id} className="flex items-center justify-between gap-2 rounded-xl bg-papel px-3 py-2 ring-1 ring-linha">
                 <span className="text-[15px] font-semibold">{item.nome}</span>

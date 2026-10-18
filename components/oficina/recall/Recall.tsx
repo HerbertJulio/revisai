@@ -296,7 +296,7 @@ function FolhaCampanha({ campanha, aoFechar }: { campanha: Campanha | 'nova' | n
         </>
       }
     >
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Campo rotulo="Marca" htmlFor="rc-marca">
           <input id="rc-marca" className={classeEntrada} value={f.marca} onChange={(e) => setF({ ...f, marca: e.target.value })} list="rc-marcas" autoComplete="off" />
         </Campo>

@@ -64,7 +64,7 @@ export function Titulares() {
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
       <form onSubmit={exportar} className="flex flex-col gap-4 rounded-2xl bg-papel p-4 ring-1 ring-linha sm:p-5">
         <h2 className="text-[19px]">Exportar os dados</h2>
         <p className="text-[14px] text-tinta-2">

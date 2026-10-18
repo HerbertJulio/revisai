@@ -253,7 +253,7 @@ function FolhaNota({ nota, aoFechar }: { nota: NotaFiscal; aoFechar: () => void 
                   </div>
                 </div>
                 {l.incluir ? (
-                  <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     <label className="flex flex-col gap-1 text-[13px] font-semibold sm:col-span-2">
                       <span className="flex flex-wrap items-center gap-2">
                         No estoque
@@ -309,7 +309,7 @@ function FolhaNota({ nota, aoFechar }: { nota: NotaFiscal; aoFechar: () => void 
                       </>
                     ) : null}
                     <label className="flex flex-col gap-1 text-[13px] font-semibold">
-                      1 {item.unidade} da nota = quantos {unidade === 'L' ? 'litros' : 'unidades'}
+                      1 {item.unidade} da nota = {unidade === 'L' ? 'quantos litros' : 'quantas unidades'}
                       <input className={`${classeEntrada} num`} value={l.fator} onChange={(e) => mudar(i, { fator: e.target.value })} inputMode="decimal" />
                     </label>
                     <label className="flex flex-col gap-1 text-[13px] font-semibold">

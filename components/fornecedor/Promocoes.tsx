@@ -166,7 +166,7 @@ export function PromocoesFornecedor({
         }
       >
         {rascunho ? (
-          <div className="grid gap-4 sm:grid-cols-6">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-6">
             <Campo rotulo="Produto" htmlFor="pr-prod" className="sm:col-span-6">
               <select id="pr-prod" className={classeEntrada} value={rascunho.produtoId} onChange={(e) => setRascunho({ ...rascunho, produtoId: e.target.value })}>
                 {produtos.map((p) => (

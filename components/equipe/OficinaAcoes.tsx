@@ -136,7 +136,7 @@ export function OficinaAcoes({
           </div>
         }
       >
-        <div className="grid gap-4 sm:grid-cols-6">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-6">
           <div className="sm:col-span-6">
             <p className="mb-2 text-[14px] font-semibold">Meses</p>
             <div className="flex flex-wrap gap-2">

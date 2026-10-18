@@ -134,7 +134,7 @@ function Configuracao({ config }: { config: ConfigFidelidade }) {
         }
         descricao="Cada ordem de serviço concluída dá pontos ao dono do carro."
       />
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Campo rotulo="Pontos por real gasto" htmlFor="fid-por-real">
           <input id="fid-por-real" className={`${classeEntrada} num`} value={pontosPorReal} onChange={(e) => setPontosPorReal(e.target.value)} inputMode="decimal" />
         </Campo>
