@@ -115,6 +115,9 @@ migrar() {
     psqlx -1 -f "$f" > /dev/null || { echo "falhou: $f"; exit 1; }
   done
   if [ -f "$REPO/supabase/seed.sql" ]; then psqlx -1 -f "$REPO/supabase/seed.sql" > /dev/null; fi
+  # a chave do sistema de desenvolvimento (a do .env.example), só no banco local: o servidor local
+  # e os testes que passam pela API agem como o sistema com ela
+  psqlx -c "insert into privado.chaves (nome, hash) values ('sistema', encode(sha256(convert_to('chave-local-do-sistema-para-desenvolvimento-0001', 'UTF8')), 'hex')) on conflict (nome) do nothing" > /dev/null
   psqlx -c "notify pgrst, 'reload schema'"
 }
 
