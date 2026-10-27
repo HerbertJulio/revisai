@@ -70,9 +70,9 @@ Status: ✅ pronto · 🟡 parcial · ⬜ a construir.
 | Módulo | Status | O que é |
 |---|---|---|
 | [`erp/compras-formais`](./erp/compras-formais/SKILL.md) | 🟡 | Pedido de compra → recebimento → entrada no estoque → conta a pagar. **1ª versão construída.** |
-| `erp/custo-estoque` | ⬜ | Custo médio ponderado, posição de estoque valorizada e CMV. |
-| `erp/contabilidade` | ⬜ | Plano de contas, centro de custo e DRE. |
-| `erp/fluxo-caixa` | ⬜ | Projeção de caixa pelos vencimentos. |
+| [`erp/custo-estoque`](./erp/custo-estoque/SKILL.md) | 🟡 | Posição de estoque valorizada e CMV prontos; custo médio no núcleo é o passo final. |
+| [`erp/contabilidade`](./erp/contabilidade/SKILL.md) | 🟡 | DRE por categoria (caixa e competência) pronto; plano de contas e centro de custo depois. |
+| [`erp/fluxo-caixa`](./erp/fluxo-caixa/SKILL.md) | 🟡 | Projeção de caixa pelos vencimentos, pronta. |
 | `erp/bi` | ⬜ | Painéis gerenciais (faturamento, ticket médio, curva ABC, giro, inadimplência). |
 | `erp/multiempresa` | ⬜ | Uma pessoa gerindo várias oficinas ou lojas. |
 
