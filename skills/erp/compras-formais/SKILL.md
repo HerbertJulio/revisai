@@ -2,11 +2,15 @@
 nome: erp/compras-formais
 dominio: erp
 produto: Oficina ERP
-status: a-construir
+status: parcial
 arquivos:
-  - (a criar) lib/compras.ts
-  - (a criar) app/oficina/compras
-  - (a criar) supabase/migrations/..._compras.sql
+  - lib/compras.ts
+  - lib/store.ts (ação receberCompra)
+  - lib/registros-oficina.ts (PedidoCompra, coleção comprasPedidos)
+  - components/oficina/compras/Compras.tsx
+  - app/oficina/compras/page.tsx
+  - components/oficina/extensoes/compras.tsx
+  - supabase/migrations/20261027000000_compras_formais.sql
 ---
 
 # Compras formais
@@ -42,5 +46,14 @@ Sem dado pessoal além do fornecedor. Ver `plataforma/seguranca-lgpd`.
 ## Depende de
 `oficina/estoque`, `oficina/financeiro`, `oficina/compras`.
 
+## Feito (v1)
+Pedido de compra como coleção local-first `comprasPedidos` (sincroniza e é restrita a dono/gerente
+no banco). Tela em `/oficina/compras` (no menu "Mais"): monta o pedido com itens ligáveis ao
+estoque e recebe. O recebimento (`receberCompra` no store) dá entrada no estoque com o custo
+(movimento origem `compra`) e abre a conta a pagar (`Lancamento` tipo `pagar`, categoria
+`fornecedor`), tudo numa gravação só. Lógica pura e testada em `lib/compras.ts` (`tests/compras.test.ts`).
+
 ## A fazer
-Tudo. Ordem: migração + função atômica → `lib/compras.ts` (puro + servidor) → telas em `app/oficina/compras` → ligar ao estoque e ao financeiro.
+Recebimento parcial (hoje recebe o pedido inteiro de uma vez). Dar entrada por foto da nota
+(OCR com a IA). O custo médio ponderado vem no próximo módulo (`erp/custo-estoque`); hoje a
+entrada guarda o custo da compra como custo da última entrada. Teste de banco da RLS restrita.

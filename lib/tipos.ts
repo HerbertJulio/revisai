@@ -316,7 +316,7 @@ export interface MovimentoEstoque {
   /** De quem comprou (na entrada). */
   fornecedor?: string;
   /** Na entrada pela nota de compra (tipo 'nota'), o id é a chave de acesso da NF-e. */
-  origem?: { tipo: 'ordem' | 'pedido' | 'manual' | 'contagem' | 'nota'; id?: string; rotulo?: string };
+  origem?: { tipo: 'ordem' | 'pedido' | 'compra' | 'manual' | 'contagem' | 'nota'; id?: string; rotulo?: string };
   observacao?: string;
 }
 

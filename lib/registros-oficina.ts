@@ -30,6 +30,8 @@ export interface Lancamento {
   favorecido?: string;
   /** O pedido da loja do Revisaí de onde veio a conta a pagar. */
   pedidoCodigo?: string | null;
+  /** A compra formal (pedido de compra ao fornecedor) de onde veio a conta a pagar. */
+  compraId?: Id | null;
   /** Quando o lembrete do fiado foi mandado ao cliente. */
   lembradoEm?: string | null;
   observacao?: string;
@@ -246,6 +248,36 @@ export interface Recall {
   atualizadoEm: string;
 }
 
+export type SituacaoCompra = 'rascunho' | 'enviado' | 'recebido' | 'cancelado';
+
+/** Um item do pedido de compra ao fornecedor. */
+export interface ItemPedidoCompra {
+  id: Id;
+  descricao: string;
+  /** Liga ao item do estoque (dá entrada ao receber). null = compra avulsa, não entra no estoque. */
+  estoqueId?: Id | null;
+  quantidade: number;
+  /** Custo por unidade combinado com o fornecedor, em reais. */
+  custoUnitario: number;
+}
+
+/** Pedido de compra ao fornecedor. Ao receber, dá entrada no estoque e abre a conta a pagar. */
+export interface PedidoCompra {
+  id: Id;
+  fornecedor: string;
+  situacao: SituacaoCompra;
+  itens: ItemPedidoCompra[];
+  /** Emissão do pedido, AAAA-MM-DD. */
+  data: string;
+  observacao?: string;
+  /** Quando foi recebido e deu entrada no estoque. */
+  recebidoEm?: string | null;
+  /** A conta a pagar criada no recebimento. */
+  lancamentoId?: Id | null;
+  criadoEm: string;
+  atualizadoEm: string;
+}
+
 export const COLECOES_EXTRAS = [
   'lancamentos',
   'agendamentos',
@@ -257,7 +289,8 @@ export const COLECOES_EXTRAS = [
   'clubeMembros',
   'clubeCobrancas',
   'fidelidade',
-  'recalls'
+  'recalls',
+  'comprasPedidos'
 ] as const;
 export type ColecaoExtra = (typeof COLECOES_EXTRAS)[number];
 
@@ -273,6 +306,7 @@ export interface DadosExtras {
   clubeCobrancas: Record<Id, ClubeCobranca>;
   fidelidade: Record<Id, MovimentoFidelidade>;
   recalls: Record<Id, Recall>;
+  comprasPedidos: Record<Id, PedidoCompra>;
 }
 
 /** O tipo de um item de uma das coleções novas. */
@@ -295,7 +329,8 @@ export const EXTRAS_VAZIOS: DadosExtras = {
   clubeMembros: {},
   clubeCobrancas: {},
   fidelidade: {},
-  recalls: {}
+  recalls: {},
+  comprasPedidos: {}
 };
 
 /** As coleções novas de um estado (guardado, backup ou atual), com mapa vazio no que faltar. */

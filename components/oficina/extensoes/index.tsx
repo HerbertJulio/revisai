@@ -5,12 +5,13 @@
 import type { Documento, Id } from '@/lib/tipos';
 import { extensao as agenda } from './agenda';
 import { extensao as cadastro } from './cadastro';
+import { extensao as compras } from './compras';
 import { extensao as financeiro } from './financeiro';
 import { extensao as fiscal } from './fiscal';
 import { extensao as ordem } from './ordem';
 import type { Extensao } from './tipos';
 
-const EXTENSOES: Extensao[] = [ordem, financeiro, agenda, cadastro, fiscal];
+const EXTENSOES: Extensao[] = [ordem, financeiro, agenda, cadastro, fiscal, compras];
 
 function cada(nome: string, fn: (e: Extensao) => void) {
   for (const e of EXTENSOES) {

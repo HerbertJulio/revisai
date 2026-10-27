@@ -69,7 +69,7 @@ Status: ✅ pronto · 🟡 parcial · ⬜ a construir.
 ### ERP (as lacunas a construir)
 | Módulo | Status | O que é |
 |---|---|---|
-| [`erp/compras-formais`](./erp/compras-formais/SKILL.md) | ⬜ | Pedido de compra → recebimento → entrada no estoque → conta a pagar. **Primeiro a construir.** |
+| [`erp/compras-formais`](./erp/compras-formais/SKILL.md) | 🟡 | Pedido de compra → recebimento → entrada no estoque → conta a pagar. **1ª versão construída.** |
 | `erp/custo-estoque` | ⬜ | Custo médio ponderado, posição de estoque valorizada e CMV. |
 | `erp/contabilidade` | ⬜ | Plano de contas, centro de custo e DRE. |
 | `erp/fluxo-caixa` | ⬜ | Projeção de caixa pelos vencimentos. |
