@@ -7,6 +7,7 @@ import { useState, type ComponentType } from 'react';
 import { Dre } from './Dre';
 import { EstoqueValorizado } from './EstoqueValorizado';
 import { FluxoCaixa } from './FluxoCaixa';
+import { Painel } from './Painel';
 
 interface Aba {
   id: string;
@@ -15,9 +16,10 @@ interface Aba {
 }
 
 const ABAS: Aba[] = [
-  { id: 'estoque', rotulo: 'Estoque', Conteudo: EstoqueValorizado },
+  { id: 'painel', rotulo: 'Painel', Conteudo: Painel },
   { id: 'resultado', rotulo: 'Resultado', Conteudo: Dre },
-  { id: 'caixa', rotulo: 'Fluxo de caixa', Conteudo: FluxoCaixa }
+  { id: 'caixa', rotulo: 'Fluxo de caixa', Conteudo: FluxoCaixa },
+  { id: 'estoque', rotulo: 'Estoque', Conteudo: EstoqueValorizado }
 ];
 
 export function Gestao() {

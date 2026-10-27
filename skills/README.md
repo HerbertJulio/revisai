@@ -73,7 +73,7 @@ Status: ✅ pronto · 🟡 parcial · ⬜ a construir.
 | [`erp/custo-estoque`](./erp/custo-estoque/SKILL.md) | 🟡 | Posição de estoque valorizada e CMV prontos; custo médio no núcleo é o passo final. |
 | [`erp/contabilidade`](./erp/contabilidade/SKILL.md) | 🟡 | DRE por categoria (caixa e competência) pronto; plano de contas e centro de custo depois. |
 | [`erp/fluxo-caixa`](./erp/fluxo-caixa/SKILL.md) | 🟡 | Projeção de caixa pelos vencimentos, pronta. |
-| `erp/bi` | ⬜ | Painéis gerenciais (faturamento, ticket médio, curva ABC, giro, inadimplência). |
+| [`erp/bi`](./erp/bi/SKILL.md) | 🟡 | Faturamento, ordens, ticket médio, inadimplência e histórico prontos; curva ABC e giro depois. |
 | `erp/multiempresa` | ⬜ | Uma pessoa gerindo várias oficinas ou lojas. |
 
 ### Admin global (uso interno da equipe Revisaí)
