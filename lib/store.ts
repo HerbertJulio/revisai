@@ -12,13 +12,14 @@ import { ehExemplo, gerarExemplo } from './exemplo';
 import { hojeISO } from './datas';
 import { ordemDoOrcamento, proximoNumero, totais } from './documentos';
 import { aplicarMovimento, baixasDoDocumento } from './estoque';
+import { contaAPagarDaCompra, entradasDaCompra } from './compras';
 import { normalizarPlaca } from './formatos';
 import { OFICINA_VAZIA, PREFERENCIAS_PADRAO } from './padroes';
 import type { OrdemServico } from './agente/ordem';
 import { contarMontagem, juntarPlanos, PLANO_INICIAL, type EstadoPlano } from './plano';
 import { ATE_TUDO, baseDoItem, iguais, mudancas, recalcularItem, todasAsChaves, valorAtual, type Chave, type ItemComBase } from './sincronia-dados';
 import type { ProdutoProprio } from './referencias';
-import { EXTRAS_VAZIOS, extrasDe, itemGravado, type ColecaoExtra, type DadosExtras, type NovoItemExtra } from './registros-oficina';
+import { EXTRAS_VAZIOS, extrasDe, itemGravado, type ColecaoExtra, type DadosExtras, type FormaPagamento, type NovoItemExtra } from './registros-oficina';
 import type {
   Atendimento,
   Cliente,
@@ -133,6 +134,8 @@ interface Acoes {
   moverEstoque(m: Omit<MovimentoEstoque, 'id' | 'quando'> & { quando?: string }): Id | null;
   /** Dá entrada no estoque do que chegou de um pedido da loja. */
   receberPedido(codigo: string, entradas: { itemId: Id; quantidade: number; custoUnitario: number | null; fornecedor?: string }[]): void;
+  /** Recebe uma compra formal: dá entrada no estoque (com custo) e abre a conta a pagar. Devolve o id do lançamento. */
+  receberCompra(id: Id, opcoes: { vencimento: string; forma?: FormaPagamento | null }): Id | null;
   salvarDocumento(d: Omit<Documento, 'id' | 'numero' | 'criadoEm' | 'atualizadoEm'> & { id?: Id; numero?: number }): Id;
   removerDocumento(id: Id): void;
   marcarEnviado(id: Id): void;
@@ -554,6 +557,41 @@ export const useOficina = create<EstadoOficina>()(
           estoque[item.id] = comMovimento(item, mov, movimentos);
         }
         set({ estoque, movimentos, pedidos: get().pedidos.map((p) => (p.codigo === codigo ? { ...p, recebidoEm: quando } : p)) });
+      },
+
+      receberCompra(id, opcoes) {
+        const s = get();
+        const pedido = s.comprasPedidos[id];
+        if (!pedido || pedido.situacao === 'recebido' || pedido.situacao === 'cancelado') return null;
+        const agora = new Date().toISOString();
+        const estoque = { ...s.estoque };
+        const movimentos = { ...s.movimentos };
+        for (const e of entradasDaCompra(pedido)) {
+          const item = estoque[e.itemId];
+          if (!item || !(e.quantidade > 0)) continue;
+          const mid = novoId();
+          const mov: MovimentoEstoque = {
+            id: mid,
+            itemId: item.id,
+            quando: instante(),
+            tipo: 'entrada',
+            quantidade: e.quantidade,
+            custoUnitario: e.custoUnitario,
+            fornecedor: pedido.fornecedor,
+            origem: { tipo: 'compra', id, rotulo: `Compra ${pedido.fornecedor}`.trim() }
+          };
+          movimentos[mid] = mov;
+          estoque[item.id] = comMovimento(item, mov, movimentos);
+        }
+        const lancId = novoId();
+        const lancamento = itemGravado(contaAPagarDaCompra(pedido, { vencimento: opcoes.vencimento, forma: opcoes.forma ?? null, compraId: id }), lancId, undefined, agora);
+        set({
+          estoque,
+          movimentos,
+          lancamentos: { ...s.lancamentos, [lancId]: lancamento },
+          comprasPedidos: { ...s.comprasPedidos, [id]: { ...pedido, situacao: 'recebido', recebidoEm: agora, lancamentoId: lancId, atualizadoEm: agora } }
+        });
+        return lancId;
       },
 
       salvarDocumento(d) {
