@@ -4,7 +4,9 @@ dominio: automacoes
 produto: add-on (diferencial)
 status: parcial
 arquivos:
+  - lib/placa-uf.ts
   - app/api/veiculos/placa/route.ts
+  - app/api/veiculos/placa/provedores.ts
   - app/api/veiculos/fipe/route.ts
   - lib/fipe.ts
   - lib/equipe/cnpj.ts
@@ -17,7 +19,8 @@ O diferencial "além de ERP": o sistema vai buscar o dado para o usuário em vez
 na internet e digitar de volta. É o que os ERPs comuns não fazem com facilidade.
 
 ## Já existe
-- **Placa → carro.** `app/api/veiculos/placa` (consultadeplaca.net, pago; tem provedor de teste grátis para demonstrar). Preenche marca, modelo, ano, cor.
+- **Placa → UF, de graça e offline.** `lib/placa-uf.ts`: só da placa, sem internet e sem custo, sai o tipo (antiga ou Mercosul) e o estado de emplacamento (faixas de letras oficiais). Adianta o cadastro: a pessoa digita a placa e a UF já vem. O que não sai da placa fica para a consulta paga.
+- **Placa → carro (módulo Despachante, pago).** `app/api/veiculos/placa` (consultadeplaca.net, pago; tem provedor de teste grátis para demonstrar, `PLACA_API_PROVEDOR=teste`). Preenche marca, modelo, ano, cor, chassi (mascarado) e FIPE. Cota por mês por oficina. É o add-on que o usuário paga para ter; a situação de roubo/furto e débitos entram aqui quando o provedor expõe (ver "A fazer").
 - **FIPE → preço do carro.** `lib/fipe.ts` pela BrasilAPI (grátis, sem chave), com cache mensal.
 - **CNPJ → dados da empresa.** `lib/equipe/cnpj.ts` (BrasilAPI / Receita), no cadastro de loja.
 - **Recall.** `lib/recall.ts` cruza campanhas do governo (Senatran/gov.br) com os carros e avisa o cliente.
@@ -30,7 +33,7 @@ Ideias de buscar-para-o-usuário que reduzem dor do dia a dia:
 - **Catálogo de peças por montadora/ano** (aplicação), para achar a peça certa pelo carro.
 - **Boleto/DANFE lido por foto** (OCR com a IA que já temos), para dar entrada de nota de compra sem digitar.
 - **Cotação de câmbio/índices** para peças importadas.
-- **Consulta de débitos/IPVA/licenciamento** do veículo (quando houver fonte pública viável).
+- **Despachante (Pro, pago):** roubo/furto, débitos, IPVA, licenciamento e restrições do veículo, por um provedor pago (Infosimples, API Brasil, consultadeplaca e afins). É o módulo a mais que o usuário paga para ter; cada consulta tem custo, então entra na mesma cota mensal e cache da placa.
 
 ## Padrão de implementação
 Cada automação é uma rota em `app/api/...` que: confere acesso, vê cache no banco (via

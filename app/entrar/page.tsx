@@ -21,7 +21,7 @@ export default async function PaginaEntrar({ searchParams }: { searchParams: Pro
   // Sem painel escolhido, a pessoa escolhe por onde entra; com a sessão vencida, já vai direto ao login.
   if (!painel && !sessaoTerminou) {
     return (
-      <TelaDeConta titulo="Entrar no Revisaí" subtitulo="Escolha por onde você usa o Revisaí e entre com o Google ou o seu e-mail.">
+      <TelaDeConta titulo="Entrar no Revisaí" subtitulo="Escolha por onde você usa o Revisaí e entre com e-mail e senha ou com o Google.">
         <SeletorDePainel />
       </TelaDeConta>
     );

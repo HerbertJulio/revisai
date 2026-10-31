@@ -1,142 +1,72 @@
 'use client';
 
-import { ArrowLeft, Mail } from 'lucide-react';
+import { ArrowLeft, Lock, Mail } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Botao, Campo, classeEntrada } from '@/components/ui';
 import { clienteNavegador, type ConfigPublica } from '@/lib/supabase-navegador';
 import { Captcha } from './Captcha';
 
 const ERROS_DO_LINK: Record<string, string> = {
-  link: 'O link de entrada não vale mais. Peça um código novo.',
-  google: 'Não deu para entrar com o Google. Tente de novo ou use o e-mail.'
+  link: 'O link não vale mais. Entre de novo com a sua senha.',
+  google: 'Não deu para entrar com o Google. Tente de novo ou use o e-mail e a senha.'
 };
 
-/** Tempo entre dois códigos para o mesmo e-mail (o servidor também segura). */
-const ESPERA_REENVIO_S = 60;
+/** Tamanho mínimo de senha que o servidor aceita por padrão. */
+const SENHA_MINIMA = 6;
 
 type ErroDeEntrada = { message?: string; status?: number; code?: string } | null;
 
-/** Mensagem do GoTrue para a pessoa. */
+/** Mensagem do GoTrue para a pessoa, já no caso de e-mail e senha. */
 export function mensagemDeEntrada(e: ErroDeEntrada): string {
   const m = (e?.message ?? '').toLowerCase();
-  if (e?.code === 'over_email_send_rate_limit' || e?.code === 'over_request_rate_limit' || m.includes('rate limit') || m.includes('only request this after') || e?.status === 429)
-    return 'Muitos códigos pedidos seguidos. Espere um pouco e tente de novo.';
-  if (e?.code === 'otp_expired' || m.includes('expired') || m.includes('invalid')) return 'Código errado ou vencido. Confira ou peça outro.';
+  if (e?.code === 'invalid_credentials' || m.includes('invalid login') || m.includes('invalid credentials')) return 'E-mail ou senha errados. Confira os dois.';
+  if (e?.code === 'email_not_confirmed' || m.includes('not confirmed')) return 'Confirme o seu e-mail antes de entrar. O link foi para a sua caixa de entrada.';
+  if (e?.code === 'user_already_exists' || e?.code === 'email_exists' || m.includes('already registered') || m.includes('already been registered')) return 'Já existe conta com esse e-mail. Entre com a sua senha.';
+  if (e?.code === 'weak_password' || m.includes('password should be') || m.includes('weak password')) return `A senha é fraca. Use ao menos ${SENHA_MINIMA} caracteres.`;
+  if (e?.code === 'over_request_rate_limit' || e?.code === 'over_email_send_rate_limit' || m.includes('rate limit') || e?.status === 429) return 'Muitas tentativas seguidas. Espere um pouco e tente de novo.';
   if (e?.code === 'signup_disabled' || m.includes('signups not allowed')) return 'Novas contas estão fechadas no momento.';
   if (e?.code === 'email_address_invalid' || (m.includes('email address') && m.includes('invalid'))) return 'Confira o e-mail.';
   if (m.includes('fetch') || m.includes('network')) return 'Sem conexão com o servidor. Confira a internet e tente de novo.';
   return 'Não deu para entrar agora. Confira a internet e tente de novo.';
 }
 
-/** Quantos segundos o servidor pediu para esperar antes de mandar outro código (ou 0). */
-export function esperaPedida(e: ErroDeEntrada): number {
-  const n = /after (\d+) seconds?/i.exec(e?.message ?? '');
-  return n ? Math.min(600, Number(n[1])) : 0;
-}
+type Modo = 'entrar' | 'criar' | 'esqueci';
 
-/** Só os números do código (colado com espaço, traço ou o texto do e-mail junto). */
-export function digitosDoCodigo(valor: string): string {
-  return valor.replace(/\D/g, '').slice(0, 6);
+function emailValido(v: string): boolean {
+  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v);
 }
 
 export function FormEntrar({ config, para, google, erro: erroInicial, aoEntrar }: { config: ConfigPublica; para: string; google: boolean; erro?: string | null; aoEntrar?: () => void }) {
   const router = useRouter();
+  const [modo, setModo] = useState<Modo>('entrar');
   const [email, setEmail] = useState('');
-  const [codigo, setCodigo] = useState('');
-  const [passo, setPasso] = useState<'email' | 'codigo'>('email');
+  const [senha, setSenha] = useState('');
+  const [senha2, setSenha2] = useState('');
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState<string | null>(erroInicial ? (ERROS_DO_LINK[erroInicial] ?? null) : null);
   const [aviso, setAviso] = useState<string | null>(null);
-  const [reenviarEm, setReenviarEm] = useState(0);
-  const [agora, setAgora] = useState(() => Date.now());
-  const campoCodigo = useRef<HTMLInputElement>(null);
-  const conferindo = useRef(false);
-  // com a verificação ligada, cada pedido de código leva um token novo
   const [captcha, setCaptcha] = useState<string | null>(null);
   const [rodadaCaptcha, setRodadaCaptcha] = useState(0);
 
   const sb = () => clienteNavegador(config);
-  const faltam = Math.max(0, Math.ceil((reenviarEm - agora) / 1000));
 
-  // o relógio do "mandar de novo" só anda enquanto falta tempo
-  useEffect(() => {
-    if (reenviarEm <= Date.now()) return;
-    const t = setInterval(() => {
-      const n = Date.now();
-      setAgora(n);
-      if (n >= reenviarEm) clearInterval(t);
-    }, 1000);
-    return () => clearInterval(t);
-  }, [reenviarEm]);
-
-  async function pedirCodigo(e?: FormEvent) {
-    e?.preventDefault();
-    if (ocupado) return;
-    const limpo = email.trim().toLowerCase();
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(limpo)) {
-      setErro('Confira o e-mail.');
-      return;
-    }
-    if (config.captcha && !captcha) {
-      setErro('Espere a verificação de segurança terminar e tente de novo.');
-      return;
-    }
-    setOcupado(true);
+  function trocarModo(novo: Modo) {
+    setModo(novo);
     setErro(null);
-    const { error } = await sb()
-      .auth.signInWithOtp({
-        email: limpo,
-        options: {
-          shouldCreateUser: true,
-          emailRedirectTo: `${location.origin}/auth/confirmar?para=${encodeURIComponent(para)}`,
-          ...(captcha ? { captchaToken: captcha } : {})
-        }
-      })
-      .catch((x: unknown) => ({ error: { message: String((x as Error)?.message ?? x) } }));
-    setOcupado(false);
+    setAviso(null);
+    setSenha('');
+    setSenha2('');
+  }
+
+  function zerarCaptcha() {
     if (config.captcha) {
       setCaptcha(null);
       setRodadaCaptcha((r) => r + 1);
     }
-    const espera = esperaPedida(error);
-    if (error && !espera) {
-      setErro(mensagemDeEntrada(error));
-      return;
-    }
-    // pedido seguido demais: o código anterior ainda vale, então segue para digitar
-    setEmail(limpo);
-    setPasso('codigo');
-    setReenviarEm(Date.now() + (espera || ESPERA_REENVIO_S) * 1000);
-    setAgora(Date.now());
-    setAviso(
-      espera
-        ? `Já mandamos um código para ${limpo} há pouco. Use esse; outro pode ser pedido em ${espera} segundos.`
-        : `Mandamos um código para ${limpo}. Ele chega em até 1 minuto (olhe também o spam).`
-    );
   }
 
-  async function conferir(token: string) {
-    if (conferindo.current) return;
-    if (token.length < 6) {
-      setErro('O código tem 6 números.');
-      campoCodigo.current?.focus();
-      return;
-    }
-    conferindo.current = true;
-    setOcupado(true);
-    setErro(null);
-    const { error } = await sb()
-      .auth.verifyOtp({ email, token, type: 'email' })
-      .catch((x: unknown) => ({ error: { message: String((x as Error)?.message ?? x) } }));
-    conferindo.current = false;
-    if (error) {
-      setOcupado(false);
-      setErro(mensagemDeEntrada(error));
-      // volta para o campo, com o código selecionado para digitar por cima
-      requestAnimationFrame(() => campoCodigo.current?.select());
-      return;
-    }
+  function depoisDeEntrar() {
     if (aoEntrar) {
       setOcupado(false);
       aoEntrar();
@@ -144,6 +74,86 @@ export function FormEntrar({ config, para, google, erro: erroInicial, aoEntrar }
     }
     router.replace(`/conta?para=${encodeURIComponent(para)}`);
     router.refresh();
+  }
+
+  async function enviar(e?: FormEvent) {
+    e?.preventDefault();
+    if (ocupado) return;
+    const limpo = email.trim().toLowerCase();
+    if (!emailValido(limpo)) {
+      setErro('Confira o e-mail.');
+      return;
+    }
+    if (config.captcha && !captcha) {
+      setErro('Espere a verificação de segurança terminar e tente de novo.');
+      return;
+    }
+    const comCaptcha = captcha ? { captchaToken: captcha } : {};
+
+    if (modo === 'esqueci') {
+      setOcupado(true);
+      setErro(null);
+      const { error } = await sb()
+        .auth.resetPasswordForEmail(limpo, { redirectTo: `${location.origin}/auth/redefinir?para=${encodeURIComponent(para)}`, ...comCaptcha })
+        .catch((x: unknown) => ({ error: { message: String((x as Error)?.message ?? x) } }));
+      setOcupado(false);
+      zerarCaptcha();
+      if (error) {
+        setErro(mensagemDeEntrada(error));
+        return;
+      }
+      setEmail(limpo);
+      setAviso(`Mandamos um link para ${limpo}. Abra e escolha uma senha nova (olhe também o spam).`);
+      return;
+    }
+
+    if (modo === 'criar') {
+      if (senha.length < SENHA_MINIMA) {
+        setErro(`A senha precisa de ao menos ${SENHA_MINIMA} caracteres.`);
+        return;
+      }
+      if (senha !== senha2) {
+        setErro('As duas senhas não são iguais.');
+        return;
+      }
+      setOcupado(true);
+      setErro(null);
+      const { data, error } = await sb()
+        .auth.signUp({ email: limpo, password: senha, options: { emailRedirectTo: `${location.origin}/auth/confirmar?para=${encodeURIComponent(para)}`, ...comCaptcha } })
+        .catch((x: unknown) => ({ data: null, error: { message: String((x as Error)?.message ?? x) } }));
+      zerarCaptcha();
+      if (error) {
+        setOcupado(false);
+        setErro(mensagemDeEntrada(error as ErroDeEntrada));
+        return;
+      }
+      if (data?.session) {
+        depoisDeEntrar();
+        return;
+      }
+      // conta criada, mas o servidor pede confirmar o e-mail antes de entrar
+      setOcupado(false);
+      setModo('entrar');
+      setSenha('');
+      setSenha2('');
+      setEmail(limpo);
+      setAviso(`Conta criada. Confirme pelo link que mandamos para ${limpo} e depois entre com a sua senha.`);
+      return;
+    }
+
+    // modo entrar
+    setOcupado(true);
+    setErro(null);
+    const { error } = await sb()
+      .auth.signInWithPassword({ email: limpo, password: senha, options: { ...comCaptcha } })
+      .catch((x: unknown) => ({ error: { message: String((x as Error)?.message ?? x) } }));
+    zerarCaptcha();
+    if (error) {
+      setOcupado(false);
+      setErro(mensagemDeEntrada(error));
+      return;
+    }
+    depoisDeEntrar();
   }
 
   async function entrarComGoogle() {
@@ -159,72 +169,11 @@ export function FormEntrar({ config, para, google, erro: erroInicial, aoEntrar }
     }
   }
 
-  if (passo === 'codigo')
-    return (
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          void conferir(digitosDoCodigo(codigo));
-        }}
-        className="flex flex-col gap-4"
-        noValidate
-      >
-        {aviso ? (
-          <p className="rounded-xl bg-caneta-claro px-4 py-3 text-[14px] text-caneta" role="status">
-            {aviso}
-          </p>
-        ) : null}
-        <Campo rotulo="Código do e-mail (6 números)" erro={erro} htmlFor="codigo-entrada">
-          <input
-            ref={campoCodigo}
-            id="codigo-entrada"
-            name="codigo"
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            pattern="[0-9]*"
-            value={codigo}
-            onChange={(e) => {
-              const digitos = digitosDoCodigo(e.target.value);
-              setCodigo(digitos);
-              if (erro) setErro(null);
-              // completou (digitando ou colando): confere sem precisar do botão
-              if (digitos.length === 6 && digitos !== codigo) void conferir(digitos);
-            }}
-            aria-invalid={erro ? true : undefined}
-            className={`${classeEntrada} num text-center text-[22px] tracking-[0.3em]`}
-            autoFocus
-            required
-            disabled={ocupado}
-          />
-        </Campo>
-        <Botao type="submit" variante="escuro" tamanho="grande" disabled={ocupado}>
-          {ocupado ? 'Conferindo…' : 'Entrar'}
-        </Botao>
-        {config.captcha ? <Captcha chave={config.captcha} aoResolver={setCaptcha} rodada={rodadaCaptcha} /> : null}
-        <div className="flex flex-wrap items-center justify-between gap-2 text-[14px]">
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 font-semibold text-tinta-2 hover:text-tinta disabled:opacity-50"
-            disabled={ocupado}
-            onClick={() => {
-              setPasso('email');
-              setCodigo('');
-              setErro(null);
-              setAviso(null);
-            }}
-          >
-            <ArrowLeft size={15} aria-hidden="true" /> Outro e-mail
-          </button>
-          <button type="button" className="font-semibold text-caneta hover:underline disabled:text-tinta-3 disabled:no-underline" disabled={ocupado || faltam > 0} onClick={() => void pedirCodigo()}>
-            {faltam > 0 ? `Mandar de novo em ${faltam} s` : 'Mandar outro código'}
-          </button>
-        </div>
-      </form>
-    );
+  const tituloBotao = modo === 'criar' ? (ocupado ? 'Criando…' : 'Criar conta') : modo === 'esqueci' ? (ocupado ? 'Mandando…' : 'Mandar o link') : ocupado ? 'Entrando…' : 'Entrar';
 
   return (
     <div className="flex flex-col gap-4">
-      {google ? (
+      {google && modo !== 'esqueci' ? (
         <>
           <Botao variante="secundario" tamanho="grande" onClick={entrarComGoogle} disabled={ocupado}>
             <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
@@ -237,13 +186,20 @@ export function FormEntrar({ config, para, google, erro: erroInicial, aoEntrar }
           </Botao>
           <div className="flex items-center gap-3 text-[13px] text-tinta-3">
             <span className="h-px flex-1 bg-linha" />
-            ou com o e-mail
+            ou com e-mail e senha
             <span className="h-px flex-1 bg-linha" />
           </div>
         </>
       ) : null}
-      <form onSubmit={pedirCodigo} className="flex flex-col gap-4" noValidate>
-        <Campo rotulo="Seu e-mail" erro={erro} dica="Mandamos um código de 6 números. Sem senha para lembrar." htmlFor="email-entrada">
+
+      {aviso ? (
+        <p className="rounded-xl bg-caneta-claro px-4 py-3 text-[14px] text-caneta" role="status">
+          {aviso}
+        </p>
+      ) : null}
+
+      <form onSubmit={enviar} className="flex flex-col gap-4" noValidate>
+        <Campo rotulo="Seu e-mail" erro={modo !== 'criar' && !senha ? erro : null} htmlFor="email-entrada">
           <input
             id="email-entrada"
             name="email"
@@ -263,12 +219,79 @@ export function FormEntrar({ config, para, google, erro: erroInicial, aoEntrar }
             required
           />
         </Campo>
+
+        {modo !== 'esqueci' ? (
+          <Campo
+            rotulo="Senha"
+            erro={erro}
+            dica={modo === 'criar' ? `Ao menos ${SENHA_MINIMA} caracteres.` : undefined}
+            htmlFor="senha-entrada"
+          >
+            <input
+              id="senha-entrada"
+              name="senha"
+              type="password"
+              autoComplete={modo === 'criar' ? 'new-password' : 'current-password'}
+              value={senha}
+              onChange={(e) => {
+                setSenha(e.target.value);
+                if (erro) setErro(null);
+              }}
+              aria-invalid={erro ? true : undefined}
+              className={classeEntrada}
+              minLength={modo === 'criar' ? SENHA_MINIMA : undefined}
+              required
+            />
+          </Campo>
+        ) : null}
+
+        {modo === 'criar' ? (
+          <Campo rotulo="Repita a senha" htmlFor="senha2-entrada">
+            <input
+              id="senha2-entrada"
+              name="senha2"
+              type="password"
+              autoComplete="new-password"
+              value={senha2}
+              onChange={(e) => {
+                setSenha2(e.target.value);
+                if (erro) setErro(null);
+              }}
+              className={classeEntrada}
+              required
+            />
+          </Campo>
+        ) : null}
+
         {config.captcha ? <Captcha chave={config.captcha} aoResolver={setCaptcha} rodada={rodadaCaptcha} /> : null}
+
         <Botao type="submit" variante="escuro" tamanho="grande" disabled={ocupado}>
-          <Mail size={18} aria-hidden="true" />
-          {ocupado ? 'Mandando…' : 'Receber o código'}
+          {modo === 'esqueci' ? <Mail size={18} aria-hidden="true" /> : <Lock size={18} aria-hidden="true" />}
+          {tituloBotao}
         </Botao>
       </form>
+
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 text-[14px]">
+        {modo === 'entrar' ? (
+          <>
+            <button type="button" className="font-semibold text-tinta-2 hover:text-tinta disabled:opacity-50" disabled={ocupado} onClick={() => trocarModo('criar')}>
+              Criar uma conta
+            </button>
+            <button type="button" className="font-semibold text-caneta hover:underline disabled:opacity-50" disabled={ocupado} onClick={() => trocarModo('esqueci')}>
+              Esqueci a senha
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 font-semibold text-tinta-2 hover:text-tinta disabled:opacity-50"
+            disabled={ocupado}
+            onClick={() => trocarModo('entrar')}
+          >
+            <ArrowLeft size={15} aria-hidden="true" /> Voltar para entrar
+          </button>
+        )}
+      </div>
     </div>
   );
 }
