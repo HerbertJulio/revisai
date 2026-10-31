@@ -19,8 +19,9 @@ recurso).
 Variáveis na Vercel:
 - `SUPABASE_URL` ✅ — endereço do projeto.
 - `SUPABASE_PUBLISHABLE_KEY` ✅ — chave pública do navegador.
-- `SITE_URL` ⬜ — precisa ser `https://revisai.howlks.com` (os links de e-mail e o retorno do
-  Google usam isso; se ficar em branco ou em localhost, o login por link e o Google quebram).
+- `SITE_URL` ✅ — já configurado como `https://revisai.howlks.com` (usado nos links absolutos do
+  app, como push e e-mail). O retorno do Google e os links de e-mail de login são controlados pela
+  lista de Redirect URLs no painel do Supabase, abaixo, não por esta variável.
 - `SISTEMA_CHAVE` e `EQUIPE_CHAVE` ✅ — segredos internos do servidor (acesso de sistema e da
   equipe). Mantenha secretos.
 - `CRON_SECRET` ✅ — protege as rotas que rodam sozinhas (envio de avisos).
@@ -49,7 +50,8 @@ No painel do Supabase (https://supabase.com/dashboard/project/jlbpsgscspxpnvjhww
 
 Faz a ordem por voz, o agente do WhatsApp e a leitura de áudio.
 
-- `GOOGLE_GENERATIVE_AI_API_KEY` ⬜ — chave do Google AI Studio (https://aistudio.google.com).
+- `GOOGLE_GENERATIVE_AI_API_KEY` ✅ — chave do Google AI Studio (https://aistudio.google.com); já
+  configurada, a voz e o agente estão ligados.
 - `AI_GATEWAY_API_KEY` 🔸 — alternativa, se for passar pelo gateway da Vercel.
 - `VOZ_MODELO`, `AGENTE_MODELO`, `AGENTE_MODELO_GOOGLE`, `AGENTE_GOOGLE_URL` 🔸 — só se quiser
   trocar o modelo padrão.
@@ -144,7 +146,8 @@ apontando para a Vercel. Para o `revisai.howlks.com` atual não há nada a mexer
 
 ## Prioridade para o sistema "de pé" de verdade
 
-1. `SITE_URL` e as Redirect URLs do Supabase (faz o login por link e o Google funcionarem).
+1. As Redirect URLs e o Site URL no painel do Supabase (fazem o login por link e o Google
+   funcionarem; o `SITE_URL` da Vercel já está posto).
 2. Contas de demonstração com senha no painel do Supabase (testar e apresentar sem depender de
    e-mail).
 3. SMTP no Supabase + Resend (os e-mails de confirmação e senha chegarem).
